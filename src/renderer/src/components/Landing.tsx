@@ -325,7 +325,7 @@ export default function Landing(): React.JSX.Element {
             <img
               src={logo}
               alt={translate('auto.components.Landing.520304a067', 'Orca logo')}
-              className="size-12"
+              className="h-12 w-auto"
             />
           </div>
           <h1 className="text-4xl font-bold text-foreground tracking-tight">
