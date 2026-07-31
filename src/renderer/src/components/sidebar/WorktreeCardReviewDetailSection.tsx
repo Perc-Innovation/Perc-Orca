@@ -15,11 +15,14 @@ import {
 } from './WorktreeCardDetailSection'
 import { DetailHeader, MetadataActionIcon } from './WorktreeCardMetadataControls'
 import { ReviewChecksBadge, ReviewStateBadge } from './WorktreeCardMetadataStatusBadges'
+import type { AttachedReview } from '../../../../shared/types'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 import { getProviderName, getReviewLabel, ReviewIcon } from './worktree-review-helpers'
 
 type WorktreeCardReviewDetailSectionProps = {
   review: WorktreeCardPrDisplay | null
+  /** Reviews attached by hand, beyond the one detected from the branch. */
+  extraReviews?: readonly AttachedReview[]
   reviewMenuOpen: boolean
   onReviewMenuOpenChange: (open: boolean) => void
   onOpenReviewInOrca?: (event: React.MouseEvent) => void
@@ -30,6 +33,7 @@ type WorktreeCardReviewDetailSectionProps = {
 
 export function WorktreeCardReviewDetailSection({
   review,
+  extraReviews,
   reviewMenuOpen,
   onReviewMenuOpenChange,
   onOpenReviewInOrca,
@@ -37,8 +41,11 @@ export function WorktreeCardReviewDetailSection({
   onUnlinkReview,
   closeHover
 }: WorktreeCardReviewDetailSectionProps): React.JSX.Element | null {
+  const extras = extraReviews ?? []
   if (!review) {
-    return null
+    // Why: a branch whose own review Orca could not find still has whatever the
+    // user attached. Rendering nothing here is what hid them in the first place.
+    return extras.length > 0 ? <AttachedReviewsOnlySection reviews={extras} /> : null
   }
 
   const reviewLabel = getReviewLabel(review)
@@ -163,7 +170,78 @@ export function WorktreeCardReviewDetailSection({
             <ReviewChecksBadge status={review.status} />
           </div>
         )}
+        <AttachedReviewRows reviews={extras} />
       </WorktreeCardDetailSectionContent>
     </WorktreeCardDetailSection>
   )
+}
+
+function AttachedReviewsOnlySection({
+  reviews
+}: {
+  reviews: readonly AttachedReview[]
+}): React.JSX.Element {
+  return (
+    <WorktreeCardDetailSection>
+      <DetailHeader
+        icon={<ReviewIcon review={toDisplay(reviews[0])} className="size-3" />}
+        label={translate(
+          'auto.components.sidebar.WorktreeCardReviewDetailSection.attachedHeader',
+          'Attached reviews'
+        )}
+      />
+      <WorktreeCardDetailSectionContent>
+        <AttachedReviewRows reviews={reviews} />
+      </WorktreeCardDetailSectionContent>
+    </WorktreeCardDetailSection>
+  )
+}
+
+/**
+ * One compact row per attached review.
+ *
+ * These carry no check state — they are links the user asserted, not something
+ * Orca polled — so the row shows where the review is headed instead, which is
+ * the thing that tells two PRs off the same branch apart.
+ */
+function AttachedReviewRows({
+  reviews
+}: {
+  reviews: readonly AttachedReview[]
+}): React.JSX.Element | null {
+  if (reviews.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="space-y-0.5">
+      {reviews.map((review) => {
+        const display = toDisplay(review)
+        return (
+          <a
+            key={review.url}
+            href={review.url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="group flex items-center gap-1.5 rounded-sm px-1 py-0.5 -mx-1 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            title={review.title ?? review.url}
+          >
+            <ReviewIcon review={display} className="size-3 shrink-0" />
+            <span className="font-medium tabular-nums shrink-0">
+              {getReviewLabel(display)} #{review.number}
+            </span>
+            {review.baseRef && (
+              <span className="truncate text-muted-foreground/80">→ {review.baseRef}</span>
+            )}
+            <ExternalLink className="size-3 ml-auto shrink-0 opacity-0 group-hover:opacity-100" />
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+function toDisplay(review: AttachedReview): WorktreeCardPrDisplay {
+  return { provider: review.provider, number: review.number, title: review.title ?? '' }
 }
