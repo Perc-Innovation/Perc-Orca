@@ -348,6 +348,29 @@ export type FolderWorkspace = {
   updatedAt: number
 }
 
+/**
+ * A review explicitly attached to a workspace, on top of the one auto-detected
+ * from the branch.
+ *
+ * Why a separate list instead of turning `linkedPR` and friends into arrays:
+ * those scalars are read in ~57 files across renderer, main and CLI, and each
+ * provider has its own. Keeping them untouched means auto-detection, the card's
+ * primary review and every existing consumer behave exactly as before, and only
+ * code that wants the extras opts in.
+ *
+ * The common case for more than one is a single branch that ships to several
+ * destinations (a release branch plus trunk) or a feature split across repos.
+ */
+export type AttachedReview = {
+  provider: 'github' | 'gitlab' | 'bitbucket' | 'azure-devops' | 'gitea'
+  number: number
+  url: string
+  /** Destination branch, when known. It is what distinguishes reviews that
+   *  share a head branch, so it is worth storing rather than re-fetching. */
+  baseRef?: string
+  title?: string
+}
+
 export type WorkspaceLinkedItem = {
   provider: 'github' | 'gitlab' | 'linear' | 'jira'
   type: 'issue' | 'pr' | 'mr'
@@ -507,6 +530,8 @@ export type Worktree = {
   linkedAzureDevOpsPR?: number | null
   linkedGiteaPR?: number | null
   linkedWorkItem?: WorkspaceLinkedItem | null
+  /** Reviews attached on top of the branch-detected one. */
+  attachedReviews?: AttachedReview[]
   linkedTaskSourceContext?: TaskSourceContext | null
   isArchived: boolean
   isUnread: boolean
@@ -632,6 +657,8 @@ export type WorktreeMeta = {
   /** Optional for backward compatibility — see Worktree.linkedGiteaPR. */
   linkedGiteaPR?: number | null
   linkedWorkItem?: WorkspaceLinkedItem | null
+  /** Reviews attached on top of the branch-detected one. */
+  attachedReviews?: AttachedReview[]
   linkedTaskSourceContext?: TaskSourceContext | null
   isArchived: boolean
   isUnread: boolean
@@ -2238,6 +2265,8 @@ export type CreateWorktreeArgs = {
   linkedAzureDevOpsPR?: number | null
   linkedGiteaPR?: number | null
   linkedWorkItem?: WorkspaceLinkedItem | null
+  /** Reviews attached on top of the branch-detected one. */
+  attachedReviews?: AttachedReview[]
   linkedTaskSourceContext?: TaskSourceContext | null
   pushTarget?: GitPushTarget
   workspaceStatus?: WorkspaceStatus

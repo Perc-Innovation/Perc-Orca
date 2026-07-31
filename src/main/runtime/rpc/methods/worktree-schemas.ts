@@ -96,6 +96,14 @@ function assertLinkedWorkItemSourceContextMatch(
   }
 }
 
+const AttachedReviewSchema = z.object({
+  provider: z.enum(['github', 'gitlab', 'bitbucket', 'azure-devops', 'gitea']),
+  number: z.number().int().positive(),
+  url: z.string().min(1),
+  baseRef: z.string().optional(),
+  title: z.string().optional()
+})
+
 export const WorktreeCreate = z
   .object({
     repo: z
@@ -117,6 +125,7 @@ export const WorktreeCreate = z
     linkedAzureDevOpsPR: TriStateLinkedIssue,
     linkedGiteaPR: TriStateLinkedIssue,
     linkedWorkItem: WorkspaceLinkedItemSchema.nullable().optional(),
+    attachedReviews: z.array(AttachedReviewSchema).optional(),
     linkedTaskSourceContext: TaskSourceContextSchema.nullable().optional(),
     comment: OptionalString,
     displayName: OptionalString,
@@ -238,6 +247,7 @@ export const WorktreeSet = WorktreeSelector.extend({
   linkedAzureDevOpsPR: TriStateLinkedIssue,
   linkedGiteaPR: TriStateLinkedIssue,
   linkedWorkItem: WorkspaceLinkedItemSchema.nullable().optional(),
+  attachedReviews: z.array(AttachedReviewSchema).optional(),
   linkedTaskSourceContext: TaskSourceContextSchema.nullable().optional(),
   isArchived: OptionalBoolean,
   isUnread: OptionalBoolean,
