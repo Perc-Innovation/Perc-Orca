@@ -511,6 +511,7 @@ export function formatFlagHelp(flag: string): string {
     agent: '--agent <id>          Launch a known TUI agent in the first terminal',
     'base-branch': '--base-branch <ref>    Base branch/ref to create the worktree from',
     branch: '--branch <name>        Exact git branch name; skips slugifying and the branch prefix',
+    jira: '--jira <key|url|null>   Link a Jira issue to the workspace; null clears it',
     command: '--command <text>       Command to run in the terminal on startup',
     comment: '--comment <text>       Comment stored in Orca metadata',
     cursor: '--cursor <n>           Line cursor from a previous read (returns only new output)',
