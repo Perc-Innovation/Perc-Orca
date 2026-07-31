@@ -21,7 +21,11 @@ import type {
   GitHubPRMergeMethod,
   GitHubPRMergeMethodSettings
 } from '../../shared/types'
-import type { CreateHostedReviewInput, CreateHostedReviewResult } from '../../shared/hosted-review'
+import type {
+  CreateHostedReviewInput,
+  CreateHostedReviewResult,
+  HostedReviewSibling
+} from '../../shared/hosted-review'
 import {
   normalizeHostedReviewBaseRef,
   normalizeHostedReviewHeadRef
@@ -2137,6 +2141,8 @@ export async function getWorkItemByOwnerRepo(
 }
 
 type PullRequestLookupData = {
+  /** Los otros PRs de la misma rama, tal como vinieron del mismo request. */
+  siblings?: RestPullRequest[]
   number: number
   title: string
   state: string
@@ -2207,6 +2213,17 @@ function derivePullRequestMergeable(data: PullRequestLookupData): PRMergeableSta
     return 'CONFLICTING'
   }
   return mergeable ?? 'UNKNOWN'
+}
+
+/** Un hermano solo necesita identificarse, decir a dónde va y si sigue vivo. */
+function mapSiblingPR(pr: RestPullRequest): HostedReviewSibling {
+  return {
+    number: pr.number,
+    url: pr.html_url ?? pr.url ?? '',
+    ...(pr.title ? { title: pr.title } : {}),
+    ...(pr.base?.ref ? { baseRef: pr.base.ref } : {}),
+    state: mapPRState(pr.merged_at ? 'MERGED' : pr.state, pr.draft)
+  }
 }
 
 function mapRestPullRequest(pr: RestPullRequest): PullRequestLookupData {
@@ -2413,7 +2430,13 @@ async function hydrateBranchLookupWithExactPR(
     return null
   }
   try {
-    return (await getPRByNumber(ownerRepo, branchData.number, ghOptions)) ?? branchData
+    const exact = await getPRByNumber(ownerRepo, branchData.number, ghOptions)
+    if (!exact) {
+      return branchData
+    }
+    // El detalle exacto no sabe de la rama, así que los hermanos vienen del
+    // lookup por rama y hay que reponerlos o se pierden acá.
+    return branchData.siblings ? { ...exact, siblings: branchData.siblings } : exact
   } catch {
     return branchData
   }
@@ -2427,7 +2450,14 @@ async function getRestPRForBranch(
 ): Promise<PullRequestLookupData | null> {
   const list = await getRestPRsForBranch(prRepo, headOwner, branchName, ghOptions)
   const pr = pickPrimaryPRForBranch(list)
-  return pr ? mapRestPullRequest(pr) : null
+  if (!pr) {
+    return null
+  }
+  const others = list.filter((candidate) => candidate.number !== pr.number)
+  return {
+    ...mapRestPullRequest(pr),
+    ...(others.length > 0 ? { siblings: others } : {})
+  }
 }
 
 /**
@@ -3300,6 +3330,7 @@ export async function getPRForBranchOutcome(
         ...(headDivergedFromMergedPRAtOid ? { headDivergedFromMergedPRAtOid } : {}),
         ...(data.baseRefName ? { baseRefName: data.baseRefName } : {}),
         ...(data.headRefName ? { headRefName: data.headRefName } : {}),
+        ...(data.siblings?.length ? { siblings: data.siblings.map(mapSiblingPR) } : {}),
         prRepo: dataRepo ?? undefined,
         headRepo: dataHeadRepo ?? undefined,
         conflictSummary
