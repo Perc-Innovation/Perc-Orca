@@ -1067,6 +1067,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const metaLinearIssue = showLinearIssue ? hoverLinearIssue : null
   const metaJiraIssue = showJiraIssue ? hoverJiraIssue : null
   const metaReview = showPR ? hoverReview : null
+  // Why: gated by the same card property as the review itself — attached
+  // reviews are more of the same thing, not a separate opt-in.
+  const metaAttachedReviews = showPR ? worktree.attachedReviews : undefined
   const metaAutomationProvenance = showAutomation ? worktree.automationProvenance : null
   const metaCliProvenance = showCli ? worktree.cliProvenance : null
   const metaComment = showComment ? hoverComment : null
@@ -1170,6 +1173,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
     linearIssue: metaLinearIssue,
     jiraIssue: metaJiraIssue,
     review: newCardStyle ? null : metaReview,
+    attachedReviews: metaAttachedReviews,
     comment: metaComment,
     automationProvenance: metaAutomationProvenance,
     cliProvenance: metaCliProvenance
@@ -1262,6 +1266,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
             linearIssue={metaLinearIssue}
             jiraIssue={metaJiraIssue}
             review={metaReview}
+            attachedReviews={metaAttachedReviews}
             comment={metaComment}
             automationProvenance={metaAutomationProvenance}
             cliProvenance={metaCliProvenance}
@@ -1334,6 +1339,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
         linearIssue={metaLinearIssue}
         jiraIssue={metaJiraIssue}
         review={metaReview}
+        attachedReviews={metaAttachedReviews}
         comment={metaComment}
         automationProvenance={metaAutomationProvenance}
         cliProvenance={metaCliProvenance}

@@ -147,6 +147,8 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
       'issue',
       'linear-issue',
       'jira',
+      'add-pr',
+      'clear-prs',
       'comment',
       'workspace-status',
       'parent-worktree',
@@ -154,6 +156,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     ],
     notes: [
       'Use --jira with an issue key (PROJ-123) or a Jira issue URL to link the workspace to a ticket; the title and URL are resolved from the connected Jira site. Pass null to clear. The card shows it when the jira-issue card property is enabled.',
+      'Use --add-pr with one or more pull/merge request URLs (comma-separated) to attach reviews beyond the one auto-detected from the branch — a branch shipping to several destinations has more than one. Pass a JSON array like \'[{"url":"...","baseRef":"stage","title":"..."}]\' to record where each one is headed, which is what tells them apart on the card. Calls are additive; --clear-prs drops them, and combining both replaces the list.',
       'Workspace status ids match the board columns (defaults: todo, in-progress, in-review, completed); custom statuses use their configured id.',
       'Pass --linear-issue null to clear the Linear issue link.'
     ],
