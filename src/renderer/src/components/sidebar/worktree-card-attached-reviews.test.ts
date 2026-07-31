@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getExtraAttachedReviews } from './worktree-card-attached-reviews'
+import { getCardReviewList } from './worktree-card-attached-reviews'
 import type { AttachedReview } from '../../../../shared/types'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 
@@ -10,13 +10,13 @@ const attached = (over: Partial<AttachedReview> = {}): AttachedReview => ({
   ...over
 })
 
-// The metadata variant of the union: what a card renders without a hosted
-// review snapshot, which is exactly the shape this helper compares against.
 type PrDisplayMetadata = {
   provider: AttachedReview['provider']
   number: number
   title: string
   url?: string
+  state?: WorktreeCardPrDisplay['state']
+  status?: WorktreeCardPrDisplay['status']
 }
 
 const primary = (over: Partial<PrDisplayMetadata> = {}): WorktreeCardPrDisplay =>
@@ -28,54 +28,107 @@ const primary = (over: Partial<PrDisplayMetadata> = {}): WorktreeCardPrDisplay =
     ...over
   }) satisfies PrDisplayMetadata
 
-describe('getExtraAttachedReviews', () => {
-  it('returns nothing when there is nothing attached', () => {
-    expect(getExtraAttachedReviews(undefined, primary())).toEqual([])
-    expect(getExtraAttachedReviews(null, primary())).toEqual([])
-    expect(getExtraAttachedReviews([], primary())).toEqual([])
+describe('getCardReviewList', () => {
+  it('keeps the detailed section when there is nothing but the auto-detected review', () => {
+    expect(getCardReviewList(undefined, primary())).toEqual({ kind: 'single' })
+    expect(getCardReviewList([], primary())).toEqual({ kind: 'single' })
+    expect(getCardReviewList(null, null)).toEqual({ kind: 'single' })
   })
 
-  it('drops the review already rendered as the header', () => {
-    const list = getExtraAttachedReviews(
-      [attached(), attached({ number: 295, url: 'https://github.com/acme/app/pull/295' })],
+  it('keeps the detailed section when the only attached review is the detected one', () => {
+    // Why: one review is one review however it got there, and the rich section
+    // shows more than a list row can.
+    expect(getCardReviewList([attached()], primary())).toEqual({ kind: 'single' })
+  })
+
+  it('switches to a uniform list once there are two', () => {
+    const list = getCardReviewList(
+      [
+        attached({ baseRef: 'RELEASE/v1.14.0' }),
+        attached({ number: 295, url: 'https://github.com/acme/app/pull/295', baseRef: 'stage' })
+      ],
       primary()
     )
-    expect(list.map((review) => review.number)).toEqual([295])
+
+    expect(list.kind).toBe('list')
+    if (list.kind !== 'list') {
+      return
+    }
+    expect(list.rows.map((row) => [row.number, row.baseRef])).toEqual([
+      [294, 'RELEASE/v1.14.0'],
+      [295, 'stage']
+    ])
   })
 
-  it('matches the header by url even when it differs in case or trailing slash', () => {
-    // Why: the attached URL is whatever the user pasted; the auto-detected one
-    // comes from the API. Showing the same PR twice is worse than missing one.
-    const list = getExtraAttachedReviews(
+  it('carries state and checks onto the row Orca actually polled', () => {
+    // Why: it is the only one with real check data; dropping it to make the
+    // rows uniform would trade information for symmetry.
+    const list = getCardReviewList(
+      [
+        attached({ baseRef: 'RELEASE/v1.14.0' }),
+        attached({ number: 295, url: 'https://github.com/acme/app/pull/295', baseRef: 'stage' })
+      ],
+      primary({ state: 'open', status: 'success' })
+    )
+
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows[0]).toMatchObject({ number: 294, state: 'open', status: 'success' })
+    expect(list.rows[1].state).toBeUndefined()
+  })
+
+  it('adds the auto-detected review when it was never attached', () => {
+    const list = getCardReviewList(
+      [attached({ number: 295, url: 'https://github.com/acme/app/pull/295', baseRef: 'stage' })],
+      primary({ number: 300, url: 'https://github.com/acme/app/pull/300' })
+    )
+
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows.map((row) => row.number)).toEqual([295, 300])
+  })
+
+  it('does not list the same review twice when the urls differ cosmetically', () => {
+    const list = getCardReviewList(
       [attached({ url: 'https://GitHub.com/acme/app/pull/294/' })],
       primary()
     )
-    expect(list).toEqual([])
+    expect(list).toEqual({ kind: 'single' })
   })
 
-  it('falls back to provider and number when the urls do not match', () => {
-    const list = getExtraAttachedReviews(
-      [attached({ url: 'https://github.com/acme/app/pull/294?diff=split' })],
-      primary()
+  it('prefers the attached title, which is what the user recorded', () => {
+    const list = getCardReviewList(
+      [
+        attached({ title: 'fix: something [v1.14.0]', baseRef: 'RELEASE/v1.14.0' }),
+        attached({ number: 295, url: 'https://github.com/acme/app/pull/295', baseRef: 'stage' })
+      ],
+      primary({ title: 'fix: something' })
     )
-    expect(list).toEqual([])
+
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows[0].title).toBe('fix: something [v1.14.0]')
   })
 
-  it('keeps the same number from a different provider', () => {
-    const list = getExtraAttachedReviews(
-      [attached({ provider: 'gitlab', url: 'https://gitlab.com/acme/app/merge_requests/294' })],
-      primary()
+  it('skips an unsupported provider rather than rendering a row it cannot label', () => {
+    const list = getCardReviewList(
+      [
+        attached({ baseRef: 'RELEASE/v1.14.0' }),
+        attached({ number: 295, url: 'https://github.com/acme/app/pull/295', baseRef: 'stage' })
+      ],
+      {
+        provider: 'unsupported',
+        number: 9,
+        url: 'https://example.com/pr/9'
+      } as WorktreeCardPrDisplay
     )
-    expect(list).toHaveLength(1)
-  })
 
-  it('keeps everything when nothing was auto-detected', () => {
-    // Why: this is the case that matters most — a branch whose own review Orca
-    // could not find still has the destinations the user attached by hand.
-    const list = getExtraAttachedReviews(
-      [attached(), attached({ number: 295, url: 'https://github.com/acme/app/pull/295' })],
-      null
-    )
-    expect(list.map((review) => review.number)).toEqual([294, 295])
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows.map((row) => row.number)).toEqual([294, 295])
   })
 })

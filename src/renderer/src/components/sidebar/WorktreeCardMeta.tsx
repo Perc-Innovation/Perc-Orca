@@ -17,7 +17,7 @@ import { hasWorktreeCardDetails, WorktreeCardMetaBadges } from './WorktreeCardMe
 import { LinearStateBadge } from './WorktreeCardMetadataStatusBadges'
 import { useWorktreeCardDetailsHoverControl } from './worktree-card-details-hover-state'
 import { getReviewLabel } from './worktree-review-helpers'
-import { getExtraAttachedReviews } from './worktree-card-attached-reviews'
+import { getCardReviewList } from './worktree-card-attached-reviews'
 import type {
   WorktreeCardIssueDisplay,
   WorktreeCardJiraIssueDisplay,
@@ -159,8 +159,8 @@ export function WorktreeCardDetailsHover({
     )
   }, [copyLinkedWorkItemLink, review])
 
-  const extraAttachedReviews = React.useMemo(
-    () => getExtraAttachedReviews(attachedReviews, review),
+  const reviewList = React.useMemo(
+    () => getCardReviewList(attachedReviews, review),
     [attachedReviews, review]
   )
 
@@ -311,7 +311,7 @@ export function WorktreeCardDetailsHover({
 
           <WorktreeCardReviewDetailSection
             review={review}
-            extraReviews={extraAttachedReviews}
+            reviewList={reviewList}
             reviewMenuOpen={reviewMenuOpen}
             onReviewMenuOpenChange={handleReviewMenuOpenChange}
             onOpenReviewInOrca={onOpenReviewInOrca}

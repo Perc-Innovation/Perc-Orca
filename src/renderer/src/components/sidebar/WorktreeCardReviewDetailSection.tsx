@@ -15,14 +15,14 @@ import {
 } from './WorktreeCardDetailSection'
 import { DetailHeader, MetadataActionIcon } from './WorktreeCardMetadataControls'
 import { ReviewChecksBadge, ReviewStateBadge } from './WorktreeCardMetadataStatusBadges'
-import type { AttachedReview } from '../../../../shared/types'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
+import type { CardReviewList, CardReviewRow } from './worktree-card-attached-reviews'
 import { getProviderName, getReviewLabel, ReviewIcon } from './worktree-review-helpers'
 
 type WorktreeCardReviewDetailSectionProps = {
   review: WorktreeCardPrDisplay | null
-  /** Reviews attached by hand, beyond the one detected from the branch. */
-  extraReviews?: readonly AttachedReview[]
+  /** How this workspace's reviews should render: one detailed, or several as peers. */
+  reviewList?: CardReviewList
   reviewMenuOpen: boolean
   onReviewMenuOpenChange: (open: boolean) => void
   onOpenReviewInOrca?: (event: React.MouseEvent) => void
@@ -33,7 +33,7 @@ type WorktreeCardReviewDetailSectionProps = {
 
 export function WorktreeCardReviewDetailSection({
   review,
-  extraReviews,
+  reviewList,
   reviewMenuOpen,
   onReviewMenuOpenChange,
   onOpenReviewInOrca,
@@ -41,11 +41,13 @@ export function WorktreeCardReviewDetailSection({
   onUnlinkReview,
   closeHover
 }: WorktreeCardReviewDetailSectionProps): React.JSX.Element | null {
-  const extras = extraReviews ?? []
+  // Several reviews render as peers: singling one out as the header would make
+  // the rest look secondary when they are the same branch going elsewhere.
+  if (reviewList?.kind === 'list') {
+    return <CardReviewListSection rows={reviewList.rows} />
+  }
   if (!review) {
-    // Why: a branch whose own review Orca could not find still has whatever the
-    // user attached. Rendering nothing here is what hid them in the first place.
-    return extras.length > 0 ? <AttachedReviewsOnlySection reviews={extras} /> : null
+    return null
   }
 
   const reviewLabel = getReviewLabel(review)
@@ -170,78 +172,82 @@ export function WorktreeCardReviewDetailSection({
             <ReviewChecksBadge status={review.status} />
           </div>
         )}
-        <AttachedReviewRows reviews={extras} />
       </WorktreeCardDetailSectionContent>
     </WorktreeCardDetailSection>
   )
 }
 
-function AttachedReviewsOnlySection({
-  reviews
-}: {
-  reviews: readonly AttachedReview[]
-}): React.JSX.Element {
+function CardReviewListSection({ rows }: { rows: readonly CardReviewRow[] }): React.JSX.Element {
   return (
     <WorktreeCardDetailSection>
       <DetailHeader
-        icon={<ReviewIcon review={toDisplay(reviews[0])} className="size-3" />}
+        icon={<ReviewIcon review={toDisplay(rows[0])} className="size-3" />}
         label={translate(
-          'auto.components.sidebar.WorktreeCardReviewDetailSection.attachedHeader',
-          'Attached reviews'
+          'auto.components.sidebar.WorktreeCardReviewDetailSection.reviewListHeader',
+          '{{value0}} reviews',
+          { value0: rows.length }
         )}
       />
-      <WorktreeCardDetailSectionContent>
-        <AttachedReviewRows reviews={reviews} />
+      <WorktreeCardDetailSectionContent className="space-y-1.5">
+        {rows.map((row) => (
+          <CardReviewRowItem key={row.url} row={row} />
+        ))}
       </WorktreeCardDetailSectionContent>
     </WorktreeCardDetailSection>
   )
 }
 
 /**
- * One compact row per attached review.
+ * One row per review, all rendered the same.
  *
- * These carry no check state — they are links the user asserted, not something
- * Orca polled — so the row shows where the review is headed instead, which is
- * the thing that tells two PRs off the same branch apart.
+ * The base ref leads because it is what tells two reviews off the same branch
+ * apart. State and checks only show for the one Orca resolved on its own —
+ * absent badges mean "not polled", not "not passing".
  */
-function AttachedReviewRows({
-  reviews
-}: {
-  reviews: readonly AttachedReview[]
-}): React.JSX.Element | null {
-  if (reviews.length === 0) {
-    return null
-  }
+function CardReviewRowItem({ row }: { row: CardReviewRow }): React.JSX.Element {
+  const display = toDisplay(row)
+  const label = getReviewLabel(display)
 
   return (
-    <div className="space-y-0.5">
-      {reviews.map((review) => {
-        const display = toDisplay(review)
-        return (
-          <a
-            key={review.url}
-            href={review.url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
-            className="group flex items-center gap-1.5 rounded-sm px-1 py-0.5 -mx-1 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground"
-            title={review.title ?? review.url}
-          >
-            <ReviewIcon review={display} className="size-3 shrink-0" />
-            <span className="font-medium tabular-nums shrink-0">
-              {getReviewLabel(display)} #{review.number}
-            </span>
-            {review.baseRef && (
-              <span className="truncate text-muted-foreground/80">→ {review.baseRef}</span>
-            )}
-            <ExternalLink className="size-3 ml-auto shrink-0 opacity-0 group-hover:opacity-100" />
-          </a>
-        )
-      })}
-    </div>
+    <a
+      href={row.url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      className="group block rounded-sm px-1 py-1 -mx-1 hover:bg-accent"
+      title={row.title ?? row.url}
+    >
+      <div className="flex items-center gap-1.5 text-[12px]">
+        <ReviewIcon review={display} className="size-3 shrink-0" />
+        <span className="font-medium tabular-nums shrink-0 text-foreground">
+          {label} #{row.number}
+        </span>
+        {row.baseRef && (
+          <span className="truncate text-muted-foreground">&rarr; {row.baseRef}</span>
+        )}
+        <ExternalLink className="size-3 ml-auto shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+      </div>
+      {row.title && (
+        <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground break-words">
+          {row.title}
+        </div>
+      )}
+      {(row.state || (row.status && row.status !== 'neutral')) && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          <ReviewStateBadge state={row.state} label={label} />
+          <ReviewChecksBadge status={row.status} />
+        </div>
+      )}
+    </a>
   )
 }
 
-function toDisplay(review: AttachedReview): WorktreeCardPrDisplay {
-  return { provider: review.provider, number: review.number, title: review.title ?? '' }
+function toDisplay(row: CardReviewRow): WorktreeCardPrDisplay {
+  return {
+    provider: row.provider,
+    number: row.number,
+    title: row.title ?? '',
+    ...(row.state ? { state: row.state } : {}),
+    ...(row.status ? { status: row.status } : {})
+  }
 }
