@@ -14,6 +14,11 @@ import type { AttachedReview } from '../../shared/types'
  * arg parser stores flags in a Map and a repeated flag would silently keep only
  * the last value. Calls are additive, so attaching one at a time across several
  * invocations works too.
+ *
+ * A JSON array is accepted in place of the URL list when the caller knows more
+ * than the URL carries. Base ref and title cannot be derived from a PR link,
+ * and they are what tells two reviews off the same branch apart — without them
+ * a stack of reviews renders as a list of bare numbers.
  */
 export function getAttachedReviewsUpdate(
   flags: Map<string, string | boolean>,
@@ -25,22 +30,63 @@ export function getAttachedReviewsUpdate(
   if (raw !== undefined && typeof raw !== 'string') {
     throw new RuntimeClientError('invalid_argument', 'Missing value for --add-pr')
   }
-  const urls = (raw ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0)
+  const incoming = parseAddPrValue(raw ?? '')
 
-  if (urls.length === 0) {
+  if (incoming.length === 0) {
     return clear ? { attachedReviews: [] } : {}
   }
 
   // Why: --clear-prs with --add-pr means "replace", which is the only way to
   // drop a stale review without a separate remove flag.
   let next: AttachedReview[] = clear ? [] : [...(current ?? [])]
-  for (const url of urls) {
-    next = addAttachedReview(next, parseReviewUrl(url))
+  for (const review of incoming) {
+    next = addAttachedReview(next, review)
   }
   return { attachedReviews: next }
+}
+
+function parseAddPrValue(raw: string): AttachedReview[] {
+  const trimmed = raw.trim()
+  if (trimmed.startsWith('[')) {
+    return parseReviewJson(trimmed)
+  }
+  return trimmed
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map(parseReviewUrl)
+}
+
+function parseReviewJson(value: string): AttachedReview[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new RuntimeClientError('invalid_argument', 'Could not parse --add-pr as JSON')
+  }
+  if (!Array.isArray(parsed)) {
+    throw new RuntimeClientError('invalid_argument', '--add-pr JSON must be an array of reviews')
+  }
+
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new RuntimeClientError('invalid_argument', 'Each --add-pr entry must be an object')
+    }
+    const item = entry as Record<string, unknown>
+    if (typeof item.url !== 'string') {
+      throw new RuntimeClientError('invalid_argument', 'Each --add-pr entry needs a url')
+    }
+    // The URL still decides provider and number, so a JSON entry cannot claim
+    // to be a review the link itself does not describe.
+    const review = parseReviewUrl(item.url)
+    if (typeof item.baseRef === 'string' && item.baseRef.trim().length > 0) {
+      review.baseRef = item.baseRef.trim()
+    }
+    if (typeof item.title === 'string' && item.title.trim().length > 0) {
+      review.title = item.title.trim()
+    }
+    return review
+  })
 }
 
 function parseReviewUrl(value: string): AttachedReview {
