@@ -29,6 +29,59 @@ const primary = (over: Partial<PrDisplayMetadata> = {}): WorktreeCardPrDisplay =
   }) satisfies PrDisplayMetadata
 
 describe('getCardReviewList', () => {
+  it('lists the PRs the branch feeds without anything attached by hand', () => {
+    // Why: this is the point of the whole feature. The branch's own lookup
+    // already knows every PR it feeds, so nothing should have to be attached.
+    const list = getCardReviewList(undefined, {
+      ...primary({ number: 250 }),
+      siblings: [
+        {
+          number: 251,
+          url: 'https://github.com/acme/app/pull/251',
+          baseRef: 'RELEASE/v1.14.0',
+          state: 'open'
+        },
+        {
+          number: 252,
+          url: 'https://github.com/acme/app/pull/252',
+          baseRef: 'stage',
+          state: 'merged'
+        }
+      ]
+    } as WorktreeCardPrDisplay)
+
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows.map((row) => [row.number, row.state])).toEqual([
+      [251, 'open'],
+      [252, 'merged'],
+      [250, undefined]
+    ])
+  })
+
+  it('does not list a sibling twice when it was also attached by hand', () => {
+    const list = getCardReviewList(
+      [attached({ number: 251, url: 'https://github.com/acme/app/pull/251' })],
+      {
+        ...primary({ number: 250 }),
+        siblings: [
+          {
+            number: 251,
+            url: 'https://github.com/acme/app/pull/251',
+            baseRef: 'stage',
+            state: 'open'
+          }
+        ]
+      } as WorktreeCardPrDisplay
+    )
+
+    if (list.kind !== 'list') {
+      throw new Error('expected a list')
+    }
+    expect(list.rows.map((row) => row.number)).toEqual([251, 250])
+  })
+
   it('keeps the detailed section when there is nothing but the auto-detected review', () => {
     expect(getCardReviewList(undefined, primary())).toEqual({ kind: 'single' })
     expect(getCardReviewList([], primary())).toEqual({ kind: 'single' })

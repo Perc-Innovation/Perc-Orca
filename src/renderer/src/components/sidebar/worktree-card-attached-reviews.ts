@@ -46,6 +46,13 @@ export function getCardReviewList(
     rows.push(row)
   }
 
+  // Los hermanos vienen del mismo lookup que el review principal, así que están
+  // tan frescos como él: van primero para que una lista adjunta a mano no tape
+  // lo que Orca ya sabe de la rama.
+  for (const sib of siblingsOf(primary)) {
+    push(sib)
+  }
+
   for (const review of attachedReviews ?? []) {
     push(matchesPrimary(review, primary) ? mergeWithPrimary(review, primary) : toRow(review))
   }
@@ -76,6 +83,29 @@ export function getCardReviewList(
  *  review mergeada y una abierta se ven igual. */
 function toRow(review: AttachedReview): CardReviewRow {
   return { ...review, ...(review.state ? { state: review.state } : {}) }
+}
+
+/**
+ * Los PRs que la rama alimenta además del principal.
+ *
+ * Salen del mismo request, así que no hay nada que sincronizar aparte: se
+ * refrescan cuando se refresca el review de la rama.
+ */
+function siblingsOf(primary: WorktreeCardPrDisplay | null): CardReviewRow[] {
+  const list = primary && 'siblings' in primary ? primary.siblings : undefined
+  if (!list?.length || !primary || primary.provider === 'unsupported') {
+    return []
+  }
+  return list
+    .filter((sib) => Boolean(sib.url))
+    .map((sib) => ({
+      provider: primary.provider as AttachedReview['provider'],
+      number: sib.number,
+      url: sib.url,
+      ...(sib.baseRef ? { baseRef: sib.baseRef } : {}),
+      ...(sib.title ? { title: sib.title } : {}),
+      ...(sib.state ? { state: sib.state } : {})
+    }))
 }
 
 function mergeWithPrimary(
