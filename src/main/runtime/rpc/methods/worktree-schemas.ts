@@ -101,7 +101,8 @@ const AttachedReviewSchema = z.object({
   number: z.number().int().positive(),
   url: z.string().min(1),
   baseRef: z.string().optional(),
-  title: z.string().optional()
+  title: z.string().optional(),
+  state: z.enum(['open', 'merged', 'closed', 'draft']).optional()
 })
 
 export const WorktreeCreate = z
