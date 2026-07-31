@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { getOptionalJiraIssueLinkFlag } from './worktree-jira-issue-link'
+import { getOptionalJiraIssueLinkFlag, resolveJiraWorkItem } from './worktree-jira-issue-link'
+import type { RuntimeClient } from '../runtime-client'
+import type { JiraSite } from '../../shared/jira-types'
 
 function flags(entries: Record<string, string | boolean>): Map<string, string | boolean> {
   return new Map(Object.entries(entries))
@@ -14,7 +16,7 @@ describe('getOptionalJiraIssueLinkFlag', () => {
     expect(getOptionalJiraIssueLinkFlag(flags({ jira: 'PROJ-123' }), 'jira')).toEqual({
       clear: false,
       issueKey: 'PROJ-123',
-      origin: null
+      parsed: null
     })
   })
 
@@ -30,10 +32,10 @@ describe('getOptionalJiraIssueLinkFlag', () => {
         flags({ jira: 'https://acme.atlassian.net/browse/PROJ-9' }),
         'jira'
       )
-    ).toEqual({
+    ).toMatchObject({
       clear: false,
       issueKey: 'PROJ-9',
-      origin: 'https://acme.atlassian.net'
+      parsed: { origin: 'https://acme.atlassian.net' }
     })
   })
 
@@ -65,5 +67,70 @@ describe('getOptionalJiraIssueLinkFlag', () => {
     expect(() => getOptionalJiraIssueLinkFlag(flags({ jira: true }), 'jira')).toThrow(
       /Missing value for --jira/
     )
+  })
+})
+
+const site = (id: string, siteUrl: string): JiraSite => ({ id, siteUrl }) as JiraSite
+
+function clientWith(sites: JiraSite[], activeSiteId: string | null): RuntimeClient {
+  return {
+    call: async (method: string) => {
+      if (method === 'jira.status') {
+        return { result: { connected: true, sites, activeSiteId } }
+      }
+      return {
+        result: {
+          key: 'PROJ-9',
+          title: 'A ticket',
+          url: 'https://acme.atlassian.net/browse/PROJ-9',
+          siteId: sites[0]?.id
+        }
+      }
+    }
+  } as unknown as RuntimeClient
+}
+
+describe('resolveJiraWorkItem site matching', () => {
+  it('does not match a host that merely starts with the origin', async () => {
+    // Why: the reported bug. A prefix test let acme.atlassian.net.evil.example
+    // stand in for acme.atlassian.net.
+    const input = getOptionalJiraIssueLinkFlag(
+      flags({ jira: 'https://acme.atlassian.net/browse/PROJ-9' }),
+      'jira'
+    )
+    const client = clientWith([site('1', 'https://acme.atlassian.net.evil.example')], '1')
+
+    await expect(resolveJiraWorkItem(input, client)).rejects.toThrow(/No connected Jira site/)
+  })
+
+  it('matches the exact origin', async () => {
+    const input = getOptionalJiraIssueLinkFlag(
+      flags({ jira: 'https://acme.atlassian.net/browse/PROJ-9' }),
+      'jira'
+    )
+    const client = clientWith([site('1', 'https://acme.atlassian.net')], '1')
+
+    await expect(resolveJiraWorkItem(input, client)).resolves.toMatchObject({
+      linkedWorkItem: { jiraIdentifier: 'PROJ-9' }
+    })
+  })
+
+  it('refuses to guess when several sites are connected and none is active', async () => {
+    const input = getOptionalJiraIssueLinkFlag(flags({ jira: 'PROJ-9' }), 'jira')
+    const client = clientWith(
+      [site('1', 'https://acme.atlassian.net'), site('2', 'https://other.atlassian.net')],
+      null
+    )
+
+    await expect(resolveJiraWorkItem(input, client)).rejects.toThrow(/Several Jira sites/)
+  })
+
+  it('uses the only connected site when there is no active one', async () => {
+    const input = getOptionalJiraIssueLinkFlag(flags({ jira: 'PROJ-9' }), 'jira')
+    const client = clientWith([site('1', 'https://acme.atlassian.net')], null)
+
+    await expect(resolveJiraWorkItem(input, client)).resolves.toMatchObject({
+      linkedWorkItem: { jiraIdentifier: 'PROJ-9' }
+    })
   })
 })

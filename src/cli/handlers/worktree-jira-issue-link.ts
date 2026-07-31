@@ -1,11 +1,16 @@
-import { JIRA_ISSUE_KEY_PATTERN, parseJiraIssueUrl } from '../../shared/jira-issue-url'
+import {
+  getMatchingJiraSites,
+  JIRA_ISSUE_KEY_PATTERN,
+  parseJiraIssueUrl,
+  type ParsedJiraIssueUrl
+} from '../../shared/jira-issue-url'
 import { RuntimeClientError, type RuntimeClient } from '../runtime-client'
 import type { WorkspaceLinkedItem } from '../../shared/types'
 import type { JiraIssue, JiraSite } from '../../shared/jira-types'
 
 export type JiraIssueLinkInput =
   | { clear: true }
-  | { clear: false; issueKey: string; origin: string | null }
+  | { clear: false; issueKey: string; parsed: ParsedJiraIssueUrl | null }
 
 /**
  * Parses `--jira`, accepting a bare issue key (`PROJ-123`) or a full Jira issue
@@ -38,11 +43,11 @@ export function getOptionalJiraIssueLinkFlag(
 
   const parsed = parseJiraIssueUrl(trimmed)
   if (parsed) {
-    return { clear: false, issueKey: parsed.issueKey, origin: parsed.origin }
+    return { clear: false, issueKey: parsed.issueKey, parsed }
   }
 
   if (JIRA_ISSUE_KEY_PATTERN.test(trimmed)) {
-    return { clear: false, issueKey: trimmed.toUpperCase(), origin: null }
+    return { clear: false, issueKey: trimmed.toUpperCase(), parsed: null }
   }
 
   throw new RuntimeClientError(
@@ -90,15 +95,18 @@ export async function resolveJiraWorkItem(
     activeSiteId: string | null
   }>('jira.status', null)
   const all = status.result?.sites ?? []
-  // A URL pins its own site; a bare key uses the active one.
-  const site = input.origin
-    ? all.find((candidate) => candidate.siteUrl.toLowerCase().startsWith(input.origin!))
-    : (all.find((candidate) => candidate.id === status.result?.activeSiteId) ?? all[0])
+  // A URL pins its own site; a bare key uses the active one. Matching goes
+  // through the shared helper rather than a prefix test: origin has to be equal,
+  // not a prefix (a look-alike host would pass), and Jira Server instances can
+  // share a host while differing only in their path.
+  const site = input.parsed
+    ? getMatchingJiraSites(input.parsed, all)[0]
+    : resolveActiveJiraSite(all, status.result?.activeSiteId ?? null)
   if (!site) {
     throw new RuntimeClientError(
       'invalid_argument',
-      input.origin
-        ? `No connected Jira site matches ${input.origin}. Connect it first, or pass a bare issue key to use the active site.`
+      input.parsed
+        ? `No connected Jira site matches ${input.parsed.origin}. Connect it first, or pass a bare issue key to use the active site.`
         : 'No Jira site is connected. Connect one in Settings before linking an issue.'
     )
   }
@@ -125,4 +133,28 @@ export async function resolveJiraWorkItem(
       jiraIdentifier: issue.key
     }
   }
+}
+
+/**
+ * Picks the site a bare issue key resolves against.
+ *
+ * Falling back to the first site is only safe when it is the only one: with
+ * several connected, the same key can exist on more than one, and silently
+ * guessing would link the wrong ticket.
+ */
+function resolveActiveJiraSite(
+  sites: readonly JiraSite[],
+  activeSiteId: string | null
+): JiraSite | undefined {
+  const active = sites.find((candidate) => candidate.id === activeSiteId)
+  if (active) {
+    return active
+  }
+  if (sites.length > 1) {
+    throw new RuntimeClientError(
+      'invalid_argument',
+      'Several Jira sites are connected and none is active. Pass a full Jira issue URL so the site is unambiguous.'
+    )
+  }
+  return sites[0]
 }
