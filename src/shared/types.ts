@@ -377,6 +377,11 @@ export type AttachedReview = {
    *  share a head branch, so it is worth storing rather than re-fetching. */
   baseRef?: string
   title?: string
+  /** Whether the review is still live. Attached reviews are not polled, so this
+   *  is whatever the caller knew when it attached them — without it a merged
+   *  review and an open one render identically, which is the opposite of what
+   *  a stack of destinations is for. */
+  state?: 'open' | 'merged' | 'closed' | 'draft'
 }
 
 export type WorkspaceLinkedItem = {

@@ -85,6 +85,12 @@ function parseReviewJson(value: string): AttachedReview[] {
     if (typeof item.title === 'string' && item.title.trim().length > 0) {
       review.title = item.title.trim()
     }
+    if (typeof item.state === 'string') {
+      const state = item.state.toLowerCase()
+      if (state === 'open' || state === 'merged' || state === 'closed' || state === 'draft') {
+        review.state = state
+      }
+    }
     return review
   })
 }

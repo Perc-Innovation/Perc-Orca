@@ -47,7 +47,7 @@ export function getCardReviewList(
   }
 
   for (const review of attachedReviews ?? []) {
-    push(matchesPrimary(review, primary) ? mergeWithPrimary(review, primary) : { ...review })
+    push(matchesPrimary(review, primary) ? mergeWithPrimary(review, primary) : toRow(review))
   }
 
   // The auto-detected review may not be among the attached ones — nothing
@@ -70,6 +70,12 @@ export function getCardReviewList(
   }
 
   return rows.length > 1 ? { kind: 'list', rows } : { kind: 'single' }
+}
+
+/** El estado que el caller asertó vale como el que Orca consultó: si no, una
+ *  review mergeada y una abierta se ven igual. */
+function toRow(review: AttachedReview): CardReviewRow {
+  return { ...review, ...(review.state ? { state: review.state } : {}) }
 }
 
 function mergeWithPrimary(
