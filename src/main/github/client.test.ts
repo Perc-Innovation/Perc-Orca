@@ -301,7 +301,7 @@ describe('getPRForBranch', () => {
 
     expect(getOwnerRepoMock).toHaveBeenCalledWith('/repo-root', undefined)
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr?.number).toBe(42)
@@ -309,6 +309,49 @@ describe('getPRForBranch', () => {
     expect(pr?.mergeable).toBe('MERGEABLE')
     expect(pr?.prRepo).toEqual({ owner: 'acme', repo: 'widgets' })
     expect(pr?.headRepo).toEqual({ owner: 'acme', repo: 'widgets' })
+  })
+
+  it('prefers the open PR when a branch feeds several', async () => {
+    // Why: a branch shipping to base, stage and a release has several PRs at
+    // once. GitHub returns them newest-first, so taking the first one showed a
+    // closed PR while the live one stayed invisible.
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify([
+        {
+          number: 294,
+          title: 'to development',
+          state: 'closed',
+          html_url: 'u/294',
+          updated_at: '2026-03-28T00:00:00Z',
+          base: { ref: 'development' },
+          head: { ref: 'feature/test' }
+        },
+        {
+          number: 293,
+          title: 'to stage',
+          state: 'closed',
+          html_url: 'u/293',
+          updated_at: '2026-03-28T00:00:00Z',
+          base: { ref: 'stage' },
+          head: { ref: 'feature/test' }
+        },
+        {
+          number: 292,
+          title: 'to release',
+          state: 'open',
+          html_url: 'u/292',
+          updated_at: '2026-03-28T00:00:00Z',
+          base: { ref: 'RELEASE/v1.14.0' },
+          head: { ref: 'feature/test' }
+        }
+      ])
+    })
+
+    const pr = await getPRForBranch('/repo-root', 'refs/heads/feature/test')
+
+    expect(pr?.number).toBe(292)
+    expect(pr?.state).toBe('open')
   })
 
   it('resolves fork PRs from the upstream PR repo with the origin head owner', async () => {
@@ -338,7 +381,7 @@ describe('getPRForBranch', () => {
     const pr = await getPRForBranch('/repo-root', 'feature/test')
 
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
-      ['api', 'repos/stablyai/orca/pulls?head=fork%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/stablyai/orca/pulls?head=fork%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr).toMatchObject({
@@ -719,7 +762,7 @@ describe('getPRForBranch', () => {
 
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       1,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr).toMatchObject({
@@ -1264,7 +1307,7 @@ describe('getPRForBranch', () => {
     expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(2)
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       1,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr).toMatchObject({ number: 43, title: 'Hydrated branch PR wins' })
@@ -1295,7 +1338,7 @@ describe('getPRForBranch', () => {
 
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       1,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
@@ -1349,7 +1392,7 @@ describe('getPRForBranch', () => {
     )
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       2,
-      ['api', 'repos/stablyai/orca/pulls?head=stablyai%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/stablyai/orca/pulls?head=stablyai%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
   })
@@ -1877,12 +1920,12 @@ describe('getPRForBranch', () => {
     )
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       1,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Alocal-created-from-pr&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Alocal-created-from-pr&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       2,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Acontributor%2Foriginal&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Acontributor%2Foriginal&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
@@ -2570,7 +2613,7 @@ describe('getPRForBranch', () => {
       3,
       [
         'api',
-        'repos/stablyai/orca/pulls?head=fork-owner%3Acontributor%2Foriginal&state=all&per_page=1'
+        'repos/stablyai/orca/pulls?head=fork-owner%3Acontributor%2Foriginal&state=all&per_page=30'
       ],
       { cwd: '/repo-root' }
     )
@@ -2640,7 +2683,7 @@ describe('getPRForBranch', () => {
       3,
       [
         'api',
-        'repos/stablyai/orca/pulls?head=brennanb2025%3Abrennanb2025%2Fworktree-remove-fix&state=all&per_page=1'
+        'repos/stablyai/orca/pulls?head=brennanb2025%3Abrennanb2025%2Fworktree-remove-fix&state=all&per_page=30'
       ],
       { cwd: '/repo-root' }
     )
@@ -2668,7 +2711,7 @@ describe('getPRForBranch', () => {
     expect(getOwnerRepoForRemoteMock).toHaveBeenCalledWith('/repo-root', 'origin', undefined)
     expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Fno-pr&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Fno-pr&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
   })
@@ -2715,7 +2758,7 @@ describe('getPRForBranch', () => {
     expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       2,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Acontributor%2Foriginal&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Acontributor%2Foriginal&state=all&per_page=30'],
       {}
     )
     expect(pr).toMatchObject({ number: 78, title: 'SSH upstream branch PR' })
@@ -2761,7 +2804,10 @@ describe('getPRForBranch', () => {
     expect(getOwnerRepoForRemoteMock).toHaveBeenCalledWith('/remote/repo-root', 'fork', 'ssh-1')
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       3,
-      ['api', 'repos/stablyai/orca/pulls?head=fork-owner%3Acontributor%2Ffix&state=all&per_page=1'],
+      [
+        'api',
+        'repos/stablyai/orca/pulls?head=fork-owner%3Acontributor%2Ffix&state=all&per_page=30'
+      ],
       {}
     )
     expect(pr).toMatchObject({

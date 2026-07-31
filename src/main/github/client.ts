@@ -2368,14 +2368,57 @@ async function getRestPRForBranch(
   branchName: string,
   ghOptions: ReturnType<typeof ghRepoExecOptions>
 ): Promise<PullRequestLookupData | null> {
+  const list = await getRestPRsForBranch(prRepo, headOwner, branchName, ghOptions)
+  const pr = pickPrimaryPRForBranch(list)
+  return pr ? mapRestPullRequest(pr) : null
+}
+
+/**
+ * Todos los PRs abiertos desde una rama.
+ *
+ * Una rama puede alimentar más de un PR a la vez —el mismo trabajo hacia la
+ * base del repo, hacia stage y hacia una release—, así que pedir uno solo no
+ * era una simplificación: hacía que el PR vivo quedara escondido detrás de uno
+ * cerrado más nuevo.
+ *
+ * El tope es alto porque una rama de larga vida acumula PRs cerrados, pero
+ * acotado: sin él, una rama con cientos de reintentos paginaría sin control.
+ */
+const MAX_BRANCH_PRS = 30
+
+async function getRestPRsForBranch(
+  prRepo: GitHubApiRepository,
+  headOwner: string,
+  branchName: string,
+  ghOptions: ReturnType<typeof ghRepoExecOptions>
+): Promise<RestPullRequest[]> {
   const head = encodeURIComponent(`${headOwner}:${branchName}`)
   const { stdout } = await ghExecFileAsync(
-    ['api', `repos/${prRepo.owner}/${prRepo.repo}/pulls?head=${head}&state=all&per_page=1`],
+    [
+      'api',
+      `repos/${prRepo.owner}/${prRepo.repo}/pulls?head=${head}&state=all&per_page=${MAX_BRANCH_PRS}`
+    ],
     { ...ghOptions, ...githubHostExecOptions(prRepo) }
   )
-  const list = JSON.parse(stdout) as RestPullRequest[]
-  const pr = list[0]
-  return pr ? mapRestPullRequest(pr) : null
+  return JSON.parse(stdout) as RestPullRequest[]
+}
+
+/**
+ * Cuál de los PRs de una rama representa a esa rama.
+ *
+ * GitHub los devuelve por número descendente, así que quedarse con el primero
+ * elige el más nuevo aunque esté cerrado. Lo que el usuario mira es lo que
+ * todavía puede actuar: gana el abierto, después el mergeado, y solo si no hay
+ * nada vivo el más reciente.
+ *
+ * Elegir el mergeado no lo hace visible por sí solo: `hideMergedImplicitPR`
+ * decide después si un lookup implícito puede mostrarlo. Acá solo se elige cuál
+ * de los PRs de la rama la representa.
+ */
+function pickPrimaryPRForBranch(list: readonly RestPullRequest[]): RestPullRequest | undefined {
+  return (
+    list.find((pr) => pr.state === 'open') ?? list.find((pr) => Boolean(pr.merged_at)) ?? list[0]
+  )
 }
 
 async function getFallbackPRListForBranch(
