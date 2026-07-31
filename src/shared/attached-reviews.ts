@@ -13,6 +13,7 @@ const PROVIDER_SET = new Set<string>(PROVIDERS)
  *  this is possible, but a persisted list longer than it is damaged data. */
 const MAX_ATTACHED_REVIEWS = 50
 const MAX_TITLE_LENGTH = 200
+const STATES = new Set(['open', 'merged', 'closed', 'draft'])
 
 /**
  * Normalizes the persisted attached-review list.
@@ -64,6 +65,9 @@ export function normalizeAttachedReviews(value: unknown): AttachedReview[] {
     }
     if (typeof item.title === 'string' && item.title.trim().length > 0) {
       review.title = item.title.trim().slice(0, MAX_TITLE_LENGTH)
+    }
+    if (typeof item.state === 'string' && STATES.has(item.state)) {
+      review.state = item.state as AttachedReview['state']
     }
     out.push(review)
   }

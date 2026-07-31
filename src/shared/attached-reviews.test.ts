@@ -62,6 +62,15 @@ describe('normalizeAttachedReviews', () => {
     )
     expect(normalizeAttachedReviews(many).length).toBeLessThanOrEqual(50)
   })
+
+  it('keeps a known state and drops one it does not recognize', () => {
+    // Why: without state a merged review and an open one render identically,
+    // which defeats the point of showing the whole trail of destinations.
+    expect(normalizeAttachedReviews([review({ state: 'merged' })])[0]).toMatchObject({
+      state: 'merged'
+    })
+    expect(normalizeAttachedReviews([{ ...review(), state: 'in-review' }])[0].state).toBeUndefined()
+  })
 })
 
 describe('addAttachedReview', () => {
