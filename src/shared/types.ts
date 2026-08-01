@@ -1,4 +1,5 @@
 /* eslint-disable max-lines */
+import type { HostedReviewSibling } from './hosted-review'
 import type { ExecutionHostId } from './execution-host'
 import type { RemovedSshTargetTombstone, SshRemotePtyLease, SshTarget } from './ssh-types'
 import type { Automation, AutomationExecutionTargetType, AutomationRun } from './automations-types'
@@ -1294,6 +1295,9 @@ export type PRInfo = {
   prRepo?: GitHubRepositoryIdentity
   headRepo?: GitHubRepositoryIdentity
   conflictSummary?: PRConflictSummary
+  /** Los otros PRs que alimenta la misma rama. Solo lo llena el lookup REST por
+   *  rama; un lookup por número exacto no sabe de hermanos. */
+  siblings?: HostedReviewSibling[]
 }
 
 /**
