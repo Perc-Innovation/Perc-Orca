@@ -1,4 +1,5 @@
 /* eslint-disable max-lines */
+import type { HostedReviewSibling } from './hosted-review'
 import type { ExecutionHostId } from './execution-host'
 import type { LinearIssueViewResumeState } from './linear-issue-view-resume-state'
 import type {
@@ -1313,6 +1314,9 @@ export type PRInfo = {
   prRepo?: GitHubRepositoryIdentity
   headRepo?: GitHubRepositoryIdentity
   conflictSummary?: PRConflictSummary
+  /** Los otros PRs que alimenta la misma rama. Solo lo llena el lookup REST por
+   *  rama; un lookup por número exacto no sabe de hermanos. */
+  siblings?: HostedReviewSibling[]
 }
 
 /**
