@@ -70,6 +70,10 @@ export function getCardReviewList(
       provider: primary.provider,
       number: primary.number,
       url: primary.url,
+      // El principal es el único que Orca poll-ea, pero sin su destino queda
+      // como la única fila que no dice a dónde va — justo lo que distingue una
+      // review de otra de la misma rama.
+      ...('baseRefName' in primary && primary.baseRefName ? { baseRef: primary.baseRefName } : {}),
       ...(primary.title ? { title: primary.title } : {}),
       ...(primary.state ? { state: primary.state } : {}),
       ...(primary.status ? { status: primary.status } : {})
