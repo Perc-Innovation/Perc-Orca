@@ -4385,7 +4385,9 @@ export class Store {
       projectGroupId: group.id,
       name: normalizeFolderWorkspaceName(input.name, `${group.name} workspace`),
       folderPath,
-      connectionId: input.connectionId ?? group.connectionId ?? null,
+      // Why: undefined inherits the group connection; an explicit null pins the workspace to local.
+      connectionId:
+        input.connectionId === undefined ? (group.connectionId ?? null) : input.connectionId,
       linkedTask,
       linkedTaskSourceContext: isWorkspaceLinkedItemSourceContextMatch(linkedTask, sourceContext)
         ? sourceContext

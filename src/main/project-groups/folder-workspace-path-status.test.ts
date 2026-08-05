@@ -186,6 +186,18 @@ describe('folder workspace path status', () => {
     ).toEqual({ kind: 'ssh', connectionId: 'ssh-1' })
   })
 
+  it('pins an explicit null connection to local even with remote repos in scope', () => {
+    expect(
+      inferFolderWorkspacePathConnection({
+        folderPath: '/workspace/platform',
+        projectGroupId: 'group-1',
+        connectionId: null,
+        projectGroups: [makeGroup({ connectionId: 'ssh-1' })],
+        repos: [makeRepo({ connectionId: 'ssh-1' })]
+      })
+    ).toEqual({ kind: 'local' })
+  })
+
   it('trusts an explicit SSH connection inside a local-repo project group', () => {
     expect(
       inferFolderWorkspacePathConnection({

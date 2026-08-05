@@ -61,9 +61,13 @@ export function inferFolderWorkspacePathConnection(args: {
 }): FolderWorkspacePathConnectionResolution {
   // Why: an explicit connection is already the routing decision; a workspace may
   // target one host while sibling repos in its group live on another (or locally).
-  // Inference — and its ambiguity — only applies when no connection was chosen.
+  // Inference — and its ambiguity — only applies when no connection was chosen
+  // (undefined). An explicit null pins the scope to local the same way.
   if (args.connectionId) {
     return { kind: 'ssh', connectionId: args.connectionId }
+  }
+  if (args.connectionId === null) {
+    return { kind: 'local' }
   }
   const candidateRepos = getFolderScopeCandidateRepos(args)
   let hasLocalRepo = false
@@ -154,7 +158,8 @@ export function resolveFolderWorkspaceStatusPath(args: {
     return {
       folderPath: group.parentPath,
       projectGroupId: group.id,
-      connectionId: group.connectionId ?? null
+      // Why: a group's missing connection is "infer", never "explicitly local".
+      connectionId: group.connectionId ?? undefined
     }
   }
 
@@ -162,7 +167,7 @@ export function resolveFolderWorkspaceStatusPath(args: {
     return {
       folderPath: request.path,
       projectGroupId: null,
-      connectionId: request.connectionId ?? null
+      connectionId: request.connectionId
     }
   }
 
@@ -178,7 +183,11 @@ export function resolveFolderWorkspaceStatusPath(args: {
   return {
     folderPath: workspace.folderPath,
     projectGroupId: workspace.projectGroupId,
-    connectionId: workspace.connectionId ?? group?.connectionId ?? null
+    // Why: a stored null is an explicit local pin; only a missing field falls back to the group.
+    connectionId:
+      workspace.connectionId !== undefined
+        ? workspace.connectionId
+        : (group?.connectionId ?? undefined)
   }
 }
 
