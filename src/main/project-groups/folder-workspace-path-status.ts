@@ -26,7 +26,6 @@ type FolderWorkspacePathStatusDeps = {
 function getFolderScopeCandidateRepos(args: {
   folderPath: string
   projectGroupId?: string | null
-  connectionId?: string | null
   projectGroups: readonly ProjectGroup[]
   repos: readonly Repo[]
 }): Repo[] {
@@ -43,12 +42,6 @@ function getFolderScopeCandidateRepos(args: {
       !(groupIds && typeof repo.projectGroupId === 'string' && groupIds.has(repo.projectGroupId)) &&
       isPathInsideOrEqual(args.folderPath, repo.path)
   )
-  if (args.connectionId) {
-    return [
-      ...groupRepos,
-      ...pathRepos.filter((repo) => (repo.connectionId ?? null) === args.connectionId)
-    ]
-  }
   if (groupRepos.length === 0) {
     return pathRepos
   }
@@ -66,6 +59,12 @@ export function inferFolderWorkspacePathConnection(args: {
   projectGroups: readonly ProjectGroup[]
   repos: readonly Repo[]
 }): FolderWorkspacePathConnectionResolution {
+  // Why: an explicit connection is already the routing decision; a workspace may
+  // target one host while sibling repos in its group live on another (or locally).
+  // Inference — and its ambiguity — only applies when no connection was chosen.
+  if (args.connectionId) {
+    return { kind: 'ssh', connectionId: args.connectionId }
+  }
   const candidateRepos = getFolderScopeCandidateRepos(args)
   let hasLocalRepo = false
   const connectionIds = new Set<string>()
@@ -75,15 +74,6 @@ export function inferFolderWorkspacePathConnection(args: {
     } else {
       hasLocalRepo = true
     }
-  }
-  if (args.connectionId) {
-    const hasDifferentSshConnection = [...connectionIds].some(
-      (connectionId) => connectionId !== args.connectionId
-    )
-    if (hasLocalRepo || hasDifferentSshConnection) {
-      return { kind: 'ambiguous' }
-    }
-    return { kind: 'ssh', connectionId: args.connectionId }
   }
   if (hasLocalRepo && connectionIds.size > 0) {
     return { kind: 'ambiguous' }
