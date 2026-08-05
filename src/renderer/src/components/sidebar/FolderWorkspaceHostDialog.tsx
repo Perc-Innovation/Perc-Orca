@@ -26,6 +26,7 @@ import type { ProjectGroup } from '../../../../shared/types'
 
 const LOCAL_HOST_VALUE = 'local'
 const PATH_CHECK_DEBOUNCE_MS = 400
+const DEFAULT_WORKSPACE_NAME = 'Terminals'
 
 type FolderWorkspaceHostDialogProps = {
   open: boolean
@@ -52,7 +53,7 @@ export function FolderWorkspaceHostDialog({
         fetchPathStatus: s.fetchFolderWorkspacePathStatus
       }))
     )
-  const [name, setName] = useState('')
+  const [name, setName] = useState(DEFAULT_WORKSPACE_NAME)
   // Why: seed from props in the initializers too — the reseed branch below only
   // fires on open/group transitions, never on the very first render.
   const [hostValue, setHostValue] = useState<string>(projectGroup?.connectionId ?? LOCAL_HOST_VALUE)
@@ -69,7 +70,7 @@ export function FolderWorkspaceHostDialog({
   if (open !== previousOpenState.open || projectGroup?.id !== previousOpenState.groupId) {
     setPreviousOpenState({ open, groupId: projectGroup?.id })
     if (open) {
-      setName('')
+      setName(DEFAULT_WORKSPACE_NAME)
       setHostValue(projectGroup?.connectionId ?? LOCAL_HOST_VALUE)
       setPath(projectGroup?.parentPath ?? '')
       setPathStatus(null)
@@ -189,10 +190,7 @@ export function FolderWorkspaceHostDialog({
               value={name}
               autoFocus
               onChange={(event) => setName(event.target.value)}
-              placeholder={translate(
-                'auto.components.sidebar.FolderWorkspaceHostDialog.namePlaceholder',
-                'e.g. Raspi · Terminal'
-              )}
+              placeholder={DEFAULT_WORKSPACE_NAME}
             />
           </div>
           <div className="space-y-1.5">

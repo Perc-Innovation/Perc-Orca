@@ -76,11 +76,30 @@ describe('FolderWorkspaceHostDialog', () => {
     )
   })
 
+  it('defaults the name to Terminals so create needs no typing', async () => {
+    const onOpenChange = vi.fn()
+    render(
+      <FolderWorkspaceHostDialog open projectGroup={makeGroup()} onOpenChange={onOpenChange} />
+    )
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Terminals')
+    const submit = screen.getByRole('button', { name: 'Create workspace' })
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false), {
+      timeout: 2_000
+    })
+    await userEvent.click(submit)
+    await waitFor(() => {
+      expect(storeMocks.state.createFolderWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Terminals' })
+      )
+    })
+  })
+
   it('creates with an explicit local pin and closes on success', async () => {
     const onOpenChange = vi.fn()
     render(
       <FolderWorkspaceHostDialog open projectGroup={makeGroup()} onOpenChange={onOpenChange} />
     )
+    await userEvent.clear(screen.getByLabelText('Name'))
     await userEvent.type(screen.getByLabelText('Name'), 'Mac terminal')
     const submit = screen.getByRole('button', { name: 'Create workspace' })
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false), {
@@ -107,7 +126,6 @@ describe('FolderWorkspaceHostDialog', () => {
         reason: 'missing'
       }))
     render(<FolderWorkspaceHostDialog open projectGroup={makeGroup()} onOpenChange={vi.fn()} />)
-    await userEvent.type(screen.getByLabelText('Name'), 'Terminal')
     await waitFor(() => expect(screen.getByText('Folder not found')).toBeTruthy(), {
       timeout: 2_000
     })
