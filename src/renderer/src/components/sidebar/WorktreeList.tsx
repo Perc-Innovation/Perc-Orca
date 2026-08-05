@@ -237,6 +237,7 @@ import type { PendingSidebarRowReveal, PendingSidebarWorktreeReveal } from '@/st
 import { getRepositoryIconSectionId } from '@/components/settings/repository-settings-targets'
 import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import { ProjectGroupNameDialog } from './ProjectGroupNameDialog'
+import { FolderWorkspaceHostDialog } from './FolderWorkspaceHostDialog'
 import { ProjectGroupDeleteDialog } from './ProjectGroupDeleteDialog'
 import { selectProjectGroupRemovalTargets } from '@/store/slices/project-group-removal-targets'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
@@ -660,6 +661,7 @@ type VirtualizedWorktreeViewportProps = {
   handleRenameProjectGroup: (groupId: string, currentName: string) => void
   handleDeleteProjectGroup: (groupId: string, groupName: string) => void
   handleCreateFolderWorkspace: (projectGroup: ProjectGroup) => void
+  handleCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
   activeModal: string
   pendingRevealWorktree: PendingSidebarWorktreeReveal | null
   pendingRevealSidebarRow: PendingSidebarRowReveal | null
@@ -1327,6 +1329,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   handleRenameProjectGroup,
   handleDeleteProjectGroup,
   handleCreateFolderWorkspace,
+  handleCreateFolderWorkspaceOnHost,
   activeModal,
   pendingRevealWorktree,
   pendingRevealSidebarRow,
@@ -4437,6 +4440,18 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               )}
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              onSelect={() => {
+                                if (row.projectGroup && row.projectGroup.id !== null) {
+                                  handleCreateFolderWorkspaceOnHost(row.projectGroup)
+                                }
+                              }}
+                            >
+                              {translate(
+                                'auto.components.sidebar.WorktreeList.newFolderWorkspaceOnHost',
+                                'New folder workspace on host...'
+                              )}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               variant="destructive"
                               onSelect={() => {
                                 if (row.projectGroup?.id) {
@@ -6309,6 +6324,12 @@ const WorktreeList = React.memo(function WorktreeList({
     [openModal]
   )
 
+  const [folderWorkspaceHostDialogGroup, setFolderWorkspaceHostDialogGroup] =
+    useState<ProjectGroup | null>(null)
+  const handleCreateFolderWorkspaceOnHost = useCallback((projectGroup: ProjectGroup) => {
+    setFolderWorkspaceHostDialogGroup(projectGroup)
+  }, [])
+
   const moveWorktreeToStatus = useCallback(
     (worktreeId: string, status: WorkspaceStatus) => {
       const current = worktreeMap.get(worktreeId)
@@ -6680,6 +6701,15 @@ const WorktreeList = React.memo(function WorktreeList({
 
   return (
     <>
+      <FolderWorkspaceHostDialog
+        open={folderWorkspaceHostDialogGroup !== null}
+        projectGroup={folderWorkspaceHostDialogGroup}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setFolderWorkspaceHostDialogGroup(null)
+          }
+        }}
+      />
       <ProjectGroupNameDialog
         open={projectGroupNameDialog !== null}
         title={
@@ -6790,6 +6820,7 @@ const WorktreeList = React.memo(function WorktreeList({
         handleRenameProjectGroup={handleRenameProjectGroup}
         handleDeleteProjectGroup={handleDeleteProjectGroup}
         handleCreateFolderWorkspace={handleCreateFolderWorkspace}
+        handleCreateFolderWorkspaceOnHost={handleCreateFolderWorkspaceOnHost}
         activeModal={activeModal}
         pendingRevealWorktree={pendingRevealWorktree}
         pendingRevealSidebarRow={pendingRevealSidebarRow}

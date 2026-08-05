@@ -4575,7 +4575,8 @@
         },
         "WorktreeCardReviewDetailSection": {
           "copyLink": "Copy link",
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "reviewListHeader": "{{value0}} reviews"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "Workspace metadata",
@@ -4713,7 +4714,8 @@
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
           "failedNestWorkspace": "Failed to nest workspace",
           "sidebarRowMissing": "Target no longer exists",
-          "failedUnnestWorkspace": "Failed to unnest workspace"
+          "failedUnnestWorkspace": "Failed to unnest workspace",
+          "newFolderWorkspaceOnHost": "New folder workspace on host..."
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",
@@ -5230,6 +5232,22 @@
           "connectName": "Connect to SSH host {{value0}}",
           "authFailedTooltip": "{{value0}} · authentication failed",
           "failedTooltip": "{{value0}} · connection failed"
+        },
+        "FolderWorkspaceHostDialog": {
+          "title": "New folder workspace",
+          "description": "Open terminals in a folder of {{value0}} on the host you choose.",
+          "nameLabel": "Name",
+          "namePlaceholder": "e.g. Raspi · Terminal",
+          "hostLabel": "Host",
+          "localHost": "This computer",
+          "disconnectedHost": "{{value0}} (disconnected)",
+          "connectHint": "Connect this host to verify the folder and create the workspace.",
+          "pathLabel": "Folder path",
+          "pathPlaceholder": "/path/to/folder/on/host",
+          "checkingPath": "Checking folder…",
+          "cancel": "Cancel",
+          "creating": "Creating…",
+          "create": "Create workspace"
         }
       },
       "shared": {
