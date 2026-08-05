@@ -31,6 +31,10 @@ export {
   formatProjectList
 } from './project-format'
 export {
+  formatFolderWorkspaceCreateResult,
+  formatFolderWorkspaceList
+} from './folder-workspace-format'
+export {
   formatTerminalClose,
   formatTerminalCreate,
   formatTerminalFocus,
