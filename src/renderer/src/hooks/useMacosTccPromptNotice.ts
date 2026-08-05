@@ -42,12 +42,12 @@ export function useMacosTccPromptNotice(): void {
       toast.warning(
         translate(
           'auto.hooks.useMacosTccPromptNotice.title',
-          'Seeing “Orca would like to access…”?'
+          'Seeing “Orca would like to access…” prompts?'
         ),
         {
           description: translate(
             'auto.hooks.useMacosTccPromptNotice.description',
-            'That macOS message appears when an agent or terminal tool accesses protected files. macOS names Orca because Orca launched the tool. Grant Full Disk Access to Orca and Orca Helper to reduce future prompts.'
+            'Permission messages from macOS may appear when an agent or terminal tool running in Orca attempts to access protected files. Grant Full Disk Access in Settings to reduce these prompts.'
           ),
           duration: Infinity,
           onDismiss: acknowledge,

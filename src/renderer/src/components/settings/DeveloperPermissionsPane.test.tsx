@@ -45,7 +45,8 @@ it('highlights the Full Disk Access row for a targeted Settings navigation', asy
     `[data-settings-section="${FULL_DISK_ACCESS_SETTINGS_TARGET_ID}"]`
   )
   expect(row?.dataset.highlighted).toBe('true')
-  expect(row?.className).toContain('data-[highlighted=true]:ring-annotation-highlight/60')
+  expect(row?.className).toContain('data-[highlighted=true]:bg-accent')
+  expect(row?.className).toContain('data-[highlighted=true]:ring-ring/50')
 
   await act(async () => root.render(<DeveloperPermissionsPane />))
   expect(row?.dataset.highlighted).toBeUndefined()

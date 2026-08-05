@@ -113,10 +113,10 @@ it('connects the notice to the macOS prompt and keeps it open until closed', asy
   showNotice?.({ promptCount: 1 }, acknowledge)
 
   expect(toastWarning).toHaveBeenCalledWith(
-    'Seeing “Orca would like to access…”?',
+    'Seeing “Orca would like to access…” prompts?',
     expect.objectContaining({
       description:
-        'That macOS message appears when an agent or terminal tool accesses protected files. macOS names Orca because Orca launched the tool. Grant Full Disk Access to Orca and Orca Helper to reduce future prompts.'
+        'Permission messages from macOS may appear when an agent or terminal tool running in Orca attempts to access protected files. Grant Full Disk Access in Settings to reduce these prompts.'
     })
   )
   const options = toastWarning.mock.calls[0]?.[1] as

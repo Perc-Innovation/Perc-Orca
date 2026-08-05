@@ -206,6 +206,8 @@ export const electronViteConfig: UserConfig = {
         external: isExternalMainModule,
         input: {
           index: resolve('src/main/index.ts'),
+          // Why: sandboxed webview preloads cannot load Rollup helper chunks.
+          'browser-window-close-preload': resolve('src/preload/browser-window-close.ts'),
           'daemon-entry': resolve('src/main/daemon/daemon-entry.ts'),
           'plugin-host-entry': resolve('src/main/plugins/plugin-host-entry.ts'),
           'computer-sidecar': resolve('src/main/computer/sidecar-entry.ts'),
@@ -213,6 +215,11 @@ export const electronViteConfig: UserConfig = {
           'warp-theme-parser-worker': resolve('src/main/warp-themes/warp-theme-parser-worker.ts'),
           'session-scanner-opencode-sqlite-worker-entry': resolve(
             'src/main/ai-vault/session-scanner-opencode-sqlite-worker-entry.ts'
+          ),
+          // Why: libuv spawns processes inline on the calling loop, so the port
+          // scan's probe commands run on a worker thread instead of the UI one.
+          'port-scan-command-worker-entry': resolve(
+            'src/main/ports/port-scan-command-worker-entry.ts'
           ),
           // Why: forked with ELECTRON_RUN_AS_NODE so @parcel/watcher faults
           // can't take down the main process (issue #7547).
