@@ -116,6 +116,10 @@ module.exports = {
     '!Casks{,/**/*}',
     '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md,ORCHESTRATION_IMPLEMENTATION_CHECKLIST.md,ORCHESTRATION_STRUCTURED_OUTPUT_DESIGN.md}',
     '!out/**/*.test.js',
+    // Why: `pnpm dev` stages a full dev Electron.app under out/electron-dev/<hash>/
+    // (~275 MB). It is gitignored and has no runtime consumer, but packaging after a
+    // dev run otherwise buries a second Electron copy inside app.asar.
+    '!out/electron-dev{,/**/*}',
     // Why: Vite's manifest is only used to project the paired web client.
     '!out/renderer/.vite{,/**/*}',
     '!electron.vite.config.{js,ts,mjs,cjs}',
