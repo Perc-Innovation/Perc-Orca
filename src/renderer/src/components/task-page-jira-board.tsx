@@ -114,7 +114,10 @@ export function TaskPageJiraBoard({
   }
 
   return (
-    <div className="grid min-w-0 gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+    // Why: kanban lanes sit on one horizontal row — Jira boards commonly have
+    // more columns than fit the panel, so the board scrolls sideways instead
+    // of wrapping columns into a grid.
+    <div className="flex min-w-0 items-start gap-3 overflow-x-auto p-3 scrollbar-sleek">
       {sections.map((section) => {
         const sectionTone = section.issues[0]
           ? getStatusTone(section.issues[0].status.categoryKey)
@@ -125,7 +128,7 @@ export function TaskPageJiraBoard({
             onDragOver={(event) => handleSectionDragOver(section, event)}
             onDrop={(event) => handleSectionDrop(section, event)}
             className={cn(
-              'min-h-0 rounded-md border border-border/50 bg-muted/20 transition-[border-color,box-shadow]',
+              'w-72 shrink-0 rounded-md border border-border/50 bg-muted/20 transition-[border-color,box-shadow]',
               dragOverSectionKey === section.key && 'border-ring/70 ring-1 ring-ring/70'
             )}
           >

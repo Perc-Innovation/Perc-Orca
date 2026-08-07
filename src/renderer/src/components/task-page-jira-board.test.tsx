@@ -62,6 +62,12 @@ describe('TaskPageJiraBoard', () => {
     expect((markup.match(/draggable="true"/g) ?? []).length).toBe(3)
   })
 
+  it('lays lanes out on one horizontally scrollable row', () => {
+    const markup = renderBoard([issue('STA-1', todo), issue('STA-2', done)])
+    expect(markup).toContain('overflow-x-auto')
+    expect((markup.match(/w-72 shrink-0/g) ?? []).length).toBe(2)
+  })
+
   it('orders columns by the project board status order', () => {
     const markup = renderBoard([issue('STA-1', todo), issue('STA-2', done)], {
       statusIdsByColumn: [['3'], ['1']]
