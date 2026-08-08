@@ -119,7 +119,17 @@ import {
   createSetupCompletionScanner
 } from './orchestration/setup-completion-signal'
 import type { RuntimeOrchestrationEnvelope } from '../../shared/runtime-rpc-envelope'
+import type {
+  ArtifactCloudOperation,
+  ArtifactCloudOptions,
+  ArtifactListOptions,
+  ArtifactListPage,
+  ArtifactListItem,
+  ArtifactWriteRequest
+} from '../../shared/artifacts'
+import type { ArtifactCloudService } from '../artifacts/artifact-cloud-service'
 import { ORCHESTRATION_MESSAGE_WAIT_DEFAULT_TIMEOUT_MS } from '../../shared/orchestration-message-wait-timeout'
+import { shouldForwardHeadlessTerminalQueryReply } from './headless-terminal-query-reply-policy'
 import type { TerminalRevealIdentity } from '../../shared/terminal-reveal-identity'
 import type {
   OrchestrationCompatibilityEvidence,
@@ -477,7 +487,12 @@ import {
   configureAiVaultSessionSources,
   listAiVaultSessions
 } from '../ai-vault/cached-session-list'
-import type { AiVaultListArgs, AiVaultListResult } from '../../shared/ai-vault-types'
+import {
+  readAiVaultSessionIdentity,
+  resolveAiVaultSessionLiveness
+} from '../ai-vault/session-liveness'
+import type { AiVaultAgent, AiVaultListArgs, AiVaultListResult } from '../../shared/ai-vault-types'
+import type { AiVaultSessionLiveness } from '../../shared/ai-vault-session-deletion'
 import type {
   AiVaultPrepareSessionResumeArgs,
   AiVaultPrepareSessionResumeResult
@@ -3344,6 +3359,7 @@ export class OrcaRuntimeService {
   private accountServices: RuntimeAccountServices | null = null
   private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private automationService: AutomationService | null = null
+  private artifactService: ArtifactCloudService | null = null
   private readonly claudeAgentTeams = new ClaudeAgentTeamsService()
   private mobileDictation: {
     id: string
@@ -4612,6 +4628,39 @@ export class OrcaRuntimeService {
     this.automationService = service
   }
 
+  setArtifactService(service: ArtifactCloudService): void {
+    this.artifactService = service
+  }
+
+  listArtifacts(options: ArtifactListOptions): Promise<ArtifactCloudOperation<ArtifactListPage>> {
+    return this.requireArtifactService().list(options)
+  }
+
+  shareArtifact(request: ArtifactWriteRequest): Promise<ArtifactCloudOperation<ArtifactListItem>> {
+    return this.requireArtifactService().share(request)
+  }
+
+  updateArtifact(request: ArtifactWriteRequest): Promise<ArtifactCloudOperation<ArtifactListItem>> {
+    return this.requireArtifactService().update(request)
+  }
+
+  unshareArtifact(
+    request: ArtifactCloudOptions & { sourceKey: string }
+  ): Promise<ArtifactCloudOperation<void>> {
+    return this.requireArtifactService().unshare(request)
+  }
+
+  deleteArtifact(id: string, options: ArtifactCloudOptions): Promise<ArtifactCloudOperation<void>> {
+    return this.requireArtifactService().delete(id, options)
+  }
+
+  private requireArtifactService(): ArtifactCloudService {
+    if (!this.artifactService) {
+      throw new Error('Artifact service is unavailable.')
+    }
+    return this.artifactService
+  }
+
   getRuntimeId(): string {
     return this.runtimeId
   }
@@ -4910,6 +4959,74 @@ export class OrcaRuntimeService {
   // cache so the desktop panel and the mobile screen never double-scan.
   listAiVaultSessions(args?: AiVaultListArgs): Promise<AiVaultListResult> {
     return listAiVaultSessions(args)
+  }
+
+  async getAiVaultSessionLiveness(target: {
+    agent: AiVaultAgent
+    sessionId: string | undefined
+    filePath: string
+  }): Promise<AiVaultSessionLiveness> {
+    const provider = this.getLocalProviderFn?.()
+    if (!provider || !this.getAgentProviderSessionSnapshotFn) {
+      return 'unknown'
+    }
+    const identity = await readAiVaultSessionIdentity(target)
+    if (identity.outcome !== 'found') {
+      return 'unknown'
+    }
+    const deadlineMs = Date.now() + 3_000
+    return await resolveAiVaultSessionLiveness(
+      {
+        agent: target.agent,
+        sessionId: identity.sessionId
+      },
+      {
+        deadlineMs,
+        listProcesses: async () => {
+          const result = await withTimeoutResult(
+            provider.listProcesses({ deadlineMs }),
+            Math.max(1, deadlineMs - Date.now())
+          )
+          if (!result.ok) {
+            throw new Error('agent_session_ownership_unknown')
+          }
+          return result.value
+        },
+        getStatusSnapshot: this.getAgentProviderSessionSnapshotFn,
+        inspectForegroundProcess: async (ptyId) => {
+          const result = await withTimeoutResult(
+            provider.getForegroundProcess(ptyId),
+            Math.max(1, deadlineMs - Date.now())
+          )
+          return result.ok
+            ? { available: true, process: result.value }
+            : { available: false, process: null }
+        },
+        getStatusPtyId: (status) => {
+          if (status.terminalHandle) {
+            const live = this.getLivePtyForHandle(status.terminalHandle)
+            if (live) {
+              return live.pty.ptyId
+            }
+            for (const [ptyId, handle] of this.handleByPtyId) {
+              if (handle === status.terminalHandle) {
+                return ptyId
+              }
+            }
+          }
+          return this.getPtyRecordForPaneKey(status.paneKey)?.ptyId ?? null
+        },
+        getAgentHint: (process) => {
+          const pty = this.ptysById.get(process.id)
+          const runtimeHint = pty?.foregroundAgent ?? pty?.launchAgent
+          if (runtimeHint) {
+            return runtimeHint
+          }
+          const ownerAgents = new Set(process.agentSessionOwners?.map((owner) => owner.claim.agent))
+          return ownerAgents.size === 1 ? ([...ownerAgents][0] ?? null) : null
+        }
+      }
+    )
   }
 
   prepareAiVaultSessionResume(
@@ -9328,7 +9445,12 @@ export class OrcaRuntimeService {
     ptyId: string,
     worktreeId: string,
     connectionId: string | null = null,
-    binding?: { tabId: string; leafId: string; incarnationId?: PtyIncarnationId },
+    binding?: {
+      tabId: string
+      leafId: string
+      incarnationId?: PtyIncarnationId
+      agentLaunchAuthority?: { launchToken: string; launchAgent: TuiAgent }
+    },
     isWsl?: boolean
   ): void {
     this.assertPtyDidNotExitBeforeRegistration(ptyId, binding?.incarnationId)
@@ -9339,7 +9461,7 @@ export class OrcaRuntimeService {
       binding && isValidTerminalTabId(binding.tabId) && isTerminalLeafId(binding.leafId)
         ? makePaneKey(binding.tabId, binding.leafId)
         : null
-    this.recordPtyWorktree(ptyId, worktreeId, {
+    const pty = this.recordPtyWorktree(ptyId, worktreeId, {
       connected: true,
       connectionId,
       ...(binding && this.pendingMobileTerminalCreatesByKey.has(`${worktreeId}::${binding.tabId}`)
@@ -9349,6 +9471,21 @@ export class OrcaRuntimeService {
       ...(binding && paneKey ? { tabId: binding.tabId, paneKey } : {}),
       ...(binding?.incarnationId ? { incarnationId: binding.incarnationId } : {})
     })
+    const agentLaunchAuthority = binding?.agentLaunchAuthority
+    if (
+      agentLaunchAuthority &&
+      paneKey &&
+      binding.incarnationId &&
+      pty.incarnationId === binding.incarnationId &&
+      pty.paneKey === paneKey &&
+      pty.launchToken === null &&
+      agentLaunchAuthority.launchToken.length > 0 &&
+      agentLaunchAuthority.launchToken.length <= 128 &&
+      isTuiAgent(agentLaunchAuthority.launchAgent)
+    ) {
+      pty.launchToken = agentLaunchAuthority.launchToken
+      pty.launchAgent = agentLaunchAuthority.launchAgent
+    }
     const pendingIncarnation = this.pendingPtyRegistrationIncarnations.get(ptyId)
     if (
       pendingIncarnation === null ||
@@ -11361,6 +11498,11 @@ export class OrcaRuntimeService {
         // disposeHeadlessTerminal, and daemon respawns reuse session ids — a
         // stale link's reply must never reach a successor PTY under this id.
         if (state !== null && this.headlessTerminals.get(ptyId) === state) {
+          if (
+            !shouldForwardHeadlessTerminalQueryReply(this.ptysById.get(ptyId)?.launchAgent, reply)
+          ) {
+            return
+          }
           // Why this write is safe pre-shell-ready: daemon Session.write
           // QUEUES (never drops) input while the POSIX shell-ready gate is
           // pending and flushes at the ready marker or the 15s
@@ -12050,7 +12192,8 @@ export class OrcaRuntimeService {
   }
 
   verifyOrchestrationCompatibilityCaller(
-    evidence: OrchestrationCompatibilityEvidence | null | undefined
+    evidence: OrchestrationCompatibilityEvidence | null | undefined,
+    options?: { currentRuntimeLaunchSufficient?: boolean }
   ): OrchestrationCompatibilityCallerAuthority | null {
     const terminalHandle =
       typeof evidence?.terminalHandle === 'string' ? evidence.terminalHandle.trim() : ''
@@ -12090,6 +12233,21 @@ export class OrcaRuntimeService {
       }
       terminalProvenance = 'restored'
     }
+    if (
+      options?.currentRuntimeLaunchSufficient &&
+      terminalProvenance === 'current_runtime' &&
+      claimedPaneKey === terminal.paneKey
+    ) {
+      // Why: the checks above bind a fresh launch to its live PTY, host, and
+      // launch secret. Only an exact live-pane match may skip hook attestation.
+      return this.freezeOrchestrationCompatibilityCallerAuthority(
+        terminal,
+        terminal.processIncarnation,
+        claimedPaneKey,
+        terminalHandle,
+        launchTokenHash
+      )
+    }
     const attestation = this.attestAgentHookCompatibilityAuthorityFn?.({
       paneKey: claimedPaneKey,
       launchTokenHash,
@@ -12099,11 +12257,27 @@ export class OrcaRuntimeService {
     if (!attestation || attestation.paneKey !== terminal.paneKey) {
       return null
     }
+    return this.freezeOrchestrationCompatibilityCallerAuthority(
+      terminal,
+      terminal.processIncarnation,
+      attestation.paneKey,
+      terminalHandle,
+      launchTokenHash
+    )
+  }
+
+  private freezeOrchestrationCompatibilityCallerAuthority(
+    terminal: OrchestrationCompatibilityTerminalAuthority,
+    processIncarnation: string,
+    paneKey: string,
+    terminalHandle: string,
+    launchTokenHash: string
+  ): OrchestrationCompatibilityCallerAuthority {
     return Object.freeze({
       hostScope: Object.freeze({ ...terminal.hostScope }),
-      paneKey: attestation.paneKey,
+      paneKey,
       terminalHandle,
-      processIncarnation: terminal.processIncarnation,
+      processIncarnation,
       launchTokenHash
     })
   }
@@ -27194,18 +27368,9 @@ export class OrcaRuntimeService {
       return { stopped: 0 }
     }
     // Preserve folder-instance suffixes while normalizing cross-platform path spelling.
-    const parsedTarget = splitWorktreeId(worktree.id)
     const ownsWorktree = options.resolvedWorktreeId
-      ? (candidate: string | undefined): boolean => {
-          if (!candidate) {
-            return false
-          }
-          const parsedCandidate = splitWorktreeId(candidate)
-          return parsedCandidate && parsedTarget
-            ? parsedCandidate.repoId === parsedTarget.repoId &&
-                runtimePathsEqual(parsedCandidate.worktreePath, parsedTarget.worktreePath)
-            : candidate === worktree.id
-        }
+      ? (candidate: string | undefined): boolean =>
+          candidate ? runtimeWorktreeIdsEqual(candidate, worktree.id) : false
       : (candidate: string | undefined): boolean => candidate === worktree.id
     const ownsHost = (ptyId: string, connectionId?: string | null): boolean => {
       if (options.resolvedRuntimeEnvironmentId !== undefined) {
@@ -29258,7 +29423,7 @@ export class OrcaRuntimeService {
           : (session.worktreeId ??
             persistedWorktree?.id ??
             inferredWorktreeId ??
-            findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd))
+            findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd, targetWorktreeId))
       const persistedSurface = persistedIndexes.surfaceByPtyId.get(session.id)
       const restoresExactSurface =
         persistedSurface &&
@@ -36896,9 +37061,16 @@ function runtimePathsEqual(left: string, right: string): boolean {
   return normalizeRuntimePathForComparison(left) === normalizeRuntimePathForComparison(right)
 }
 
+/**
+ * Why: runtime identity is per *workspace*, not per checkout dir. Folder projects back
+ * several independent workspaces with one directory, separated only by the
+ * `::workspace:<uuid>` suffix that filesystem callers must strip; stripping it here
+ * instead lets one session steal a sibling's PTYs. Normalize only path spelling, so
+ * Windows/WSL/SSH ids still match themselves across hosts.
+ */
 function runtimeWorktreeIdsEqual(left: string, right: string): boolean {
-  const parsedLeft = splitWorktreeIdForFilesystem(left)
-  const parsedRight = splitWorktreeIdForFilesystem(right)
+  const parsedLeft = splitWorktreeId(left)
+  const parsedRight = splitWorktreeId(right)
   return parsedLeft && parsedRight
     ? parsedLeft.repoId === parsedRight.repoId &&
         runtimePathsEqual(parsedLeft.worktreePath, parsedRight.worktreePath)
@@ -36906,7 +37078,8 @@ function runtimeWorktreeIdsEqual(left: string, right: string): boolean {
 }
 
 function runtimeWorktreeIdentityKey(worktreeId: string): string {
-  const parsed = splitWorktreeIdForFilesystem(worktreeId)
+  // Same suffix rule: this keys PTY refresh, sleep, and mutation-queue state per session.
+  const parsed = splitWorktreeId(worktreeId)
   return parsed
     ? `${parsed.repoId}\0${normalizeRuntimePathForComparison(parsed.worktreePath)}`
     : worktreeId
@@ -37191,7 +37364,8 @@ function includeTargetResolvedWorktree(
 
 function findResolvedWorktreeIdForPath(
   resolvedWorktrees: ResolvedWorktree[],
-  cwd: string
+  cwd: string,
+  targetWorktreeId?: string | null
 ): string | null {
   if (!cwd) {
     return null
@@ -37199,7 +37373,18 @@ function findResolvedWorktreeIdForPath(
   const matches = resolvedWorktrees
     .filter((worktree) => isPathInsideOrEqual(worktree.path, cwd))
     .sort((left, right) => right.path.length - left.path.length)
-  return matches[0]?.id ?? null
+  // Why: a cwd cannot distinguish folder-workspace siblings, which all share one
+  // directory. Break that tie toward the caller's target instead of store order,
+  // so an unattributed PTY still lands in the workspace being listed. Only ties at
+  // the deepest path qualify — a nested worktree must still beat its parent.
+  const deepest = matches.filter((worktree) => worktree.path.length === matches[0]?.path.length)
+  return (
+    (deepest.length > 1
+      ? deepest.find((worktree) => worktree.id === targetWorktreeId)?.id
+      : undefined) ??
+    matches[0]?.id ??
+    null
+  )
 }
 
 function getLeafWorktreeStatus(
