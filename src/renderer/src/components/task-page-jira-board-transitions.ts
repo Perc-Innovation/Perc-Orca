@@ -1,7 +1,7 @@
 import type { JiraIssue, JiraTransition } from '../../../shared/types'
 import { jiraListTransitions, type RuntimeJiraSettings } from '@/runtime/runtime-jira-client'
 import { createMetadataRequestStore, loadMetadata } from '@/hooks/metadata-request-cache'
-import type { TaskPageJiraIssueSection } from './task-page-jira-issue-list'
+import type { TaskPageJiraBoardSection } from './task-page-jira-board-sections'
 
 const jiraIssueTransitionsStore = createMetadataRequestStore<JiraTransition[]>()
 
@@ -28,11 +28,16 @@ export function loadTaskPageJiraIssueTransitions(
 
 export function findJiraBoardSectionTransition(
   transitions: readonly JiraTransition[],
-  section: Pick<TaskPageJiraIssueSection, 'label' | 'issues'>
+  section: Pick<TaskPageJiraBoardSection, 'label' | 'issues'> &
+    Partial<Pick<TaskPageJiraBoardSection, 'statusIds'>>
 ): JiraTransition | null {
-  // Why: sections group by status name, but ids are authoritative when the
-  // section already holds issues; the name match covers empty-metadata cases.
-  const sectionStatusIds = new Set(section.issues.map((issue) => issue.status.id))
+  // Why: board-config status ids are authoritative (they let empty columns
+  // receive drops); ids from the section's issues and the name match cover
+  // boards without column metadata.
+  const sectionStatusIds = new Set(section.statusIds ?? [])
+  for (const issue of section.issues) {
+    sectionStatusIds.add(issue.status.id)
+  }
   return (
     transitions.find((transition) => sectionStatusIds.has(transition.to.id)) ??
     transitions.find((transition) => transition.to.name === section.label) ??

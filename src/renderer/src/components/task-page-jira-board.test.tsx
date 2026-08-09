@@ -68,6 +68,18 @@ describe('TaskPageJiraBoard', () => {
     expect((markup.match(/w-72 shrink-0/g) ?? []).length).toBe(2)
   })
 
+  it('renders empty board columns with a drop placeholder', () => {
+    const markup = renderBoard([issue('STA-1', todo)], {
+      statusIdsByColumn: [['1'], ['3']],
+      columns: [
+        { name: 'To Do', statusIds: ['1'] },
+        { name: 'Done', statusIds: ['3'] }
+      ]
+    })
+    expect((markup.match(/w-72 shrink-0/g) ?? []).length).toBe(2)
+    expect(markup).toContain('No issues')
+  })
+
   it('orders columns by the project board status order', () => {
     const markup = renderBoard([issue('STA-1', todo), issue('STA-2', done)], {
       statusIdsByColumn: [['3'], ['1']]

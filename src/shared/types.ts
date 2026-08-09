@@ -2052,6 +2052,7 @@ export type {
   JiraPriority,
   JiraProject,
   JiraProjectStatusOrder,
+  JiraProjectStatusOrderColumn,
   JiraSite,
   JiraSiteSelection,
   JiraStatus,
