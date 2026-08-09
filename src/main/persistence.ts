@@ -7610,6 +7610,7 @@ function getDefaultWorktreeMeta(): WorktreeMeta {
     linkedWorkItem: null,
     linkedTaskSourceContext: null,
     attachedReviews: [],
+    trackedBranches: [],
     isArchived: false,
     isUnread: false,
     isPinned: false,

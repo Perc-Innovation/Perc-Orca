@@ -546,6 +546,9 @@ export type Worktree = {
   linkedWorkItem?: WorkspaceLinkedItem | null
   /** Reviews attached on top of the branch-detected one. */
   attachedReviews?: AttachedReview[]
+  /** Sibling head branches whose reviews the card also surfaces (e.g. the
+   *  `-v1.15.0` / `-stage` cherry-pick branches of this worktree's change). */
+  trackedBranches?: string[]
   linkedTaskSourceContext?: TaskSourceContext | null
   isArchived: boolean
   isUnread: boolean
@@ -673,6 +676,8 @@ export type WorktreeMeta = {
   linkedWorkItem?: WorkspaceLinkedItem | null
   /** Reviews attached on top of the branch-detected one. */
   attachedReviews?: AttachedReview[]
+  /** See Worktree.trackedBranches. */
+  trackedBranches?: string[]
   linkedTaskSourceContext?: TaskSourceContext | null
   isArchived: boolean
   isUnread: boolean

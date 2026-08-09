@@ -9,6 +9,7 @@ import type { CommandHandler } from '../dispatch'
 import { formatWorktreeList, formatWorktreePs, formatWorktreeShow, printResult } from '../format'
 import { RuntimeClientError } from '../runtime-client'
 import { getAttachedReviewsUpdate } from './worktree-attached-reviews'
+import { getTrackedBranchesUpdate } from './worktree-tracked-branches'
 import {
   getOptionalNullableNumberFlag,
   getOptionalNumberFlag,
@@ -277,18 +278,21 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       getOptionalJiraIssueLinkFlag(flags, 'jira', { allowNull: true }),
       client
     )
-    // Attaching is additive, so the current list has to be read before merging.
+    // Attaching/tracking are additive, so the current lists have to be read before merging.
     const attaching = flags.has('add-pr') || flags.get('clear-prs') === true
-    const existing = attaching
-      ? (
-          await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.show', {
-            worktree: selector
-          })
-        ).result?.worktree?.attachedReviews
-      : undefined
+    const tracking = flags.has('track-branch') || flags.get('clear-branches') === true
+    const shown =
+      attaching || tracking
+        ? (
+            await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.show', {
+              worktree: selector
+            })
+          ).result?.worktree
+        : undefined
     const result = await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.set', {
       worktree: selector,
-      ...getAttachedReviewsUpdate(flags, existing),
+      ...getAttachedReviewsUpdate(flags, shown?.attachedReviews),
+      ...getTrackedBranchesUpdate(flags, shown?.trackedBranches),
       displayName: getOptionalStringFlag(flags, 'display-name'),
       linkedIssue: getOptionalNullableNumberFlag(flags, 'issue'),
       ...linearIssueLink,

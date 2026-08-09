@@ -772,6 +772,7 @@ import {
   testConnection as testJiraConnection
 } from '../jira/client'
 import { normalizeAttachedReviews } from '../../shared/attached-reviews'
+import { normalizeTrackedBranches } from '../../shared/tracked-branches'
 import {
   addIssueComment as addJiraIssueComment,
   createIssue as createJiraIssue,
@@ -2187,6 +2188,7 @@ function mergeRuntimeFolderWorkspace(repo: Repo, worktreeId: string, meta: Workt
     linkedWorkItem: meta.linkedWorkItem ?? null,
     linkedTaskSourceContext: meta.linkedTaskSourceContext ?? null,
     attachedReviews: normalizeAttachedReviews(meta.attachedReviews),
+    trackedBranches: normalizeTrackedBranches(meta.trackedBranches),
     isArchived: meta.isArchived ?? false,
     isUnread: meta.isUnread ?? false,
     isPinned: meta.isPinned ?? false,
@@ -21728,6 +21730,7 @@ export class OrcaRuntimeService {
     linkedGiteaPR?: number | null
     linkedWorkItem?: WorkspaceLinkedItem | null
     attachedReviews?: AttachedReview[]
+    trackedBranches?: string[]
     linkedTaskSourceContext?: TaskSourceContext | null
     comment?: string
     displayName?: string
@@ -21839,6 +21842,9 @@ export class OrcaRuntimeService {
         ...(args.linkedWorkItem !== undefined ? { linkedWorkItem: args.linkedWorkItem } : {}),
         ...(args.attachedReviews !== undefined
           ? { attachedReviews: normalizeAttachedReviews(args.attachedReviews) }
+          : {}),
+        ...(args.trackedBranches !== undefined
+          ? { trackedBranches: normalizeTrackedBranches(args.trackedBranches) }
           : {}),
         ...(args.linkedTaskSourceContext !== undefined
           ? { linkedTaskSourceContext: args.linkedTaskSourceContext }
@@ -22439,6 +22445,9 @@ export class OrcaRuntimeService {
       ...(args.attachedReviews !== undefined
         ? { attachedReviews: normalizeAttachedReviews(args.attachedReviews) }
         : {}),
+      ...(args.trackedBranches !== undefined
+        ? { trackedBranches: normalizeTrackedBranches(args.trackedBranches) }
+        : {}),
       ...(args.linkedTaskSourceContext !== undefined
         ? { linkedTaskSourceContext: args.linkedTaskSourceContext }
         : {}),
@@ -22842,6 +22851,7 @@ export class OrcaRuntimeService {
       linkedGiteaPR?: number | null
       linkedWorkItem?: WorkspaceLinkedItem | null
       attachedReviews?: AttachedReview[]
+      trackedBranches?: string[]
       linkedTaskSourceContext?: TaskSourceContext | null
       comment?: string
       displayName?: string
@@ -22905,6 +22915,9 @@ export class OrcaRuntimeService {
         ...(args.linkedWorkItem !== undefined ? { linkedWorkItem: args.linkedWorkItem } : {}),
         ...(args.attachedReviews !== undefined
           ? { attachedReviews: normalizeAttachedReviews(args.attachedReviews) }
+          : {}),
+        ...(args.trackedBranches !== undefined
+          ? { trackedBranches: normalizeTrackedBranches(args.trackedBranches) }
           : {}),
         ...(args.linkedTaskSourceContext !== undefined
           ? { linkedTaskSourceContext: args.linkedTaskSourceContext }
