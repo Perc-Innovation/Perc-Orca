@@ -2,7 +2,7 @@
 import React, { useEffect, useCallback, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
-import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
+import { getHostedReviewCacheKey, withAcceptedMergedBranchReview } from '@/store/slices/hosted-review'
 import { issueCacheKey as getIssueCacheKey } from '@/store/slices/github'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { Badge } from '@/components/ui/badge'
@@ -673,14 +673,16 @@ const WorktreeCard = React.memo(function WorktreeCard({
     () =>
       repo && !isFolder
         ? trackedBranchNames.map((name) =>
-            getHostedReviewCacheKey(
-              repo.path,
-              name,
-              settings,
-              repo.id,
-              repo.connectionId,
-              repo.executionHostId,
-              true
+            withAcceptedMergedBranchReview(
+              getHostedReviewCacheKey(
+                repo.path,
+                name,
+                settings,
+                repo.id,
+                repo.connectionId,
+                repo.executionHostId,
+                true
+              )
             )
           )
         : [],
@@ -814,7 +816,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
     for (const name of trackedBranchNames) {
       void fetchHostedReviewForBranch(repo.path, name, {
         repoId: repo.id,
-        staleWhileRevalidate: true
+        staleWhileRevalidate: true,
+        // Why: nobody has this branch checked out here — its merged review is
+        // the row's answer, not a reused-branch leftover to hide.
+        acceptMergedBranchReview: true
       })
     }
   }, [

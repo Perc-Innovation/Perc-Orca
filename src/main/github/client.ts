@@ -2192,6 +2192,10 @@ const GITHUB_AUTO_MERGE_METHODS: Record<GitHubPRMergeMethod, 'MERGE' | 'SQUASH' 
 
 export type GitHubPRBranchLookupOptions = HostedReviewExecutionOptions & {
   acceptMergedFallbackPR?: boolean
+  // Why: the reused-branch guard compares against the caller's checked-out HEAD;
+  // a lookup for a branch nobody has checked out (tracked sibling) has no HEAD
+  // to compare, and its merged PR is the answer, not a stale leftover.
+  acceptMergedBranchPR?: boolean
   // Why: compare merged implicit PRs against the worktree HEAD, not main repo HEAD, without a worktree-scoped git call.
   currentHeadOid?: string | null
 }
@@ -3152,6 +3156,9 @@ export async function getPRForBranchOutcome(
       candidate: PullRequestLookupData | null,
       candidateRepo: OwnerRepo | null
     ) => {
+      if (options.acceptMergedBranchPR === true) {
+        return false
+      }
       if (!candidate || !isMergedImplicitPR(candidate, linkedPRNumber)) {
         return false
       }
