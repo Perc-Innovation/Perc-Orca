@@ -790,6 +790,7 @@ import {
   searchIssues as searchJiraIssues,
   updateIssue as updateJiraIssue
 } from '../jira/issues'
+import { listSavedFilters as listJiraSavedFilters } from '../jira/saved-filters'
 import {
   clearProjectItemFieldValue,
   getProjectViewTable,
@@ -34662,6 +34663,10 @@ export class OrcaRuntimeService {
 
   jiraListProjects(siteId?: JiraSiteSelection): ReturnType<typeof listJiraProjects> {
     return listJiraProjects(siteId)
+  }
+
+  jiraListSavedFilters(siteId?: JiraSiteSelection): ReturnType<typeof listJiraSavedFilters> {
+    return listJiraSavedFilters(siteId)
   }
 
   jiraListIssueTypes(

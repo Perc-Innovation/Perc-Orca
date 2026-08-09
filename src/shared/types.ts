@@ -2015,6 +2015,7 @@ export type {
   JiraPriority,
   JiraProject,
   JiraProjectStatusOrder,
+  JiraSavedFilter,
   JiraSite,
   JiraSiteSelection,
   JiraStatus,
