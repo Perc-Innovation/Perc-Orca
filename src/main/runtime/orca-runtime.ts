@@ -19632,6 +19632,7 @@ export class OrcaRuntimeService {
     repoSelector: string
     branch: string
     currentHeadOid?: string | null
+    acceptMergedBranchReview?: boolean
     active?: boolean
     linkedGitHubPR?: number | null
     fallbackGitHubPR?: number | null
@@ -19647,6 +19648,7 @@ export class OrcaRuntimeService {
       connectionId: repo.connectionId ?? null,
       branch: args.branch,
       currentHeadOid: args.currentHeadOid ?? null,
+      ...(args.acceptMergedBranchReview === true ? { acceptMergedBranchReview: true } : {}),
       ...(args.active === true ? { active: true } : {}),
       linkedGitHubPR: args.linkedGitHubPR ?? null,
       fallbackGitHubPR: args.linkedGitHubPR == null ? (args.fallbackGitHubPR ?? null) : null,
