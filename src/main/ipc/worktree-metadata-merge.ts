@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import type { GitWorktreeInfo, Worktree, WorktreeMeta } from '../../shared/types'
 import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
 import { normalizeAttachedReviews } from '../../shared/attached-reviews'
+import { normalizeTrackedBranches } from '../../shared/tracked-branches'
 import { getLinkedWorkItemMetadata } from './worktree-linked-work-item-metadata'
 
 /**
@@ -41,6 +42,9 @@ export function mergeWorktree(
     // with no attached reviews costs nothing in every worktree list payload.
     ...(meta?.attachedReviews?.length
       ? { attachedReviews: normalizeAttachedReviews(meta.attachedReviews) }
+      : {}),
+    ...(meta?.trackedBranches?.length
+      ? { trackedBranches: normalizeTrackedBranches(meta.trackedBranches) }
       : {}),
     isArchived: meta?.isArchived ?? false,
     isUnread: meta?.isUnread ?? false,

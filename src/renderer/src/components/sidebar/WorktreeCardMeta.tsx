@@ -56,6 +56,7 @@ export function WorktreeCardDetailsHover({
   jiraIssue,
   review,
   attachedReviews,
+  trackedBranchReviews,
   comment,
   automationProvenance,
   cliProvenance,
@@ -160,8 +161,8 @@ export function WorktreeCardDetailsHover({
   }, [copyLinkedWorkItemLink, review])
 
   const reviewList = React.useMemo(
-    () => getCardReviewList(attachedReviews, review),
-    [attachedReviews, review]
+    () => getCardReviewList(attachedReviews, review, trackedBranchReviews),
+    [attachedReviews, review, trackedBranchReviews]
   )
 
   const showIdentityHeader = Boolean(branchName || workspaceTitle)
@@ -174,6 +175,7 @@ export function WorktreeCardDetailsHover({
       jiraIssue,
       review,
       attachedReviews,
+      trackedBranchReviews,
       comment,
       automationProvenance,
       cliProvenance

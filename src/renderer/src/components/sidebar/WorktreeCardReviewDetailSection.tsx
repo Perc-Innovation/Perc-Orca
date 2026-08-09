@@ -222,6 +222,7 @@ function CardReviewRowItem({ row }: { row: CardReviewRow }): React.JSX.Element {
         <span className="font-medium tabular-nums shrink-0 text-foreground">
           {label} #{row.number}
         </span>
+        {row.headRef && <span className="truncate text-muted-foreground">{row.headRef}</span>}
         {row.baseRef && (
           <span className="truncate text-muted-foreground">&rarr; {row.baseRef}</span>
         )}

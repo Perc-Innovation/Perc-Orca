@@ -7,6 +7,9 @@ export type CardReviewRow = {
   number: number
   url: string
   baseRef?: string
+  /** Source branch, for reviews resolved from a tracked sibling branch — with
+   *  several head branches in one list, the head is what tells rows apart. */
+  headRef?: string
   title?: string
   /** Present only for the review Orca resolved on its own. */
   state?: WorktreeCardPrDisplay['state']
@@ -32,7 +35,8 @@ export type CardReviewList =
  */
 export function getCardReviewList(
   attachedReviews: readonly AttachedReview[] | null | undefined,
-  primary: WorktreeCardPrDisplay | null
+  primary: WorktreeCardPrDisplay | null,
+  trackedBranchRows: readonly CardReviewRow[] = []
 ): CardReviewList {
   const rows: CardReviewRow[] = []
   const seen = new Set<string>()
@@ -51,6 +55,12 @@ export function getCardReviewList(
   // lo que Orca ya sabe de la rama.
   for (const sib of siblingsOf(primary)) {
     push(sib)
+  }
+
+  // Las ramas trackeadas también se resuelven con el lookup vivo, así que van
+  // antes que la lista adjunta a mano: sus filas traen estado real.
+  for (const row of trackedBranchRows) {
+    push(row)
   }
 
   for (const review of attachedReviews ?? []) {
@@ -80,7 +90,11 @@ export function getCardReviewList(
     })
   }
 
-  return rows.length > 1 ? { kind: 'list', rows } : { kind: 'single' }
+  // Sin review principal no hay sección rica que renderizar: una fila sola
+  // en la lista es mejor que una review invisible.
+  return rows.length > 1 || (rows.length === 1 && !primary)
+    ? { kind: 'list', rows }
+    : { kind: 'single' }
 }
 
 /** El estado que el caller asertó vale como el que Orca consultó: si no, una
