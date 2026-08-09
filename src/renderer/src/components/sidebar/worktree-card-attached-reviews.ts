@@ -50,15 +50,15 @@ export function getCardReviewList(
     rows.push(row)
   }
 
-  // Los hermanos vienen del mismo lookup que el review principal, así que están
-  // tan frescos como él: van primero para que una lista adjunta a mano no tape
-  // lo que Orca ya sabe de la rama.
+  // Siblings come from the same lookup as the primary review, so they are as
+  // fresh as it is: they go first so a hand-attached list does not bury what
+  // Orca already knows about the branch.
   for (const sib of siblingsOf(primary)) {
     push(sib)
   }
 
-  // Las ramas trackeadas también se resuelven con el lookup vivo, así que van
-  // antes que la lista adjunta a mano: sus filas traen estado real.
+  // Tracked branches also resolve through the live lookup, so they go before
+  // the hand-attached list: their rows carry real state.
   for (const row of trackedBranchRows) {
     push(row)
   }
@@ -80,9 +80,9 @@ export function getCardReviewList(
       provider: primary.provider,
       number: primary.number,
       url: primary.url,
-      // El principal es el único que Orca poll-ea, pero sin su destino queda
-      // como la única fila que no dice a dónde va — justo lo que distingue una
-      // review de otra de la misma rama.
+      // The primary is the only one Orca polls, but without its destination it
+      // becomes the one row that does not say where it goes — exactly what
+      // tells one review off a branch apart from another.
       ...('baseRefName' in primary && primary.baseRefName ? { baseRef: primary.baseRefName } : {}),
       ...(primary.title ? { title: primary.title } : {}),
       ...(primary.state ? { state: primary.state } : {}),
@@ -90,24 +90,24 @@ export function getCardReviewList(
     })
   }
 
-  // Sin review principal no hay sección rica que renderizar: una fila sola
-  // en la lista es mejor que una review invisible.
+  // With no primary review there is no rich section to render: a single row
+  // in the list beats an invisible review.
   return rows.length > 1 || (rows.length === 1 && !primary)
     ? { kind: 'list', rows }
     : { kind: 'single' }
 }
 
-/** El estado que el caller asertó vale como el que Orca consultó: si no, una
- *  review mergeada y una abierta se ven igual. */
+/** The state the caller asserted counts like one Orca fetched: otherwise a
+ *  merged review and an open one render identically. */
 function toRow(review: AttachedReview): CardReviewRow {
   return { ...review, ...(review.state ? { state: review.state } : {}) }
 }
 
 /**
- * Los PRs que la rama alimenta además del principal.
+ * The PRs the branch feeds beyond the primary.
  *
- * Salen del mismo request, así que no hay nada que sincronizar aparte: se
- * refrescan cuando se refresca el review de la rama.
+ * They come from the same request, so there is nothing to synchronize
+ * separately: they refresh when the branch's review refreshes.
  */
 function siblingsOf(primary: WorktreeCardPrDisplay | null): CardReviewRow[] {
   const list = primary && 'siblings' in primary ? primary.siblings : undefined

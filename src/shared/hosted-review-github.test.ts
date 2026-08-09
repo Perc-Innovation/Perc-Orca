@@ -135,11 +135,11 @@ describe('hostedReviewSummaryFromGitHubPRInfo', () => {
     })
   })
 
-  it('conserva los hermanos y el destino al cruzar PRInfo → HostedReviewInfo', () => {
-    // Why: este mapper es el único puente al renderer. Copiaba campo por campo
-    // y se comía `siblings` y `baseRefName`, así que el lookup los traía y la
-    // tarjeta nunca los veía. El test de arriba usa toMatchObject, que por
-    // definición no detecta un campo que falta — por eso hace falta este.
+  it('keeps siblings and destination when crossing PRInfo → HostedReviewInfo', () => {
+    // Why: this mapper is the only bridge to the renderer. It copied field by
+    // field and swallowed `siblings` and `baseRefName`, so the lookup carried
+    // them and the card never saw them. The test above uses toMatchObject,
+    // which by definition cannot catch a missing field — hence this one.
     const review = hostedReviewInfoFromGitHubPRInfo({
       ...pr,
       baseRefName: 'stage',

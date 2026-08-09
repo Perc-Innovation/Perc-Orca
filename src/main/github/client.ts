@@ -2215,7 +2215,7 @@ function derivePullRequestMergeable(data: PullRequestLookupData): PRMergeableSta
   return mergeable ?? 'UNKNOWN'
 }
 
-/** Un hermano solo necesita identificarse, decir a dónde va y si sigue vivo. */
+/** A sibling only needs to identify itself, say where it goes, and whether it is still live. */
 function mapSiblingPR(pr: RestPullRequest): HostedReviewSibling {
   return {
     number: pr.number,
@@ -2434,8 +2434,8 @@ async function hydrateBranchLookupWithExactPR(
     if (!exact) {
       return branchData
     }
-    // El detalle exacto no sabe de la rama, así que los hermanos vienen del
-    // lookup por rama y hay que reponerlos o se pierden acá.
+    // The exact-number detail knows nothing about the branch, so siblings come
+    // from the branch lookup and must be restored or they are lost here.
     return branchData.siblings ? { ...exact, siblings: branchData.siblings } : exact
   } catch {
     return branchData
@@ -2461,15 +2461,15 @@ async function getRestPRForBranch(
 }
 
 /**
- * Todos los PRs abiertos desde una rama.
+ * Every PR opened from a branch.
  *
- * Una rama puede alimentar más de un PR a la vez —el mismo trabajo hacia la
- * base del repo, hacia stage y hacia una release—, así que pedir uno solo no
- * era una simplificación: hacía que el PR vivo quedara escondido detrás de uno
- * cerrado más nuevo.
+ * A branch can feed more than one PR at a time — the same work aimed at the
+ * repo's base, at stage, and at a release — so requesting a single one was not
+ * a simplification: it hid the live PR behind a newer closed one.
  *
- * El tope es alto porque una rama de larga vida acumula PRs cerrados, pero
- * acotado: sin él, una rama con cientos de reintentos paginaría sin control.
+ * The cap is high because a long-lived branch accumulates closed PRs, but
+ * bounded: without it, a branch with hundreds of retries would paginate
+ * without control.
  */
 const MAX_BRANCH_PRS = 30
 
@@ -2491,16 +2491,15 @@ async function getRestPRsForBranch(
 }
 
 /**
- * Cuál de los PRs de una rama representa a esa rama.
+ * Which of a branch's PRs represents that branch.
  *
- * GitHub los devuelve por número descendente, así que quedarse con el primero
- * elige el más nuevo aunque esté cerrado. Lo que el usuario mira es lo que
- * todavía puede actuar: gana el abierto, después el mergeado, y solo si no hay
- * nada vivo el más reciente.
+ * GitHub returns them by descending number, so keeping the first one picks the
+ * newest even when it is closed. What the user looks at is what can still act:
+ * open wins, then merged, and only with nothing live the most recent.
  *
- * Elegir el mergeado no lo hace visible por sí solo: `hideMergedImplicitPR`
- * decide después si un lookup implícito puede mostrarlo. Acá solo se elige cuál
- * de los PRs de la rama la representa.
+ * Picking the merged one does not make it visible by itself:
+ * `hideMergedImplicitPR` later decides whether an implicit lookup may show it.
+ * This only chooses which of the branch's PRs represents it.
  */
 function pickPrimaryPRForBranch(list: readonly RestPullRequest[]): RestPullRequest | undefined {
   return (

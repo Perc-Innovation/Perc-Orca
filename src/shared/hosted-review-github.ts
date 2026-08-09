@@ -102,11 +102,11 @@ export function hostedReviewInfoFromGitHubPRInfo(pr: PRInfo): HostedReviewInfo {
       ? { confirmedContainedHeadOid: pr.confirmedContainedHeadOid }
       : {}),
     ...(pr.conflictSummary ? { conflictSummary: pr.conflictSummary } : {}),
-    // El destino es lo que distingue dos reviews de la misma rama; sin esto la
-    // única fila que Orca realmente poll-ea era la única sin él.
+    // The destination is what tells two reviews off the same branch apart;
+    // without this the one row Orca actually polls was the only one missing it.
     ...(pr.baseRefName ? { baseRefName: pr.baseRefName } : {}),
-    // Los hermanos salen del mismo lookup que la review. Este mapper es el
-    // único puente al renderer, así que no copiarlos acá los tiraba enteros.
+    // Siblings come from the same lookup as the review. This mapper is the
+    // only bridge to the renderer, so not copying them here dropped them whole.
     ...(pr.siblings?.length ? { siblings: pr.siblings } : {})
   }
 }

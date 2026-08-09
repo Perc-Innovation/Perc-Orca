@@ -37,17 +37,17 @@ export type HostedReviewInfo = {
   baseRefName?: string
   conflictSummary?: PRConflictSummary
   /**
-   * Los otros PRs que alimenta la misma rama.
+   * The other PRs the same branch feeds.
    *
-   * Una rama puede ir a varios destinos a la vez —la base del repo, stage, una
-   * release— y `number`/`state` describen solo al que representa la rama. Estos
-   * vienen del mismo lookup, así que envejecen a la par y no hay nada que
-   * sincronizar aparte.
+   * A branch can ship to several destinations at once — the repo's base, stage,
+   * a release — while `number`/`state` describe only the PR that represents the
+   * branch. These come from the same lookup, so they age together and there is
+   * nothing to synchronize separately.
    */
   siblings?: HostedReviewSibling[]
 }
 
-/** Un PR hermano: lo mínimo para renderizarlo y abrirlo, sin sus checks. */
+/** A sibling PR: just enough to render and open it, without its checks. */
 export type HostedReviewSibling = {
   number: number
   url: string

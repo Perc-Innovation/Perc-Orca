@@ -1319,8 +1319,8 @@ export type PRInfo = {
   prRepo?: GitHubRepositoryIdentity
   headRepo?: GitHubRepositoryIdentity
   conflictSummary?: PRConflictSummary
-  /** Los otros PRs que alimenta la misma rama. Solo lo llena el lookup REST por
-   *  rama; un lookup por número exacto no sabe de hermanos. */
+  /** The other PRs the same branch feeds. Only the branch-scoped REST lookup
+   *  fills it; an exact-number lookup knows nothing about siblings. */
   siblings?: HostedReviewSibling[]
 }
 
