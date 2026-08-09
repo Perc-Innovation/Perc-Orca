@@ -55,6 +55,16 @@ describe('findJiraBoardSectionTransition', () => {
     expect(found).toBe(toDone)
   })
 
+  it('matches an empty column through its board-config status ids', () => {
+    const renamed = transition('t-done', { ...done, name: 'Completed' })
+    const found = findJiraBoardSectionTransition([renamed], {
+      label: 'Done column',
+      statusIds: ['3'],
+      issues: []
+    })
+    expect(found).toBe(renamed)
+  })
+
   it('returns null when no transition reaches the section', () => {
     expect(
       findJiraBoardSectionTransition([transition('t-ip', inProgress)], {

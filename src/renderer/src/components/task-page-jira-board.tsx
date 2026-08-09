@@ -11,7 +11,10 @@ import {
 } from '@/lib/jira-board-drag-payload'
 import type { JiraBoardIssueDragRef } from '@/lib/jira-board-drag-payload'
 import type { JiraIssue, JiraProjectStatusOrder } from '../../../shared/types'
-import { groupJiraIssuesByStatus, type TaskPageJiraIssueSection } from './task-page-jira-issue-list'
+import {
+  buildJiraBoardSections,
+  type TaskPageJiraBoardSection
+} from './task-page-jira-board-sections'
 
 export function jiraBoardIssueRefKey(issue: Pick<JiraIssue, 'key' | 'siteId'>): string {
   return `${issue.siteId ?? 'site'}:${issue.key}`
@@ -28,7 +31,7 @@ type TaskPageJiraBoardProps = {
   formatUpdatedAt: (updatedAt: string) => string
   getStatusTone: (categoryKey: string) => string
   issues: JiraIssue[]
-  onMoveIssue: (issue: JiraIssue, section: TaskPageJiraIssueSection) => Promise<void>
+  onMoveIssue: (issue: JiraIssue, section: TaskPageJiraBoardSection) => Promise<void>
   onOpenIssue: (issue: JiraIssue) => void
   onStartWorkspace: (issue: JiraIssue) => void
   selectedIssue: JiraIssue | null
@@ -61,7 +64,7 @@ export function TaskPageJiraBoard({
   const [draggingIssueRefKey, setDraggingIssueRefKey] = useState<string | null>(null)
   const [dragOverSectionKey, setDragOverSectionKey] = useState<string | null>(null)
   const sections = useMemo(
-    () => groupJiraIssuesByStatus(issues, statusOrder, statusDirection),
+    () => buildJiraBoardSections(issues, statusOrder, statusDirection),
     [issues, statusDirection, statusOrder]
   )
 
@@ -80,7 +83,7 @@ export function TaskPageJiraBoard({
   }
 
   const handleSectionDragOver = (
-    section: TaskPageJiraIssueSection,
+    section: TaskPageJiraBoardSection,
     event: React.DragEvent<HTMLElement>
   ): void => {
     event.preventDefault()
@@ -89,7 +92,7 @@ export function TaskPageJiraBoard({
   }
 
   const handleSectionDrop = (
-    section: TaskPageJiraIssueSection,
+    section: TaskPageJiraBoardSection,
     event: React.DragEvent<HTMLElement>
   ): void => {
     event.preventDefault()
@@ -106,6 +109,7 @@ export function TaskPageJiraBoard({
     if (
       !issue ||
       updatingIssueKeys.has(jiraBoardIssueRefKey(issue)) ||
+      section.statusIds.includes(issue.status.id) ||
       issue.status.name === section.label
     ) {
       return
@@ -136,14 +140,19 @@ export function TaskPageJiraBoard({
               <span
                 className={cn(
                   'inline-flex min-w-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                  sectionTone
+                  sectionTone ?? 'border-border/50 bg-muted/35 text-muted-foreground'
                 )}
               >
-                <span className="truncate">{section.label}</span>
+                <span className="truncate">{section.label || '—'}</span>
               </span>
               <span className="text-[11px] text-muted-foreground">{section.issues.length}</span>
             </div>
-            <div className="space-y-2 p-2">
+            <div className="min-h-16 space-y-2 p-2">
+              {section.issues.length === 0 ? (
+                <div className="flex h-12 items-center justify-center rounded-md border border-dashed border-border/50 text-[11px] text-muted-foreground">
+                  {translate('auto.components.TaskPage.jiraBoardEmptyColumn', 'No issues')}
+                </div>
+              ) : null}
               {section.issues.map((issue) => {
                 const refKey = jiraBoardIssueRefKey(issue)
                 const selected = isSelectedIssue(issue, selectedIssue)
