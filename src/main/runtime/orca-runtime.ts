@@ -27,6 +27,7 @@ import type {
 import {
   createTerminalTitleTracker,
   stripBrailleSpinnerGlyphs,
+  type TerminalTitleFactMeta,
   type TerminalTitleTracker
 } from '../../shared/terminal-output-side-effects'
 import { createCommandCodeOutputStatusDetector } from '../../shared/command-code-output-status'
@@ -447,7 +448,6 @@ import { resolveTerminalStartupCwd } from '../../shared/terminal-startup-cwd'
 import { isWslUncPath, parseWslUncPath } from '../../shared/wsl-paths'
 import {
   folderWorkspaceKey,
-  isWorkspaceKey,
   parseWorkspaceKey,
   worktreeWorkspaceKey
 } from '../../shared/workspace-scope'
@@ -684,6 +684,10 @@ import { resolveLocalProjectRuntimeForWorktreeId } from '../local-project-runtim
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
 import { resolveTerminalOrchestrationCliCommand } from './orchestration/cli-command'
 import {
+  scanLocalRepoWorktreesForResolution,
+  type RuntimeWorktreeScanResult
+} from './repo-worktree-resolution-scan'
+import {
   getLocalWorktreePathAccess,
   removeLocalWorktreePath,
   toLocalWorktreeRuntimePath
@@ -876,7 +880,7 @@ import {
   FLOATING_TERMINAL_WORKTREE_ID,
   getDefaultVoiceSettings
 } from '../../shared/constants'
-import { listRepoWorktrees } from '../repo-worktrees'
+import { pruneLineageForMissingRepoWorktrees } from '../worktree-lineage-pruning'
 import {
   createWorktreeCopiedPaths,
   createWorktreeLinkedPaths,
@@ -2614,14 +2618,10 @@ type WorktreeLineageResolution =
       warnings: WorktreeLineageWarning[]
     }
 
-type RuntimeWorktreeScanResult =
-  | { ok: true; worktrees: GitWorktreeInfo[] }
-  | { ok: false; worktrees: GitWorktreeInfo[] }
-
 type RuntimeWorktreeScanCache = {
   generation: number
   runtimeKey: string
-  result: Extract<RuntimeWorktreeScanResult, { ok: true }>
+  result: RuntimeWorktreeScanResult
   expiresAt: number
 }
 
@@ -10214,11 +10214,14 @@ export class OrcaRuntimeService {
   getTerminalSideEffectSnapshot(ptyId: string): TerminalSideEffectBatch | null {
     const tracker = this.ptyTitleTrackersByPtyId.get(ptyId)?.tracker
     const recordTitle = this.ptysById.get(ptyId)?.lastOscTitle
-    // Why: the cursor-agent literal drop applies to every title surface; a
-    // record-fallback snapshot must not replay the bare native title the
-    // tracker would have refused to emit live.
-    const rawTitle = recordTitle && !isCursorNativeAgentTitle(recordTitle) ? recordTitle : null
     const normalizedTitle = tracker?.getLastNormalizedTitle() ?? null
+    // Why: a record-fallback snapshot must not replay the bare cursor-agent literal over a
+    // tracker title Orca synthesized from hooks — but with no tracker title it is the pane's
+    // only Cursor identity, so restored/mobile tabs keep it (#10258).
+    const rawTitle =
+      recordTitle && (normalizedTitle === null || !isCursorNativeAgentTitle(recordTitle))
+        ? recordTitle
+        : null
     if (normalizedTitle === null && !rawTitle) {
       return null
     }
@@ -10252,12 +10255,37 @@ export class OrcaRuntimeService {
     return null
   }
 
+  private isLiveCursorNativeTitle(rawTitle: string, meta?: TerminalTitleFactMeta): boolean {
+    return isCursorNativeAgentTitle(rawTitle) && meta?.staleWorkingTitleClear !== true
+  }
+
+  /** Display fallback for identities intentionally omitted from liveness records. */
+  private getTrackedDisplayTitleForPty(ptyId: string): string | null {
+    return (
+      this.getTrackedRawTitleForPty(ptyId) ??
+      this.ptyTitleTrackersByPtyId.get(ptyId)?.tracker.getLastNormalizedTitle() ??
+      null
+    )
+  }
+
+  private getUnpersistedTrackedTitleForPty(ptyId: string | null): string | null {
+    if (!ptyId || this.getTrackedRawTitleForPty(ptyId) !== null) {
+      return null
+    }
+    // Why: a manual title is authoritative until explicitly cleared with null.
+    const pty = this.ptysById.get(ptyId)
+    if (pty && pty.title !== null) {
+      return null
+    }
+    return this.ptyTitleTrackersByPtyId.get(ptyId)?.tracker.getLastNormalizedTitle() ?? null
+  }
+
   /** Why: synthetic agent title frames no longer ride pty:data, so neither
    *  renderer xterm nor the headless emulator observes them. Mobile-parity
    *  snapshot titles must prefer main's tracker over snapshot lastTitle, or
    *  hook-driven spinner/idle titles vanish from mobile tabs. */
   private preferTrackedLastTitle<T extends { lastTitle?: string }>(ptyId: string, snapshot: T): T {
-    const tracked = this.getTrackedRawTitleForPty(ptyId)
+    const tracked = this.getTrackedDisplayTitleForPty(ptyId)
     if (!tracked) {
       return snapshot
     }
@@ -10300,8 +10328,11 @@ export class OrcaRuntimeService {
             rawTitle,
             ...(meta?.staleWorkingTitleClear ? { staleWorkingTitleClear: true } : {})
           })
-          const changed = this.applyTrackedPtyTitle(ptyId, rawTitle, normalizedTitle)
-          if (!changed) {
+          const changed = this.applyTrackedPtyTitle(ptyId, rawTitle, normalizedTitle, meta)
+          // Why: an identity-only cursor title records nothing, so on a fresh pane `changed` is
+          // false — but the tracker title is that pane's only Cursor identity and still has to
+          // fan out to the sidebar and mobile (#10258).
+          if (!changed && !this.isLiveCursorNativeTitle(rawTitle, meta)) {
             return
           }
           const live = this.ptyTitleTrackersByPtyId.get(ptyId)
@@ -10381,25 +10412,42 @@ export class OrcaRuntimeService {
 
   /** Apply one observed OSC title (raw form) to the PTY and leaf records.
    *  Returns true when the PTY record's title or status changed. */
-  private applyTrackedPtyTitle(ptyId: string, rawTitle: string, normalizedTitle: string): boolean {
+  private applyTrackedPtyTitle(
+    ptyId: string,
+    rawTitle: string,
+    normalizedTitle: string,
+    meta?: TerminalTitleFactMeta
+  ): boolean {
     // Why: status is detected from the RAW title (mirrors the renderer tracker),
     // so working/idle transitions are unaffected by normalization; the records
     // store the NORMALIZED title so rotating Grok/Pi/Gemini frames collapse to
     // one stable stored label (#7880) instead of churning `ps`/mobile tabs.
-    const agentStatus = detectAgentStatusFromTitle(rawTitle)
+    //
+    // Why the identity-only case: the bare cursor-agent literal identifies the pane without
+    // asserting activity, so it records NO title/status evidence — only the tracker keeps it,
+    // for display (#10258). Nulling the status here rather than trusting the detector keeps
+    // that contract local, since every activity-gated effect below is keyed on status.
+    const identityOnlyTitle = this.isLiveCursorNativeTitle(rawTitle, meta)
+    const recordedTitle = identityOnlyTitle ? null : normalizedTitle
+    const agentStatus = identityOnlyTitle ? null : detectAgentStatusFromTitle(rawTitle)
     let ptyRecordChanged = false
     const pty = this.ptysById.get(ptyId)
     if (pty) {
       const prevStatus = pty.lastAgentStatus
       const prevTitle = pty.lastOscTitle
       const observedAt = this.nextTitleObservationSequence()
-      pty.lastOscTitle = normalizedTitle
-      pty.lastOscTitleAt = observedAt
-      pty.lastOscTitleEpochMs = Date.now()
+      pty.lastOscTitle = recordedTitle
+      pty.lastOscTitleAt = identityOnlyTitle ? null : observedAt
+      pty.lastOscTitleEpochMs = identityOnlyTitle ? null : Date.now()
       pty.lastAgentStatus = agentStatus
       pty.lastAgentStatusObservedLive = true
-      this.setPtyManagementTitleFromObservedTitle(pty, normalizedTitle, observedAt)
-      ptyRecordChanged = prevTitle !== normalizedTitle || prevStatus !== agentStatus
+      if (identityOnlyTitle) {
+        pty.managementTitle = null
+        pty.managementTitleAt = null
+      } else {
+        this.setPtyManagementTitleFromObservedTitle(pty, normalizedTitle, observedAt)
+      }
+      ptyRecordChanged = prevTitle !== recordedTitle || prevStatus !== agentStatus
       if (agentStatus === 'idle' && prevStatus !== 'idle') {
         this.resolvePtyTuiIdleWaiters(pty, ptyId)
       }
@@ -10432,10 +10480,10 @@ export class OrcaRuntimeService {
       // daemon-hosted terminals (no renderer pushing pane titles) had no
       // way to clear a stale 'working' status after the agent exited and
       // the shell took over the title — the stuck-spinner bug in #1437.
-      leaf.lastOscTitle = normalizedTitle
-      leaf.lastOscTitleAt = this.nextTitleObservationSequence()
       const prevStatus = leaf.lastAgentStatus
       const prevObservedLive = leaf.lastAgentStatusObservedLive
+      leaf.lastOscTitle = recordedTitle
+      leaf.lastOscTitleAt = identityOnlyTitle ? null : this.nextTitleObservationSequence()
       // Why: when a new OSC title doesn't classify as an agent state (e.g.
       // bare shell title after the agent exits), clear lastAgentStatus so
       // it is no longer sticky. Tui-idle waiters that needed the previous
@@ -20881,7 +20929,7 @@ export class OrcaRuntimeService {
       scan = { ok: false, worktrees: [] }
     }
     if (scan.ok) {
-      this.pruneLineageForMissingRepoWorktrees(repo, scan.worktrees)
+      pruneLineageForMissingRepoWorktrees(store, repo, scan.worktrees)
     }
     const agentScratchWorktreePathMatcher = createAgentScratchWorktreePathMatcher([
       repo.path,
@@ -28860,7 +28908,7 @@ export class OrcaRuntimeService {
           )) ?? { ok: false, worktrees: this.listStoredWorktreesForResolution(repo) }
         const gitWorktrees = scan.worktrees
         if (scan.ok) {
-          this.pruneLineageForMissingRepoWorktrees(repo, gitWorktrees)
+          pruneLineageForMissingRepoWorktrees(this.requireStore(), repo, gitWorktrees)
         }
         return gitWorktrees.map((gitWorktree) => {
           const worktreeId = `${repo.id}::${gitWorktree.path}`
@@ -28907,48 +28955,6 @@ export class OrcaRuntimeService {
     return { worktrees, platformByRepoId }
   }
 
-  private pruneLineageForMissingRepoWorktrees(repo: Repo, gitWorktrees: GitWorktreeInfo[]): void {
-    const store = this.store
-    if (
-      !store ||
-      typeof store.getAllWorktreeLineage !== 'function' ||
-      typeof store.removeWorktreeLineage !== 'function'
-    ) {
-      return
-    }
-    const liveIds = new Set(gitWorktrees.map((worktree) => `${repo.id}::${worktree.path}`))
-    const repoPrefix = `${repo.id}::`
-    for (const childWorkspaceKey of Object.keys(store.getAllWorkspaceLineage?.() ?? {})) {
-      const childScope = parseWorkspaceKey(childWorkspaceKey)
-      if (
-        childScope?.type === 'worktree' &&
-        childScope.worktreeId.startsWith(repoPrefix) &&
-        !liveIds.has(childScope.worktreeId)
-      ) {
-        if (isWorkspaceKey(childWorkspaceKey)) {
-          store.removeWorkspaceLineage?.(childWorkspaceKey)
-        }
-      }
-    }
-    for (const [childId, lineage] of Object.entries(store.getAllWorktreeLineage())) {
-      if (childId.startsWith(repoPrefix) && !liveIds.has(childId)) {
-        // Why: once a scan proves the child gone, purge stale lineage so it can't survive into a same-path replacement checkout.
-        store.removeWorktreeLineage(childId)
-        store.removeWorkspaceLineage?.(worktreeWorkspaceKey(childId))
-      }
-      if (
-        lineage.parentWorktreeId.startsWith(repoPrefix) &&
-        !liveIds.has(lineage.parentWorktreeId)
-      ) {
-        const parentMeta = store.getWorktreeMeta(lineage.parentWorktreeId)
-        if (!parentMeta || parentMeta.instanceId === lineage.parentWorktreeInstanceId) {
-          // Why: a missing parent path needs one fresh identity so same-path replacement checkouts can't validate old lineage.
-          store.setWorktreeMeta(lineage.parentWorktreeId, { instanceId: randomUUID() })
-        }
-      }
-    }
-  }
-
   private async listRepoWorktreesForResolution(
     repo: Repo,
     projectRuntimeByRepoId?: ReadonlyMap<string, ProjectExecutionRuntimeResolution>
@@ -28983,8 +28989,9 @@ export class OrcaRuntimeService {
     this.worktreeScanInFlight.set(repo.id, { generation, runtimeKey, promise })
     try {
       const result = await promise
+      // Why: back off local spawn failures under resource pressure while disconnected SSH can recover on the next poll.
       if (
-        result.ok &&
+        (result.ok || !repo.connectionId) &&
         generation === (this.worktreeScanGenerations.get(repo.id) ?? 0) &&
         this.worktreeScanInFlight.get(repo.id)?.promise === promise
       ) {
@@ -29008,13 +29015,10 @@ export class OrcaRuntimeService {
     projectRuntime: ProjectExecutionRuntimeResolution | undefined
   ): Promise<RuntimeWorktreeScanResult> {
     if (!repo.connectionId) {
-      return {
-        ok: true,
-        worktrees: await listRepoWorktrees(
-          repo,
-          getLocalProjectWorktreeGitOptionsForRuntime(repo, projectRuntime)
-        )
-      }
+      return await scanLocalRepoWorktreesForResolution(
+        repo.path,
+        getLocalProjectWorktreeGitOptionsForRuntime(repo, projectRuntime)
+      )
     }
     const provider = getSshGitProvider(repo.connectionId)
     if (!provider) {
@@ -30398,6 +30402,12 @@ export class OrcaRuntimeService {
       const hookAgentStatus = tab.agentStatus
         ? this.getHookAgentRowForPane(getHookRowsForPane(paneKey))
         : null
+      // Why not tab.ptyId: findPtyForMobileTerminalTab already rejected it when it returned
+      // null, because persisted ids can collide with an unrelated pane after restart — reading
+      // that pane's tracker would publish its title here, ahead of every other source.
+      const trackerOnlyTitle = this.getUnpersistedTrackedTitleForPty(
+        liveLeafPtyId ?? pty?.ptyId ?? null
+      )
       const leafTitle = leaf
         ? getLatestAgentCandidateTitle(
             { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
@@ -30425,7 +30435,7 @@ export class OrcaRuntimeService {
         pty?.foregroundAgent ??
         null
       const title = normalizeCompatibleAgentTitleForOwner(
-        leafTitle ?? ptyTitle ?? syncedTab?.title ?? tab.title,
+        trackerOnlyTitle ?? leafTitle ?? ptyTitle ?? syncedTab?.title ?? tab.title,
         ownerAgent
       )
       const liveTitleEvidence = leafTitle ?? ptyTitle
@@ -30595,6 +30605,9 @@ export class OrcaRuntimeService {
       ? { providerSession: hookRow.providerSession }
       : {}
     const leaf = this.leaves.get(this.getLeafKey(tab.parentTabId, tab.leafId)) ?? null
+    const trackerOnlyTitle = this.getUnpersistedTrackedTitleForPty(
+      pty?.ptyId ?? leaf?.ptyId ?? null
+    )
     const ptyTitle = pty
       ? getLatestAgentCandidateTitle(
           { title: pty.title, updatedAt: pty.titleUpdatedAt },
@@ -30635,7 +30648,7 @@ export class OrcaRuntimeService {
       pty?.foregroundAgent ??
       null
     const terminalTitle = normalizeCompatibleAgentTitleForOwner(
-      (pty ? getLatestPtyTitle(pty) : null) ?? tab.title,
+      trackerOnlyTitle ?? (pty ? getLatestPtyTitle(pty) : null) ?? tab.title,
       ownerAgent
     )
     // Why: OSC 9999 hook payload carries real state/prompt/agent; without preferring it, hook-only transitions never surfaced (#7970).
