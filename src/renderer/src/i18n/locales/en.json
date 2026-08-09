@@ -4644,7 +4644,8 @@
         },
         "WorktreeCardReviewDetailSection": {
           "copyLink": "Copy link",
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "reviewListHeader": "{{value0}} reviews"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "Workspace metadata",
