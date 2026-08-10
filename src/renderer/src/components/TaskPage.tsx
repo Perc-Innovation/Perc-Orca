@@ -201,7 +201,6 @@ import {
 import JiraIssueWorkspace from '@/components/JiraIssueWorkspace'
 import { TaskPageJiraIssueList } from '@/components/task-page-jira-issue-list'
 import type { TaskPageJiraBoardSection } from '@/components/task-page-jira-board-sections'
-import { jiraCurrentSprintJql } from '@/components/task-page-jira-sprint-filter'
 import { TaskPageJiraBoard, jiraBoardIssueRefKey } from '@/components/task-page-jira-board'
 import {
   findJiraBoardSectionTransition,
@@ -4448,7 +4447,6 @@ export default function TaskPage(): React.JSX.Element {
   const linearPrimaryTeamRef = useRef<LinearPrimaryTeamObservation | null>(null)
   const [linearViewMode, setLinearViewMode] = useState<LinearViewMode>(DEFAULT_LINEAR_VIEW_MODE)
   const [jiraViewMode, setJiraViewMode] = useState<JiraViewMode>('list')
-  const [jiraSprintOnly, setJiraSprintOnly] = useState(false)
   const [jiraBoardUpdatingIssueKeys, setJiraBoardUpdatingIssueKeys] = useState<ReadonlySet<string>>(
     () => new Set()
   )
@@ -8868,15 +8866,8 @@ export default function TaskPage(): React.JSX.Element {
     const trimmed = appliedJiraSearch.trim()
     const activeFilterJql =
       trimmed.length === 0 ? resolveActiveJiraFilterJql(activeJiraFilter, jiraCustomFilters) : null
-    const request = jiraSprintOnly
-      ? searchJiraIssues(
-          jiraCurrentSprintJql(activeJiraPreset, appliedJiraSearch),
-          JIRA_ITEM_LIMIT,
-          {
-            sourceContext: jiraTaskSourceContext
-          }
-        )
-      : trimmed.length > 0
+    const request =
+      trimmed.length > 0
         ? searchJiraIssues(trimmed, JIRA_ITEM_LIMIT, { sourceContext: jiraTaskSourceContext })
         : activeFilterJql
           ? searchJiraIssues(activeFilterJql, JIRA_ITEM_LIMIT, {
@@ -8934,7 +8925,6 @@ export default function TaskPage(): React.JSX.Element {
     selectedJiraSiteId,
     appliedJiraSearch,
     activeJiraPreset,
-    jiraSprintOnly,
     activeJiraFilter,
     jiraCustomFilters,
     jiraRefreshNonce,
@@ -11174,28 +11164,6 @@ export default function TaskPage(): React.JSX.Element {
                     {translate('auto.components.TaskPage.63b2abd3aa', 'Jira issues')}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => setJiraSprintOnly((value) => !value)}
-                          aria-pressed={jiraSprintOnly}
-                          className={cn(
-                            'inline-flex h-7 items-center gap-1 rounded-md border border-border/50 bg-background/70 px-2 text-[11px] font-medium text-muted-foreground transition hover:text-foreground',
-                            jiraSprintOnly &&
-                              'border-ring/50 bg-accent text-accent-foreground shadow-xs'
-                          )}
-                        >
-                          {translate('auto.components.TaskPage.jiraSprintFilter', 'Sprint')}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" sideOffset={6}>
-                        {translate(
-                          'auto.components.TaskPage.jiraSprintFilterTooltip',
-                          'Only issues in open sprints'
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
                     <div
                       className="flex items-center rounded-md border border-border/50 bg-background/70 p-0.5"
                       aria-label={translate(
