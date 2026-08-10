@@ -158,7 +158,6 @@ export function TaskPageJiraBoard({
                 const selected = isSelectedIssue(issue, selectedIssue)
                 const dragging = draggingIssueRefKey === refKey
                 const updating = updatingIssueKeys.has(refKey)
-                const labels = issue.labels.slice(0, 2)
                 const contextLabel =
                   showSiteContext && issue.siteName
                     ? `${issue.siteName} / ${issue.project.key}`
@@ -256,9 +255,11 @@ export function TaskPageJiraBoard({
                         </Tooltip>
                       </div>
                     </div>
-                    {labels.length > 0 ? (
-                      <div className="mt-1.5 flex min-w-0 items-center gap-1">
-                        {labels.map((label) => (
+                    {issue.labels.length > 0 ? (
+                      // Why: board cards show every tag (wrapped) — the kanban is
+                      // the triage surface, so hiding tags behind "+N" defeats it.
+                      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
+                        {issue.labels.map((label) => (
                           <span
                             key={label}
                             className="max-w-[140px] truncate rounded-full border border-border/50 bg-muted/35 px-1.5 py-0.5 text-[10px] text-muted-foreground"
@@ -266,11 +267,6 @@ export function TaskPageJiraBoard({
                             {label}
                           </span>
                         ))}
-                        {issue.labels.length > labels.length ? (
-                          <span className="text-[10px] text-muted-foreground">
-                            +{issue.labels.length - labels.length}
-                          </span>
-                        ) : null}
                       </div>
                     ) : null}
                     <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted-foreground">

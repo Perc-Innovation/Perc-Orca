@@ -87,6 +87,18 @@ describe('TaskPageJiraBoard', () => {
     expect(markup.indexOf('Done')).toBeLessThan(markup.indexOf('To Do'))
   })
 
+  it('renders every ticket label as a chip without a +N overflow', () => {
+    const tagged = {
+      ...issue('STA-7', todo),
+      labels: ['CarryOver', 'sprint-14', 'SDLC', 'b2b', 'procesos', 'retrospective']
+    }
+    const markup = renderBoard([tagged])
+    for (const label of tagged.labels) {
+      expect(markup).toContain(label)
+    }
+    expect(markup).not.toMatch(/\+\d/)
+  })
+
   it('marks updating cards as disabled for dragging', () => {
     const updating = issue('STA-9', todo)
     const markup = renderToStaticMarkup(
