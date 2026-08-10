@@ -3302,7 +3302,7 @@ describe('project groups', () => {
     ])
   })
 
-  it('does not render folder workspaces under non-folder Project Groups', () => {
+  it('renders folder workspaces under manual Project Groups', () => {
     const group: ProjectGroup = {
       id: 'group-manual',
       name: 'Manual',
@@ -3318,7 +3318,7 @@ describe('project groups', () => {
     const folderWorkspace: FolderWorkspace = {
       id: 'folder-workspace-1',
       projectGroupId: group.id,
-      name: 'Hidden',
+      name: 'Terminals',
       folderPath: '/monorepo',
       linkedTask: null,
       comment: '',
@@ -3357,9 +3357,55 @@ describe('project groups', () => {
       {
         type: 'header',
         key: 'project-group:group-manual',
-        count: 0
+        count: 1
+      },
+      {
+        type: 'folder-workspace',
+        folderWorkspace: { id: folderWorkspace.id },
+        projectGroup: { id: group.id }
       }
     ])
+  })
+
+  it('does not render folder workspaces whose Project Group is missing', () => {
+    const folderWorkspace: FolderWorkspace = {
+      id: 'orphan-folder-workspace',
+      projectGroupId: 'missing-group',
+      name: 'Orphan',
+      folderPath: '/missing',
+      linkedTask: null,
+      comment: '',
+      isArchived: false,
+      isUnread: false,
+      isPinned: false,
+      sortOrder: 10,
+      lastActivityAt: 0,
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    const rows = buildRows(
+      'repo',
+      [],
+      new Map(),
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      [],
+      new Set(),
+      new Map(),
+      new Map(),
+      [],
+      undefined,
+      [folderWorkspace]
+    )
+
     expect(rows.some((row) => row.type === 'folder-workspace')).toBe(false)
   })
 

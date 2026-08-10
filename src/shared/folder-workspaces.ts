@@ -19,12 +19,7 @@ export function normalizeFolderWorkspaces(
   if (!Array.isArray(value)) {
     return []
   }
-  // Groups without a parentPath (manual groups) still own workspaces that carry
-  // their own folderPath; requiring parentPath here silently deleted them on load.
-  const groupsById = new Map<string, ProjectGroup>()
-  for (const group of projectGroups) {
-    groupsById.set(group.id, group)
-  }
+  const groupsById = new Map(projectGroups.map((group) => [group.id, group]))
 
   const workspaces: FolderWorkspace[] = []
   const seen = new Set<string>()

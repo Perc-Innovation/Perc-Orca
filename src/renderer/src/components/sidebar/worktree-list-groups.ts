@@ -1398,7 +1398,7 @@ export function buildRows(
   const folderWorkspacesByProjectGroupId = new Map<string, FolderWorkspace[]>()
   for (const workspace of folderWorkspaces) {
     const group = projectGroupsById.get(workspace.projectGroupId)
-    if (!group?.parentPath) {
+    if (!group) {
       continue
     }
     const list = folderWorkspacesByProjectGroupId.get(workspace.projectGroupId) ?? []
