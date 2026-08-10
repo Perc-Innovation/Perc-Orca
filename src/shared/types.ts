@@ -3341,6 +3341,7 @@ export type TaskResumeState = {
   linearIssueView?: LinearIssueViewResumeState
   jiraPreset?: 'assigned' | 'reported' | 'all' | 'done'
   jiraQuery?: string
+  jiraViewMode?: 'list' | 'board'
 }
 
 export type RightSidebarTab =

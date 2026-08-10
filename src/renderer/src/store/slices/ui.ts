@@ -329,6 +329,10 @@ const VALID_JIRA_PRESETS = new Set<NonNullable<TaskResumeState['jiraPreset']>>([
   'all',
   'done'
 ])
+const VALID_JIRA_VIEW_MODES = new Set<NonNullable<TaskResumeState['jiraViewMode']>>([
+  'list',
+  'board'
+])
 
 function resolvePaneKeyWorktreeIdFromTabs(state: AppState, paneKey: string): string | null {
   const parsed = parsePaneKey(paneKey)
@@ -592,6 +596,12 @@ function sanitizeTaskResumeState(value: unknown): TaskResumeState | undefined {
   }
   if (typeof input.jiraQuery === 'string') {
     next.jiraQuery = input.jiraQuery
+  }
+  if (
+    typeof input.jiraViewMode === 'string' &&
+    VALID_JIRA_VIEW_MODES.has(input.jiraViewMode as NonNullable<TaskResumeState['jiraViewMode']>)
+  ) {
+    next.jiraViewMode = input.jiraViewMode as NonNullable<TaskResumeState['jiraViewMode']>
   }
 
   return Object.keys(next).length > 0 ? next : undefined

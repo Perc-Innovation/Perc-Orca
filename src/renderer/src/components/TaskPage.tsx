@@ -4781,6 +4781,7 @@ export default function TaskPage(): React.JSX.Element {
     setActiveJiraPreset(jiraPreset)
     setJiraSearchInput(jiraQuery)
     setAppliedJiraSearch(jiraQuery)
+    setJiraViewMode(taskResumeState?.jiraViewMode ?? 'list')
 
     // Why: settings/UI hydrate async; apply the restored Tasks context exactly once so later source/filter clicks stay local.
     taskResumeAppliedRef.current = true
@@ -10933,7 +10934,10 @@ export default function TaskPage(): React.JSX.Element {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                onClick={() => setJiraViewMode(id)}
+                                onClick={() => {
+                                  setJiraViewMode(id)
+                                  setTaskResumeState({ jiraViewMode: id })
+                                }}
                                 aria-label={translate(
                                   'auto.components.TaskPage.af377b13b1',
                                   '{{value0}} view',

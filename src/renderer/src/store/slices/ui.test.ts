@@ -1681,7 +1681,8 @@ describe('createUISlice hydratePersistedUI', () => {
             }
           },
           jiraPreset: 'reported',
-          jiraQuery: 99
+          jiraQuery: 99,
+          jiraViewMode: 'board'
         } as unknown as PersistedUIState['taskResumeState']
       })
     )
@@ -1705,7 +1706,8 @@ describe('createUISlice hydratePersistedUI', () => {
           }
         }
       },
-      jiraPreset: 'reported'
+      jiraPreset: 'reported',
+      jiraViewMode: 'board'
     })
   })
 
