@@ -1986,8 +1986,6 @@
         "jiraBoardNoTransition": "No Jira transition to \"{{value0}}\" is available for {{value1}}",
         "jiraBoardMoveFailed": "Failed to move Jira issue",
         "jiraViewMode": "Jira view mode",
-        "jiraSprintFilter": "Sprint",
-        "jiraSprintFilterTooltip": "Only issues in open sprints",
         "jiraBoardEmptyColumn": "No issues"
       },
       "Terminal": {
