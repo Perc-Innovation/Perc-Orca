@@ -64,7 +64,8 @@ export const TaskResumeState = z
     // for paired clients on every subsequent write, not just this one.
     linearIssueView: LinearIssueViewResumeState.optional().catch(reportDiscardedLinearIssueView),
     jiraPreset: z.enum(['assigned', 'reported', 'all', 'done']).optional(),
-    jiraQuery: z.string().optional()
+    jiraQuery: z.string().optional(),
+    jiraViewMode: z.enum(['list', 'board']).optional()
   })
   .strict()
 
