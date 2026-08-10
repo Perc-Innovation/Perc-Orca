@@ -95,8 +95,8 @@
           "platform": "macos",
           "command": "pnpm exec electron-vite build --mode e2e && SKIP_BUILD=1 pnpm exec playwright test tests/e2e/folder-workspace-manual-group-restart.spec.ts --config tests/playwright.config.ts --project electron-headful --workers=1",
           "result": "passed",
-          "durationSeconds": 7,
-          "summary": "One isolated-profile headed Electron test passed two launches and rendered the exact manual-group folder-workspace row both times."
+          "durationSeconds": 8,
+          "summary": "Corrected oracle 8fa16033cf6a278f92a9e59d0ffc535e14e43644 passed two isolated-profile headed Electron launches and rendered the exact manual-group folder-workspace row both times."
         }
       ],
       "runtimeBudget": {
@@ -109,7 +109,7 @@
       },
       "redGreenEvidence": {
         "status": "complete",
-        "evidence": "The byte-identical test blobs in oracle tree a32abda1166fa53c68ef3f12d096afcc2e64fed2 failed five focused tests and the headed row assertion on base bbcf89e221ad5e759b1933bbd4b04b07f770f379 via overlay 2c00c6ec070239528faab270cecd9db697f6ea9c. Rebased published logic 4e6d6ae1fd88dc204f525ea394999037d9107dd5 passed 119 focused tests but failed the sidebar-row contract and headed restart via overlay c2e8319833768eeab0851c896e4a4751f8f7a8c1. Candidate 97fb69b2f95df6e35c894913d4ba9901e766bb89 passed all 120 focused tests and the headed restart; disabled ade2403a2f7630a38a3c6c403044acabbc5edb88 failed the same five focused tests."
+        "evidence": "Five test blobs are byte-identical across all four roles. Review base bbcf89e221ad5e759b1933bbd4b04b07f770f379 via oracle 791f5ef1f9c23ae3627a80e2c9dc6127ca9c5306 failed 5/120 persistence/renderer assertions, the runtime/mobile assertion, and the headed row. Public head 9911ba78729c7a81188dc628ce5985d6ca437b67 rebased as 4e6d6ae1fd88dc204f525ea394999037d9107dd5 via oracle 09bf9de2dce179807379dcf3141bcf26c471eeeb failed 1/120 renderer assertions, the runtime/mobile assertion, and the headed row. Corrected 8fa16033cf6a278f92a9e59d0ffc535e14e43644 passed 120/120 focused assertions, the runtime/mobile assertion, and both headed launches. Disabled 1102339d0767c5f069421f46a2d759b3aba2bb88 restores exactly the three production predicates and failed the same six deterministic assertions plus the headed row."
       },
       "performanceBudget": {
         "required": true,
