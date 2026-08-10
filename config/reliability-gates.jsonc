@@ -91,7 +91,7 @@
       },
       "redGreenEvidence": {
         "status": "complete",
-        "evidence": "The byte-identical oracle tree 4fec40a5ed24fd5239b3cfd1fe5c5225c59a619d failed four focused tests and the headed row assertion on base eacb9a9fa447cfe05558c50dba258c80f4f5c96e via overlay 12251816415a6a52da22b462c959b242f315b09e. Rebased published logic 972804c60eef936474ef78019fba9ce9b8dbfe77 passed persistence but failed the headed row because its referenced sidebar fix was not in the PR. Correction 7431072a484ce161e0f7d5ece5afb0d9375e71f8 passed both; disabled 87f1052a368e517bede3ecadcdd6479e7eca4598 has the exact red baseline tree."
+        "evidence": "The byte-identical test blobs in oracle tree ff317d5b1df769bdc83cf8db587a1c9ac42bda7c failed five focused tests and the headed row assertion on base eacb9a9fa447cfe05558c50dba258c80f4f5c96e via overlay 0b33561fa9f1f3d75d96fbb970415dc1e2325363. Rebased published logic 972804c60eef936474ef78019fba9ce9b8dbfe77 passed persistence but failed the headed row because its referenced sidebar fix was not in the PR. Candidate 38b68404c020e3db6f64b3b74d9f95096fabca12 passed 120 focused tests and the headed restart; disabled 0cf63935ad4dcebe4aba60ae4ff017ea7edbf5cd failed the same five focused tests."
       },
       "performanceBudget": {
         "required": true,
