@@ -4807,6 +4807,7 @@ export default function TaskPage(): React.JSX.Element {
     setActiveJiraPreset(jiraPreset)
     setJiraSearchInput(jiraQuery)
     setAppliedJiraSearch(jiraQuery)
+    setJiraViewMode(taskResumeState?.jiraViewMode ?? 'list')
 
     const jiraFilterView = loadJiraFilterViewState()
     setJiraCustomFilters(jiraFilterView.customFilters)
@@ -11178,7 +11179,10 @@ export default function TaskPage(): React.JSX.Element {
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                onClick={() => setJiraViewMode(id)}
+                                onClick={() => {
+                                  setJiraViewMode(id)
+                                  setTaskResumeState({ jiraViewMode: id })
+                                }}
                                 aria-label={translate(
                                   'auto.components.TaskPage.af377b13b1',
                                   '{{value0}} view',
