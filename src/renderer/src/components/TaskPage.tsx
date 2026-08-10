@@ -299,11 +299,11 @@ import {
   DEFAULT_LINEAR_ORDER_BY,
   DEFAULT_LINEAR_VIEW_MODE,
   LINEAR_DISPLAY_PROPERTIES,
-  resolveLinearIssueViewResumeState,
   selectLinearWorkspaceIssueFilter,
   serializeLinearIssueViewResumeState,
   setLinearWorkspaceIssueFilter
 } from '../../../shared/linear-issue-view-resume-state'
+import { loadLinearIssueView, saveLinearIssueView } from './linear-issue-view-storage'
 import {
   isNewIssueDraftContentful,
   resolveNewIssueOpenSeed,
@@ -373,6 +373,7 @@ import type {
   JiraProject,
   JiraProjectStatusOrder,
   JiraPriority,
+  JiraSavedFilter,
   LinearIssue,
   LinearProjectDetail,
   LinearProjectSummary,
@@ -414,8 +415,17 @@ import {
   jiraListIssueTypes,
   jiraListProjects,
   jiraListPriorities,
-  jiraUpdateIssue
+  jiraUpdateIssue,
+  jiraListSavedFilters
 } from '@/runtime/runtime-jira-client'
+import { TaskPageJiraFilterMenu } from './task-page-jira-filter-menu'
+import { loadJiraFilterViewState, saveJiraFilterViewState } from './jira-custom-filters-storage'
+import {
+  MAX_JIRA_CUSTOM_FILTERS,
+  resolveActiveJiraFilterJql,
+  type ActiveJiraFilterRef,
+  type JiraCustomFilter
+} from '../../../shared/jira-custom-filters'
 import {
   sortJiraIssues,
   type JiraIssueSortColumn,
@@ -4624,6 +4634,10 @@ export default function TaskPage(): React.JSX.Element {
   const [appliedJiraSearch, setAppliedJiraSearch] = useState('')
   const [activeJiraPreset, setActiveJiraPreset] = useState<JiraPresetId>('assigned')
   const [jiraRefreshNonce, setJiraRefreshNonce] = useState(0)
+  const [jiraSavedFilters, setJiraSavedFilters] = useState<JiraSavedFilter[]>([])
+  const [jiraSavedFiltersLoading, setJiraSavedFiltersLoading] = useState(false)
+  const [jiraCustomFilters, setJiraCustomFilters] = useState<JiraCustomFilter[]>([])
+  const [activeJiraFilter, setActiveJiraFilter] = useState<ActiveJiraFilterRef | null>(null)
   const [jiraProjectStatusOrder, setJiraProjectStatusOrder] = useState<{
     order: JiraProjectStatusOrder
     scopeKey: string
@@ -4689,6 +4703,64 @@ export default function TaskPage(): React.JSX.Element {
     [jiraOrderBy]
   )
 
+  const handleSelectJiraSavedFilter = useCallback(
+    (filter: JiraSavedFilter) => {
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      // Snapshot name/jql so the filter can run before the next list refresh.
+      setActiveJiraFilter({
+        source: 'saved',
+        siteId: filter.siteId,
+        filterId: filter.id,
+        name: filter.name,
+        jql: filter.jql
+      })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [setTaskResumeState]
+  )
+
+  const handleSelectJiraCustomFilter = useCallback(
+    (filter: JiraCustomFilter) => {
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      setActiveJiraFilter({ source: 'custom', id: filter.id })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [setTaskResumeState]
+  )
+
+  const handleCreateJiraCustomFilter = useCallback(
+    (draft: { name: string; jql: string }) => {
+      if (jiraCustomFilters.length >= MAX_JIRA_CUSTOM_FILTERS) {
+        return
+      }
+      const id = crypto.randomUUID()
+      setJiraCustomFilters((current) => [...current, { id, ...draft }])
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      setActiveJiraFilter({ source: 'custom', id })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [jiraCustomFilters.length, setTaskResumeState]
+  )
+
+  const handleUpdateJiraCustomFilter = useCallback(
+    (id: string, draft: { name: string; jql: string }) => {
+      setJiraCustomFilters((current) =>
+        current.map((filter) => (filter.id === id ? { ...filter, ...draft } : filter))
+      )
+    },
+    []
+  )
+
+  const handleDeleteJiraCustomFilter = useCallback((id: string) => {
+    setJiraCustomFilters((current) => current.filter((filter) => filter.id !== id))
+    setActiveJiraFilter((current) =>
+      current?.source === 'custom' && current.id === id ? null : current
+    )
+  }, [])
+
   useEffect(() => {
     if (taskResumeAppliedRef.current || !persistedUIReady || !settings) {
       return
@@ -4724,7 +4796,7 @@ export default function TaskPage(): React.JSX.Element {
     setLinearSearchInput(linearQuery)
     setAppliedLinearSearch(linearQuery)
 
-    const linearIssueView = resolveLinearIssueViewResumeState(taskResumeState?.linearIssueView)
+    const linearIssueView = loadLinearIssueView()
     setLinearViewMode(linearIssueView.viewMode)
     setLinearGroupBy(linearIssueView.groupBy)
     setLinearOrderBy(linearIssueView.orderBy)
@@ -4737,6 +4809,10 @@ export default function TaskPage(): React.JSX.Element {
     setActiveJiraPreset(jiraPreset)
     setJiraSearchInput(jiraQuery)
     setAppliedJiraSearch(jiraQuery)
+
+    const jiraFilterView = loadJiraFilterViewState()
+    setJiraCustomFilters(jiraFilterView.customFilters)
+    setActiveJiraFilter(jiraFilterView.activeFilter ?? null)
 
     // Why: settings/UI hydrate async; apply the restored Tasks context exactly once so later source/filter clicks stay local.
     taskResumeAppliedRef.current = true
@@ -8092,8 +8168,8 @@ export default function TaskPage(): React.JSX.Element {
       linearViewPersistReadyRef.current = true
       return
     }
-    setTaskResumeState({
-      linearIssueView: serializeLinearIssueViewResumeState({
+    saveLinearIssueView(
+      serializeLinearIssueViewResumeState({
         viewMode: linearViewMode,
         groupBy: linearGroupBy,
         orderBy: linearOrderBy,
@@ -8101,7 +8177,7 @@ export default function TaskPage(): React.JSX.Element {
         teamPropertyTouched: linearTeamPropertyTouched,
         filtersByWorkspaceId: linearIssueFiltersByWorkspaceId
       })
-    })
+    )
   }, [
     linearDisplayProperties,
     linearGroupBy,
@@ -8109,7 +8185,6 @@ export default function TaskPage(): React.JSX.Element {
     linearOrderBy,
     linearTeamPropertyTouched,
     linearViewMode,
-    setTaskResumeState,
     taskResumeApplied
   ])
 
@@ -8703,12 +8778,76 @@ export default function TaskPage(): React.JSX.Element {
     if (!taskResumeApplied) {
       return
     }
+    saveJiraFilterViewState({
+      customFilters: jiraCustomFilters,
+      activeFilter: activeJiraFilter ?? undefined
+    })
+  }, [activeJiraFilter, jiraCustomFilters, taskResumeApplied])
+
+  useEffect(() => {
+    if (!taskResumeApplied) {
+      return
+    }
     if (!jiraSearchPersistReadyRef.current) {
       jiraSearchPersistReadyRef.current = true
       return
     }
     setTaskResumeState({ jiraQuery: appliedJiraSearch.trim() })
   }, [appliedJiraSearch, setTaskResumeState, taskResumeApplied])
+
+  useEffect(() => {
+    if (!taskResumeApplied || taskSource !== 'jira' || !jiraConnected) {
+      return
+    }
+    let cancelled = false
+    setJiraSavedFiltersLoading(true)
+    jiraListSavedFilters(jiraTaskSourceContext ?? settings, selectedJiraSiteId)
+      .then((filters) => {
+        if (cancelled) {
+          return
+        }
+        setJiraSavedFilters(filters)
+        // Reconcile the active saved filter: pick up renames/JQL edits, and fall
+        // back to presets when the filter was deleted in Jira or is out of scope.
+        setActiveJiraFilter((current) => {
+          if (current?.source !== 'saved') {
+            return current
+          }
+          const match = filters.find(
+            (filter) => filter.siteId === current.siteId && filter.id === current.filterId
+          )
+          if (!match) {
+            return null
+          }
+          return match.name !== current.name || match.jql !== current.jql
+            ? { ...current, name: match.name, jql: match.jql }
+            : current
+        })
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          // Keep the panel usable without saved filters (e.g. older remote hosts).
+          setJiraSavedFilters([])
+          console.warn('[jira] saved filters load failed:', error)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setJiraSavedFiltersLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    taskSource,
+    jiraConnected,
+    selectedJiraSiteId,
+    jiraRefreshNonce,
+    taskResumeApplied,
+    jiraTaskSourceContext,
+    settings
+  ])
 
   useEffect(() => {
     if (!taskResumeApplied) {
@@ -8727,6 +8866,8 @@ export default function TaskPage(): React.JSX.Element {
     setJiraErrorDetailsOpen(false)
 
     const trimmed = appliedJiraSearch.trim()
+    const activeFilterJql =
+      trimmed.length === 0 ? resolveActiveJiraFilterJql(activeJiraFilter, jiraCustomFilters) : null
     const request = jiraSprintOnly
       ? searchJiraIssues(
           jiraCurrentSprintJql(activeJiraPreset, appliedJiraSearch),
@@ -8737,9 +8878,13 @@ export default function TaskPage(): React.JSX.Element {
         )
       : trimmed.length > 0
         ? searchJiraIssues(trimmed, JIRA_ITEM_LIMIT, { sourceContext: jiraTaskSourceContext })
-        : listJiraIssues(activeJiraPreset, JIRA_ITEM_LIMIT, {
-            sourceContext: jiraTaskSourceContext
-          })
+        : activeFilterJql
+          ? searchJiraIssues(activeFilterJql, JIRA_ITEM_LIMIT, {
+              sourceContext: jiraTaskSourceContext
+            })
+          : listJiraIssues(activeJiraPreset, JIRA_ITEM_LIMIT, {
+              sourceContext: jiraTaskSourceContext
+            })
 
     void request
       .then((issues) => {
@@ -8790,6 +8935,8 @@ export default function TaskPage(): React.JSX.Element {
     appliedJiraSearch,
     activeJiraPreset,
     jiraSprintOnly,
+    activeJiraFilter,
+    jiraCustomFilters,
     jiraRefreshNonce,
     taskResumeApplied,
     jiraTaskSourceContext,
@@ -9806,7 +9953,8 @@ export default function TaskPage(): React.JSX.Element {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap gap-2">
                         {jiraPresets.map((preset) => {
-                          const active = !jiraSearchInput && activeJiraPreset === preset.id
+                          const active =
+                            !jiraSearchInput && !activeJiraFilter && activeJiraPreset === preset.id
                           return (
                             <button
                               key={preset.id}
@@ -9815,6 +9963,7 @@ export default function TaskPage(): React.JSX.Element {
                                 setJiraSearchInput('')
                                 setAppliedJiraSearch('')
                                 setActiveJiraPreset(preset.id)
+                                setActiveJiraFilter(null)
                                 setTaskResumeState({ jiraPreset: preset.id, jiraQuery: '' })
                                 setJiraRefreshNonce((n) => n + 1)
                               }}
@@ -9829,6 +9978,19 @@ export default function TaskPage(): React.JSX.Element {
                             </button>
                           )
                         })}
+                        <TaskPageJiraFilterMenu
+                          savedFilters={jiraSavedFilters}
+                          savedFiltersLoading={jiraSavedFiltersLoading}
+                          customFilters={jiraCustomFilters}
+                          activeFilter={jiraSearchInput ? null : activeJiraFilter}
+                          showSiteName={selectedJiraSiteId === 'all'}
+                          initialJql={jiraSearchInput.trim()}
+                          onSelectSaved={handleSelectJiraSavedFilter}
+                          onSelectCustom={handleSelectJiraCustomFilter}
+                          onCreateCustom={handleCreateJiraCustomFilter}
+                          onUpdateCustom={handleUpdateJiraCustomFilter}
+                          onDeleteCustom={handleDeleteJiraCustomFilter}
+                        />
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Tooltip>

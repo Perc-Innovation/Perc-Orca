@@ -127,6 +127,8 @@ import type {
   ArtifactListOptions,
   ArtifactListPage,
   ArtifactListItem,
+  ArtifactPublishedLink,
+  ArtifactPublishResult,
   ArtifactWriteRequest
 } from '../../shared/artifacts'
 import type { ArtifactCloudService } from '../artifacts/artifact-cloud-service'
@@ -791,6 +793,7 @@ import {
   searchIssues as searchJiraIssues,
   updateIssue as updateJiraIssue
 } from '../jira/issues'
+import { listSavedFilters as listJiraSavedFilters } from '../jira/saved-filters'
 import {
   clearProjectItemFieldValue,
   getProjectViewTable,
@@ -4644,8 +4647,20 @@ export class OrcaRuntimeService {
     return this.requireArtifactService().list(options)
   }
 
+  getPublishedArtifactLink(
+    request: ArtifactCloudOptions & { sourceKey: string }
+  ): Promise<ArtifactCloudOperation<ArtifactPublishedLink | null>> {
+    return this.requireArtifactService().getPublishedLink(request)
+  }
+
   shareArtifact(request: ArtifactWriteRequest): Promise<ArtifactCloudOperation<ArtifactListItem>> {
     return this.requireArtifactService().share(request)
+  }
+
+  publishArtifact(
+    request: ArtifactWriteRequest
+  ): Promise<ArtifactCloudOperation<ArtifactPublishResult>> {
+    return this.requireArtifactService().publish(request)
   }
 
   updateArtifact(request: ArtifactWriteRequest): Promise<ArtifactCloudOperation<ArtifactListItem>> {
@@ -34681,6 +34696,10 @@ export class OrcaRuntimeService {
 
   jiraListProjects(siteId?: JiraSiteSelection): ReturnType<typeof listJiraProjects> {
     return listJiraProjects(siteId)
+  }
+
+  jiraListSavedFilters(siteId?: JiraSiteSelection): ReturnType<typeof listJiraSavedFilters> {
+    return listJiraSavedFilters(siteId)
   }
 
   jiraListIssueTypes(
