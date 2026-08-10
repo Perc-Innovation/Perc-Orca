@@ -16,26 +16,29 @@
       "maturity": "experimental",
       "protection": "partial",
       "owner": "startup-persistence",
-      "layer": "main-store-renderer-restart",
+      "layer": "main-store-renderer-runtime-mobile-restart",
       "surfaces": [
         "folder workspace persistence load",
         "workspace session terminal ownership",
-        "project-group sidebar rows"
+        "project-group sidebar rows",
+        "runtime/mobile workspace inventory"
       ],
       "platforms": ["macos", "linux", "windows"],
       "providers": ["local", "ssh", "paired-runtime"],
       "coveredPlatforms": ["macos"],
       "coveredProviders": ["local", "ssh"],
-      "coverageNotes": "Production Store restart tests cover runtime-created local workspaces, seeded local and SSH legacy shapes, explicit null provenance, POSIX and Windows-style paths, malformed entries, folder-scan fallback, terminal wiring, durable rewrite, and group-delete cleanup. A headed macOS Electron test proves the row is visible before and after restart; live SSH, paired-runtime, Linux, and Windows launches remain gaps.",
+      "coverageNotes": "Production Store restart tests cover runtime-created local workspaces, seeded local and SSH legacy shapes, explicit null provenance, POSIX and Windows-style paths, malformed entries, folder-scan fallback, terminal wiring, durable rewrite, and group-delete cleanup. Deterministic runtime coverage proves worktree.ps includes an explicit-path workspace whose existing manual group has null parentPath. A headed macOS Electron test proves the desktop row is visible before and after restart; live SSH, paired-runtime, Linux, and Windows launches remain gaps.",
       "motivatingLinks": ["https://github.com/stablyai/orca/pull/13344"],
       "invariant": "A folder workspace with an existing project group and its own non-empty folderPath must survive persistence load regardless of whether the group has parentPath, preserve host provenance and session ownership, and remain reachable in the sidebar; only missing groups or unresolvable paths may be dropped.",
-      "oracle": "Create a real folder workspace in a manual group through the production Store, attach a terminal tab, flush, restart, flush again, and require the workspace plus tab wiring to remain durable before proving explicit group deletion cleans both. Seed local, SSH, Windows-path, folder-scan fallback, duplicate, orphaned, and malformed legacy records and require exact salvage. Launch headed Orca twice against the same seeded profile and require the manual-group workspace row on both launches.",
+      "oracle": "Create a real folder workspace in a manual group through the production Store, attach a terminal tab, flush, restart, flush again, and require the workspace plus tab wiring to remain durable before proving explicit group deletion cleans both. Seed local, SSH, Windows-path, folder-scan fallback, duplicate, orphaned, and malformed legacy records and require exact salvage. Request worktree.ps and require the manual-group workspace in runtime/mobile inventory. Launch headed Orca twice against the same seeded profile and require the desktop row on both launches.",
       "commands": [
         "pnpm exec vitest run --config config/vitest.config.ts src/main/folder-workspace-persistence-load.test.ts src/shared/folder-workspaces.test.ts src/renderer/src/components/sidebar/worktree-list-groups.test.ts --reporter=dot",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts --reporter=dot",
         "pnpm exec electron-vite build --mode e2e && SKIP_BUILD=1 pnpm exec playwright test tests/e2e/folder-workspace-manual-group-restart.spec.ts --config tests/playwright.config.ts --project electron-headful --workers=1"
       ],
       "testFiles": [
         "src/main/folder-workspace-persistence-load.test.ts",
+        "src/main/runtime/orca-runtime.test.ts",
         "src/shared/folder-workspaces.test.ts",
         "src/renderer/src/components/sidebar/worktree-list-groups.test.ts",
         "tests/e2e/folder-workspace-manual-group-restart.spec.ts"
@@ -47,6 +50,12 @@
             "runtime-created manual-group workspace and terminal wiring survive restart and the following durable save",
             "local, SSH, Windows-path, and folder-scan fallback records survive while duplicates, orphans, missing paths, and malformed values drop",
             "explicit project-group deletion removes the retained workspace and its scoped terminal state"
+          ]
+        },
+        {
+          "file": "src/main/runtime/orca-runtime.test.ts",
+          "assertions": [
+            "worktree.ps includes an explicit-path folder workspace when its existing manual project group has null parentPath and excludes one whose group is missing"
           ]
         },
         {
@@ -75,6 +84,15 @@
           "date": "2026-08-10",
           "runner": "local",
           "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts --reporter=dot",
+          "result": "passed",
+          "durationSeconds": 18,
+          "summary": "The full runtime file passed 1,077 tests with one existing skip, including manual-group mobile inventory, host routing, authorization, and deletion paths."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
           "command": "pnpm exec electron-vite build --mode e2e && SKIP_BUILD=1 pnpm exec playwright test tests/e2e/folder-workspace-manual-group-restart.spec.ts --config tests/playwright.config.ts --project electron-headful --workers=1",
           "result": "passed",
           "durationSeconds": 7,
@@ -82,8 +100,8 @@
         }
       ],
       "runtimeBudget": {
-        "p95Seconds": 15,
-        "scope": "focused Store, normalizer, sidebar-row, and headed restart contracts on a local development runner"
+        "p95Seconds": 30,
+        "scope": "focused Store, normalizer, sidebar-row and headed restart contracts plus the full OrcaRuntimeService test file on a local development runner"
       },
       "flakeHistory": {
         "status": "unknown",
@@ -95,7 +113,7 @@
       },
       "performanceBudget": {
         "required": true,
-        "evidence": "Normalization performs one project-group index build, one workspace pass, and the existing result sort: O(groups + workspaces log workspaces), with no filesystem, provider, RPC, retry, polling, subprocess, or listener work. A 20,000-group/20,000-workspace contract guards indexed lookup; sidebar grouping remains one group index plus one workspace pass and existing per-group sorting."
+        "evidence": "Normalization performs one project-group index build, one workspace pass, and the existing result sort: O(groups + workspaces log workspaces), with no filesystem, provider, RPC, retry, polling, subprocess, or listener work. The 20,000-group/20,000-workspace contract covers only normalization's indexed lookup; renderer grouping and runtime/mobile inventory have focused functional coverage but no scale oracle."
       },
       "promotionCriteria": [
         "Collect stable CI and headed macOS soak history.",

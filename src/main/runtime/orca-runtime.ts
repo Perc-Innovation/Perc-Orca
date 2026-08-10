@@ -17550,7 +17550,7 @@ export class OrcaRuntimeService {
     )
     for (const folderWorkspace of this.store?.getFolderWorkspaces?.() ?? []) {
       const projectGroup = projectGroupById.get(folderWorkspace.projectGroupId)
-      if (!projectGroup?.parentPath) {
+      if (!projectGroup) {
         continue
       }
       const worktree = folderWorkspaceToWorktree(folderWorkspace)

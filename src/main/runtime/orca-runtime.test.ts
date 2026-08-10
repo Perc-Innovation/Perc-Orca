@@ -35104,6 +35104,38 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('uses project-group existence for folder workspaces in mobile inventory', async () => {
+    const folderWorkspace = makeFolderWorkspace({ folderPath: '/tmp/manual-folder' })
+    const orphanWorkspace = makeFolderWorkspace({
+      id: 'orphan-folder-workspace',
+      projectGroupId: 'missing-group',
+      folderPath: '/tmp/orphan-folder'
+    })
+    const projectGroup = makeFolderProjectGroup({
+      name: 'Manual',
+      parentPath: null,
+      createdFrom: 'manual'
+    })
+    const runtime = new OrcaRuntimeService({
+      ...createFolderWorkspaceRuntimeStore(folderWorkspace, projectGroup),
+      getFolderWorkspaces: () => [folderWorkspace, orphanWorkspace]
+    } as never)
+
+    const { worktrees } = await runtime.getWorktreePs()
+
+    expect(worktrees).toContainEqual(
+      expect.objectContaining({
+        workspaceKind: 'folder-workspace',
+        worktreeId: TEST_FOLDER_WORKSPACE_KEY,
+        repo: 'Manual',
+        path: '/tmp/manual-folder'
+      })
+    )
+    expect(
+      worktrees.some((worktree) => worktree.worktreeId === 'folder:orphan-folder-workspace')
+    ).toBe(false)
+  })
+
   it('attaches inline agent rows from the latest OSC 9999 status', async () => {
     const runtime = new OrcaRuntimeService(store)
     const leafId = '22222222-2222-4222-8222-222222222222'
