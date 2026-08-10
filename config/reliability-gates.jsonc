@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-09",
+  "updatedAt": "2026-08-10",
   "policy": {
     "maturityLevels": ["experimental", "soak", "blocking", "accepted-gap", "deprecated"],
     "blockingPromotion": {
@@ -10,6 +10,105 @@
     }
   },
   "gates": [
+    {
+      "id": "folder-workspace.manual-group-restart-survival",
+      "title": "Manual-group folder workspaces survive restart and remain reachable",
+      "maturity": "experimental",
+      "protection": "partial",
+      "owner": "startup-persistence",
+      "layer": "main-store-renderer-restart",
+      "surfaces": [
+        "folder workspace persistence load",
+        "workspace session terminal ownership",
+        "project-group sidebar rows"
+      ],
+      "platforms": ["macos", "linux", "windows"],
+      "providers": ["local", "ssh", "paired-runtime"],
+      "coveredPlatforms": ["macos"],
+      "coveredProviders": ["local", "ssh"],
+      "coverageNotes": "Production Store restart tests cover runtime-created local workspaces, seeded local and SSH legacy shapes, explicit null provenance, POSIX and Windows-style paths, malformed entries, folder-scan fallback, terminal wiring, durable rewrite, and group-delete cleanup. A headed macOS Electron test proves the row is visible before and after restart; live SSH, paired-runtime, Linux, and Windows launches remain gaps.",
+      "motivatingLinks": ["https://github.com/stablyai/orca/pull/13344"],
+      "invariant": "A folder workspace with an existing project group and its own non-empty folderPath must survive persistence load regardless of whether the group has parentPath, preserve host provenance and session ownership, and remain reachable in the sidebar; only missing groups or unresolvable paths may be dropped.",
+      "oracle": "Create a real folder workspace in a manual group through the production Store, attach a terminal tab, flush, restart, flush again, and require the workspace plus tab wiring to remain durable before proving explicit group deletion cleans both. Seed local, SSH, Windows-path, folder-scan fallback, duplicate, orphaned, and malformed legacy records and require exact salvage. Launch headed Orca twice against the same seeded profile and require the manual-group workspace row on both launches.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/folder-workspace-persistence-load.test.ts src/shared/folder-workspaces.test.ts src/renderer/src/components/sidebar/worktree-list-groups.test.ts --reporter=dot",
+        "pnpm exec electron-vite build --mode e2e && SKIP_BUILD=1 pnpm exec playwright test tests/e2e/folder-workspace-manual-group-restart.spec.ts --config tests/playwright.config.ts --project electron-headful --workers=1"
+      ],
+      "testFiles": [
+        "src/main/folder-workspace-persistence-load.test.ts",
+        "src/shared/folder-workspaces.test.ts",
+        "src/renderer/src/components/sidebar/worktree-list-groups.test.ts",
+        "tests/e2e/folder-workspace-manual-group-restart.spec.ts"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/main/folder-workspace-persistence-load.test.ts",
+          "assertions": [
+            "runtime-created manual-group workspace and terminal wiring survive restart and the following durable save",
+            "local, SSH, Windows-path, and folder-scan fallback records survive while duplicates, orphans, missing paths, and malformed values drop",
+            "explicit project-group deletion removes the retained workspace and its scoped terminal state"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/sidebar/worktree-list-groups.test.ts",
+          "assertions": [
+            "manual groups render their owned folder-workspace rows",
+            "folder workspaces with missing project groups stay hidden"
+          ]
+        },
+        {
+          "file": "tests/e2e/folder-workspace-manual-group-restart.spec.ts",
+          "assertions": ["headed Orca renders the exact folder-workspace row on both launches"]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/folder-workspace-persistence-load.test.ts src/shared/folder-workspaces.test.ts src/renderer/src/components/sidebar/worktree-list-groups.test.ts --reporter=dot",
+          "result": "passed",
+          "durationSeconds": 2,
+          "summary": "Three deterministic files passed production Store restart, normalization, cleanup, scale, and sidebar-row contracts."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec electron-vite build --mode e2e && SKIP_BUILD=1 pnpm exec playwright test tests/e2e/folder-workspace-manual-group-restart.spec.ts --config tests/playwright.config.ts --project electron-headful --workers=1",
+          "result": "passed",
+          "durationSeconds": 7,
+          "summary": "One isolated-profile headed Electron test passed two launches and rendered the exact manual-group folder-workspace row both times."
+        }
+      ],
+      "runtimeBudget": {
+        "p95Seconds": 15,
+        "scope": "focused Store, normalizer, sidebar-row, and headed restart contracts on a local development runner"
+      },
+      "flakeHistory": {
+        "status": "unknown",
+        "evidence": "One deterministic and one headed local run are recorded; CI and soak history have not started."
+      },
+      "redGreenEvidence": {
+        "status": "complete",
+        "evidence": "The byte-identical oracle tree 4fec40a5ed24fd5239b3cfd1fe5c5225c59a619d failed four focused tests and the headed row assertion on base eacb9a9fa447cfe05558c50dba258c80f4f5c96e via overlay 12251816415a6a52da22b462c959b242f315b09e. Rebased published logic 972804c60eef936474ef78019fba9ce9b8dbfe77 passed persistence but failed the headed row because its referenced sidebar fix was not in the PR. Correction 7431072a484ce161e0f7d5ece5afb0d9375e71f8 passed both; disabled 87f1052a368e517bede3ecadcdd6479e7eca4598 has the exact red baseline tree."
+      },
+      "performanceBudget": {
+        "required": true,
+        "evidence": "Normalization performs one project-group index build, one workspace pass, and the existing result sort: O(groups + workspaces log workspaces), with no filesystem, provider, RPC, retry, polling, subprocess, or listener work. A 20,000-group/20,000-workspace contract guards indexed lookup; sidebar grouping remains one group index plus one workspace pass and existing per-group sorting."
+      },
+      "promotionCriteria": [
+        "Collect stable CI and headed macOS soak history.",
+        "Run the restart oracle against a real direct-SSH folder workspace.",
+        "Collect Linux or Windows headed coverage and paired-runtime inventory parity."
+      ],
+      "knownGaps": [
+        "The headed profile is seeded rather than created through a live runtime RPC.",
+        "No live SSH, paired-runtime, Linux, Windows, WSL, or headless serve restart was run.",
+        "The provider-independent path strings are covered, but remote filesystem availability is owned by the existing activation path-status gate."
+      ],
+      "demotionRule": "Demote or quarantine if restart can drop a resolvable workspace, retain an orphan, lose session wiring, hide the retained row, leak cleanup state, or make catalog normalization superlinear before its existing sort."
+    },
     {
       "id": "editor.restored-sibling-owner-reparent",
       "title": "Restored sibling tabs migrate filesystem authority before becoming editable",

@@ -67,4 +67,24 @@ describe('normalizeFolderWorkspaces', () => {
     const result = normalizeFolderWorkspaces([workspace({ connectionId: null })], groups)
     expect(result[0]?.connectionId).toBeNull()
   })
+
+  it('indexes large manual-group catalogs without dropping workspaces', () => {
+    const count = 20_000
+    const groups = Array.from({ length: count }, (_, index) =>
+      group({ id: `group-${index}`, parentPath: null })
+    )
+    const workspaces = Array.from({ length: count }, (_, index) =>
+      workspace({
+        id: `workspace-${index}`,
+        projectGroupId: `group-${index}`,
+        folderPath: `/tmp/project-${index}`,
+        sortOrder: index
+      })
+    )
+
+    const result = normalizeFolderWorkspaces(workspaces, groups)
+
+    expect(result).toHaveLength(count)
+    expect(new Set(result.map((entry) => entry.id)).size).toBe(count)
+  })
 })
