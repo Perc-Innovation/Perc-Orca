@@ -4846,7 +4846,8 @@
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
           "failedNestWorkspace": "Failed to nest workspace",
           "sidebarRowMissing": "Target no longer exists",
-          "failedUnnestWorkspace": "Failed to unnest workspace"
+          "failedUnnestWorkspace": "Failed to unnest workspace",
+          "openGitGraph": "Open Git Graph"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",
