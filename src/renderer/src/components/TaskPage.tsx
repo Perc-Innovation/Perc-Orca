@@ -146,6 +146,11 @@ import {
   getLinearIssueWorkspaceAttachmentLabel
 } from '@/lib/linear-issue-workspace-attachment'
 import { openLinearIssueWorkspaceOrStart } from '@/lib/linear-issue-workspace-open'
+import {
+  buildJiraIssueWorkspaceAttachmentIndex,
+  findJiraIssueWorkspaceAttachmentInIndex
+} from '@/lib/jira-issue-workspace-attachment'
+import { openJiraIssueWorkspaceOrStart } from '@/lib/jira-issue-workspace-open'
 import { folderWorkspaceToWorktree } from '../../../shared/folder-workspace-worktree'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useRepoAssigneesBySlug } from '@/hooks/useGitHubSlugMetadata'
@@ -5372,6 +5377,14 @@ export default function TaskPage(): React.JSX.Element {
     () => buildLinearIssueWorkspaceAttachmentIndex(linearAttachmentWorkspaces),
     [linearAttachmentWorkspaces]
   )
+  const jiraIssueAttachmentIndex = useMemo(
+    () => buildJiraIssueWorkspaceAttachmentIndex(linearAttachmentWorkspaces),
+    [linearAttachmentWorkspaces]
+  )
+  const getJiraIssueAttachedWorkspace = useCallback(
+    (issue: JiraIssue) => findJiraIssueWorkspaceAttachmentInIndex(jiraIssueAttachmentIndex, issue),
+    [jiraIssueAttachmentIndex]
+  )
   const inOrcaLinkedLinearRefs = useMemo(
     () =>
       collectLinkedLinearIssueRefsFromWorktrees(linearAttachmentWorkspaces, {
@@ -9106,6 +9119,15 @@ export default function TaskPage(): React.JSX.Element {
     [openComposerForJiraItem]
   )
 
+  const handleOpenOrUseJiraItem = useCallback(
+    (issue: JiraIssue): void => {
+      if (openJiraIssueWorkspaceOrStart(issue, () => handleUseJiraItem(issue)) === 'opened') {
+        useAppStore.getState().recordFeatureInteraction('jira-tasks')
+      }
+    },
+    [handleUseJiraItem]
+  )
+
   const taskPageListChromeHidden = shouldHideTaskPageListChrome({
     taskSource,
     hasGitHubDetail: Boolean(dialogWorkItem),
@@ -11275,10 +11297,11 @@ export default function TaskPage(): React.JSX.Element {
                   {jiraViewMode === 'list' ? (
                     <TaskPageJiraIssueList
                       formatUpdatedAt={formatRelativeTime}
+                      getAttachedWorkspace={getJiraIssueAttachedWorkspace}
                       getStatusTone={getJiraStatusTone}
                       issues={sortedJiraIssues}
                       onOpenIssue={openJiraDetailPage}
-                      onStartWorkspace={handleUseJiraItem}
+                      onStartWorkspace={handleOpenOrUseJiraItem}
                       selectedIssue={selectedJiraIssue}
                       showSiteContext={selectedJiraSiteId === 'all'}
                       statusDirection={jiraOrderBy === 'status' ? jiraOrderDirection : 'asc'}
@@ -11287,11 +11310,12 @@ export default function TaskPage(): React.JSX.Element {
                   ) : (
                     <TaskPageJiraBoard
                       formatUpdatedAt={formatRelativeTime}
+                      getAttachedWorkspace={getJiraIssueAttachedWorkspace}
                       getStatusTone={getJiraStatusTone}
                       issues={sortedJiraIssues}
                       onMoveIssue={handleJiraBoardMoveIssue}
                       onOpenIssue={openJiraDetailPage}
-                      onStartWorkspace={handleUseJiraItem}
+                      onStartWorkspace={handleOpenOrUseJiraItem}
                       selectedIssue={selectedJiraIssue}
                       showSiteContext={selectedJiraSiteId === 'all'}
                       statusDirection={jiraOrderBy === 'status' ? jiraOrderDirection : 'asc'}
