@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowRight, ExternalLink, FolderOpen } from 'lucide-react'
+import { ArrowRight, ExternalLink, GitBranch } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -248,7 +248,7 @@ export function TaskPageJiraBoard({
                               }
                             >
                               {attachedWorkspace ? (
-                                <FolderOpen className="size-3.5" />
+                                <GitBranch className="size-3.5" />
                               ) : (
                                 <ArrowRight className="size-3.5" />
                               )}
@@ -300,7 +300,7 @@ export function TaskPageJiraBoard({
                     ) : null}
                     {attachedWorkspaceLabel ? (
                       <div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                        <FolderOpen className="size-3 shrink-0" />
+                        <GitBranch className="size-3 shrink-0" />
                         <span className="truncate">{attachedWorkspaceLabel}</span>
                       </div>
                     ) : null}

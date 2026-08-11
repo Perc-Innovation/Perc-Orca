@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, FolderOpen } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, GitBranch } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -261,7 +261,7 @@ function JiraIssueRow({
               }
             >
               {attachedWorkspace ? (
-                <FolderOpen className="size-3.5" />
+                <GitBranch className="size-3.5" />
               ) : (
                 <ArrowRight className="size-3.5" />
               )}
