@@ -14,7 +14,6 @@ afterEach(() => {
 describe('tab create menu options', () => {
   const defaultOptions = buildTabCreateMenuOptions({
     terminalOnly: false,
-    hasGitGraph: true,
     hasNewBrowser: true,
     hasNewMarkdown: true,
     hasOpenMarkdown: true,
@@ -33,7 +32,6 @@ describe('tab create menu options', () => {
   it('matches go-to simulator when the workspace already has one', () => {
     const options = buildTabCreateMenuOptions({
       terminalOnly: false,
-      hasGitGraph: false,
       hasNewBrowser: true,
       hasNewMarkdown: true,
       hasOpenMarkdown: false,
@@ -44,15 +42,6 @@ describe('tab create menu options', () => {
     expect(
       findMatchingTabCreateMenuOptions('simulator', options).map((option) => option.kind)
     ).toEqual(['go-to-simulator'])
-  })
-
-  it('matches git graph aliases to the open-git-graph action', () => {
-    expect(
-      findMatchingTabCreateMenuOptions('git graph', defaultOptions).map((option) => option.kind)
-    ).toEqual(['open-git-graph'])
-    expect(
-      findMatchingTabCreateMenuOptions('branches', defaultOptions).map((option) => option.kind)
-    ).toEqual(['open-git-graph'])
   })
 
   it('matches terminal and browser quick actions', () => {
@@ -67,7 +56,6 @@ describe('tab create menu options', () => {
   it('preserves default Windows shell order for tied terminal matches', () => {
     const options = buildTabCreateMenuOptions({
       terminalOnly: false,
-      hasGitGraph: false,
       hasNewBrowser: false,
       hasNewMarkdown: false,
       hasOpenMarkdown: false,
