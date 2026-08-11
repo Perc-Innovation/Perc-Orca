@@ -18,12 +18,11 @@ function logicalBranchKey(ref: GitHistoryItemRef): string | null {
     return ref.name
   }
   if (ref.category === 'remote branches') {
-    // Why: without configured remote names, `foo/bar/main` could be remote
-    // `foo` branch `bar/main` or remote `foo/bar` branch `main` — keep
-    // ambiguous refs on their own color instead of guessing a grouping.
-    if (ref.name.split('/').length > 2) {
-      return ref.id
-    }
+    // Why: slashed branch names (feat/x) make every remote-tracking ref look
+    // "nested" (origin/feat/x), and that is the common case — assume the first
+    // segment is the remote. Worst case a mis-split shares a color, which is
+    // harmless; ref-display keeps its stricter rule because there a bad guess
+    // hides a pill.
     return splitRemoteBranchName(ref.name)?.branchName ?? ref.id
   }
   return null

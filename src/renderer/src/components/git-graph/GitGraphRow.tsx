@@ -41,10 +41,13 @@ export const GitGraphRow = React.forwardRef<
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
     viewModel: GitHistoryItemViewModel
     worktreeOverlay: ReadonlyMap<string, GitGraphWorktreeOverlayEntry>
+    // Shared across all rows so subjects align into one column even though
+    // each row's own SVG only spans its active lanes.
+    laneColumnWidth: number
     onOpenCommit?: (item: GitHistoryItem) => void
   }
 >(function GitGraphRow(
-  { viewModel, worktreeOverlay, onOpenCommit, className, style, ...rootProps },
+  { viewModel, worktreeOverlay, laneColumnWidth, onOpenCommit, className, style, ...rootProps },
   ref
 ): React.JSX.Element {
   const item = viewModel.historyItem
@@ -61,7 +64,7 @@ export const GitGraphRow = React.forwardRef<
       type="button"
       style={style}
       className={cn(
-        'grid h-6 w-full min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 px-3 text-left text-xs transition-colors',
+        'grid h-6 w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] items-center gap-x-2 px-3 text-left text-xs transition-colors',
         onOpenCommit && 'cursor-pointer hover:bg-accent/40 focus-visible:bg-accent/40',
         viewModel.kind === 'HEAD' && 'bg-accent/20',
         className
@@ -74,16 +77,26 @@ export const GitGraphRow = React.forwardRef<
       )}
       onClick={onOpenCommit ? () => onOpenCommit(item) : undefined}
     >
-      <GitHistoryGraphSvg viewModel={viewModel} />
+      <span className="shrink-0" style={{ width: laneColumnWidth }}>
+        <GitHistoryGraphSvg viewModel={viewModel} />
+      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="block min-w-0 truncate text-foreground">{item.subject}</span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={6} className="max-w-96 whitespace-pre-wrap">
+          {rowTooltip}
+        </TooltipContent>
+      </Tooltip>
       {refs.length > 0 ? (
-        <span className="flex max-w-[40%] shrink-0 items-center gap-1 overflow-hidden">
+        <span className="flex min-w-0 shrink items-center justify-end gap-1 overflow-hidden">
           {visibleRefs.map((itemRef) => {
             const overlayEntry =
               itemRef.category === 'branches' ? worktreeOverlay.get(itemRef.id) : undefined
             return (
               <React.Fragment key={itemRef.id}>
-                <GitGraphRefPill itemRef={itemRef} />
                 {overlayEntry && <GitGraphWorktreeBadge entry={overlayEntry} />}
+                <GitGraphRefPill itemRef={itemRef} />
               </React.Fragment>
             )
           })}
@@ -103,14 +116,6 @@ export const GitGraphRow = React.forwardRef<
       ) : (
         <span />
       )}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="block min-w-0 truncate text-foreground">{item.subject}</span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" sideOffset={6} className="max-w-96 whitespace-pre-wrap">
-          {rowTooltip}
-        </TooltipContent>
-      </Tooltip>
       <span className="max-w-[9rem] shrink-0 truncate text-[11px] text-muted-foreground">
         {item.author ?? ''}
       </span>
