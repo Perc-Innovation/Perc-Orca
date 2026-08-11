@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { JiraIssue, JiraProjectStatusOrder, JiraStatus } from '../../../shared/types'
+import type { JiraIssue, JiraProjectStatusOrder, JiraStatus, Worktree } from '../../../shared/types'
 
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children?: React.ReactNode }) => children,
@@ -35,11 +35,13 @@ describe('TaskPageJiraBoard', () => {
 
   function renderBoard(
     issues: JiraIssue[],
-    statusOrder: JiraProjectStatusOrder | null = null
+    statusOrder: JiraProjectStatusOrder | null = null,
+    getAttachedWorkspace: (issue: JiraIssue) => Worktree | null = () => null
   ): string {
     return renderToStaticMarkup(
       <TaskPageJiraBoard
         formatUpdatedAt={() => '2d'}
+        getAttachedWorkspace={getAttachedWorkspace}
         getStatusTone={() => 'tone-class'}
         issues={issues}
         onMoveIssue={async () => {}}
@@ -99,11 +101,24 @@ describe('TaskPageJiraBoard', () => {
     expect(markup).not.toMatch(/\+\d/)
   })
 
+  it('shows the attached workspace label and Open affordance on linked cards', () => {
+    const attached = {
+      displayName: 'wolf-1-fix',
+      path: '/tmp/wolf',
+      branch: null
+    } as unknown as Worktree
+    const markup = renderBoard([issue('STA-1', todo)], null, () => attached)
+    expect(markup).toContain('wolf-1-fix')
+    expect(markup).toContain('Open workspace attached to STA-1')
+    expect(markup).not.toContain('Start workspace from STA-1')
+  })
+
   it('marks updating cards as disabled for dragging', () => {
     const updating = issue('STA-9', todo)
     const markup = renderToStaticMarkup(
       <TaskPageJiraBoard
         formatUpdatedAt={() => '2d'}
+        getAttachedWorkspace={() => null}
         getStatusTone={() => 'tone-class'}
         issues={[updating]}
         onMoveIssue={async () => {}}
