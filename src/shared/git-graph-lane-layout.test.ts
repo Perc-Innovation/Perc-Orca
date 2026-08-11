@@ -79,15 +79,15 @@ describe('buildGitGraphColorMap', () => {
     expect(colorMap.get('refs/remotes/origin/experiment')).toBe(LANE_2)
   })
 
-  it('keeps ambiguous nested remote refs on separate colors instead of guessing', () => {
+  it('shares one color across slashed branch names and their remote refs', () => {
     const colorMap = buildGitGraphColorMap([
-      item('A', ['C'], [branch('bar/main', 'A')]),
-      item('B', ['C'], [remote('foo/bar/main', 'B')]),
+      item('A', ['C'], [branch('feat/orca-cli', 'A')]),
+      item('B', ['C'], [remote('origin/feat/orca-cli', 'B')]),
       item('C', [], [])
     ])
 
-    expect(colorMap.get('refs/heads/bar/main')).toBe(LANE_1)
-    expect(colorMap.get('refs/remotes/foo/bar/main')).toBe(LANE_2)
+    expect(colorMap.get('refs/heads/feat/orca-cli')).toBe(LANE_1)
+    expect(colorMap.get('refs/remotes/origin/feat/orca-cli')).toBe(LANE_1)
   })
 
   it('maps tags to explicit undefined so pills inherit the lane color', () => {

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { buildGitGraphRows } from '../../../../shared/git-graph-lane-layout'
 import { GitHistoryCommitContextMenu } from '../right-sidebar/GitHistoryCommitContextMenu'
+import { SWIMLANE_WIDTH } from '../right-sidebar/GitHistoryGraphSvg'
 import { useGitHistoryCommitActions } from '../right-sidebar/useGitHistoryCommitActions'
 import { GIT_GRAPH_ROW_HEIGHT, GitGraphRow } from './GitGraphRow'
 import { buildGitGraphWorktreeOverlay } from './git-graph-worktree-overlay'
@@ -51,6 +52,13 @@ export function GitGraphView({ worktreeId }: { worktreeId: string }): React.JSX.
     () => (result ? buildGitGraphRows(result.items, result.currentRef) : []),
     [result]
   )
+  const laneColumnWidth = useMemo(() => {
+    let maxLanes = 1
+    for (const row of rows) {
+      maxLanes = Math.max(maxLanes, row.inputSwimlanes.length, row.outputSwimlanes.length)
+    }
+    return SWIMLANE_WIDTH * (maxLanes + 1)
+  }, [rows])
 
   const { openHistoryCommitDiff, handleCommitAction } = useGitHistoryCommitActions({
     activeWorktreeId: worktreeId,
@@ -150,6 +158,7 @@ export function GitGraphView({ worktreeId }: { worktreeId: string }): React.JSX.
                     <GitGraphRow
                       viewModel={viewModel}
                       worktreeOverlay={worktreeOverlay}
+                      laneColumnWidth={laneColumnWidth}
                       onOpenCommit={(item) => void openHistoryCommitDiff(item)}
                       className="absolute left-0 top-0"
                       style={{ transform: `translateY(${virtualRow.start}px)` }}
