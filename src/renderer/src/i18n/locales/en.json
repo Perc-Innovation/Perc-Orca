@@ -1992,12 +1992,12 @@
         "jiraBoardEmptyColumn": "No issues",
         "jiraFiltersMenuLabel": "Filters",
         "jiraFiltersSavedHeading": "Saved in Jira",
-        "jiraFiltersCustomHeading": "My filters",
         "jiraFiltersLoadingSaved": "Loading…",
         "jiraFiltersSavedEmpty": "No saved filters",
-        "jiraFiltersNewCustom": "New custom filter…",
+        "jiraFiltersCustomHeading": "My filters",
         "jiraFiltersEditAria": "Edit filter “{{name}}”",
         "jiraFiltersDeleteAria": "Delete filter “{{name}}”",
+        "jiraFiltersNewCustom": "New custom filter…",
         "jiraFiltersDialogTitleEdit": "Edit filter",
         "jiraFiltersDialogTitleNew": "New filter",
         "jiraFiltersDialogDescription": "Saved on this device. The JQL runs against your connected Jira sites.",
@@ -3128,8 +3128,7 @@
             "2148f65e04": "PowerShell",
             "ab589350e5": "Could not build launch command for {{value0}}.",
             "7a9b4af2af": "Scroll tabs left",
-            "232e075b07": "Scroll tabs right",
-            "openGitGraph": "Open Git Graph"
+            "232e075b07": "Scroll tabs right"
           },
           "TabBarCreateEntry": {
             "d62d63b807": "Create file",
@@ -3205,14 +3204,7 @@
                   "1baeb07c17": "ios simulator",
                   "8a580f88cf": "iphone",
                   "7ecdc5ef08": "ipad",
-                  "14965cc123": "mobile",
-                  "gitKeyword": "git",
-                  "graphKeyword": "graph",
-                  "gitGraphKeyword": "git graph",
-                  "branchesKeyword": "branches",
-                  "historyKeyword": "history",
-                  "commitsKeyword": "commits",
-                  "logKeyword": "log"
+                  "14965cc123": "mobile"
                 }
               }
             }
@@ -4845,6 +4837,7 @@
           "failedNestWorkspace": "Failed to nest workspace",
           "sidebarRowMissing": "Target no longer exists",
           "failedUnnestWorkspace": "Failed to unnest workspace",
+          "openGitGraph": "Open Git Graph",
           "newFolderWorkspaceOnHost": "New folder workspace on host..."
         },
         "WorktreeMetaDialog": {
@@ -5370,7 +5363,6 @@
           "title": "New folder workspace",
           "description": "Open terminals in a folder of {{value0}} on the host you choose.",
           "nameLabel": "Name",
-          "namePlaceholder": "e.g. Raspi · Terminal",
           "hostLabel": "Host",
           "localHost": "This computer",
           "disconnectedHost": "{{value0}} (disconnected)",

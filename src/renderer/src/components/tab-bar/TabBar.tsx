@@ -7,7 +7,6 @@ import {
   ChevronRight,
   FilePlus,
   FileText,
-  GitBranch,
   Globe,
   Plus,
   Smartphone,
@@ -24,7 +23,6 @@ import type {
 import type { ProjectExecutionRuntimeResolution } from '../../../../shared/project-execution-runtime'
 import { resolveTerminalTabTitle } from '../../../../shared/tab-title-resolution'
 import { useAppStore } from '../../store'
-import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import { buildStatusMap } from '../right-sidebar/status-display'
 import type { OpenFile } from '../../store/slices/editor'
 import SortableTab from './SortableTab'
@@ -293,9 +291,6 @@ function TabBarInner({
     (s) => s.gitStatusByWorktree[worktreeId] ?? EMPTY_GIT_STATUS_ENTRIES
   )
   const unifiedTabs = useAppStore((s) => s.unifiedTabsByWorktree[worktreeId] ?? EMPTY_UNIFIED_TABS)
-  const openGitGraph = useAppStore((s) => s.openGitGraph)
-  // Folder workspaces have no git history to graph.
-  const isFolderWorkspace = parseWorkspaceKey(worktreeId)?.type === 'folder'
   const pinTab = useAppStore((s) => s.pinTab)
   const unpinTab = useAppStore((s) => s.unpinTab)
   const activeGroupIdForWorktree = useAppStore((s) => s.activeGroupIdByWorktree[worktreeId])
@@ -544,7 +539,6 @@ function TabBarInner({
       buildTabCreateMenuOptions({
         terminalOnly,
         windowsShellEntries,
-        hasGitGraph: !terminalOnly && !isFolderWorkspace,
         hasNewBrowser: !terminalOnly,
         hasNewMarkdown: !terminalOnly && Boolean(onNewFileTab),
         hasOpenMarkdown: !terminalOnly && Boolean(onOpenFileTab),
@@ -552,7 +546,6 @@ function TabBarInner({
         simulatorIsGoTo: workspaceHasSimulatorTab
       }),
     [
-      isFolderWorkspace,
       mobileEmulatorEnabled,
       onNewFileTab,
       onNewSimulatorTab,
@@ -593,9 +586,6 @@ function TabBarInner({
       case 'new-simulator':
       case 'go-to-simulator':
         onNewSimulatorTab?.()
-        break
-      case 'open-git-graph':
-        openGitGraph(worktreeId)
         break
     }
   }
@@ -735,16 +725,6 @@ function TabBarInner({
         </DropdownMenuItem>
       )
     ) : null
-  const gitGraphMenuItem =
-    !terminalOnly && !isFolderWorkspace ? (
-      <DropdownMenuItem
-        onSelect={() => openGitGraph(worktreeId)}
-        className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
-      >
-        <GitBranch className="size-4 text-muted-foreground" />
-        {translate('auto.components.tab.bar.TabBar.openGitGraph', 'Open Git Graph')}
-      </DropdownMenuItem>
-    ) : null
   const newMarkdownMenuItem =
     !terminalOnly && onNewFileTab ? (
       <DropdownMenuItem
@@ -784,7 +764,6 @@ function TabBarInner({
         {openMarkdownMenuItem}
         {defaultTerminalMenuItems}
         {newBrowserMenuItem}
-        {gitGraphMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
       </>
@@ -794,7 +773,6 @@ function TabBarInner({
         {newBrowserMenuItem}
         {newMarkdownMenuItem}
         {openMarkdownMenuItem}
-        {gitGraphMenuItem}
         {newSimulatorMenuItem}
         {mobileEmulatorIntroMenuBlock}
       </>
