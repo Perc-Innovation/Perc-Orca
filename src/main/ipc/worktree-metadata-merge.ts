@@ -4,6 +4,7 @@ import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
 import { normalizeAttachedReviews } from '../../shared/attached-reviews'
 import { normalizeTrackedBranches } from '../../shared/tracked-branches'
 import { getLinkedWorkItemMetadata } from './worktree-linked-work-item-metadata'
+import { normalizeWorkspaceCreatorProvenance } from '../../shared/workspace-creator-provenance'
 
 /**
  * Merge raw git worktree info with persisted user metadata into a full Worktree.
@@ -15,6 +16,7 @@ export function mergeWorktree(
   defaultDisplayName?: string
 ): Worktree {
   const branchShort = git.branch.replace(/^refs\/heads\//, '')
+  const creatorProvenance = normalizeWorkspaceCreatorProvenance(meta?.creatorProvenance)
   return {
     id: `${repoId}::${git.path}`,
     ...(meta?.instanceId !== undefined ? { instanceId: meta.instanceId } : {}),
@@ -24,6 +26,7 @@ export function mergeWorktree(
     ...(meta?.projectHostSetupId !== undefined
       ? { projectHostSetupId: meta.projectHostSetupId }
       : {}),
+    ...(creatorProvenance ? { creatorProvenance } : {}),
     path: git.path,
     head: git.head,
     branch: git.branch,
