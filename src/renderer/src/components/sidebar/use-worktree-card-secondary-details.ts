@@ -71,8 +71,8 @@ export function useWorktreeCardSecondaryDetails({
     showCli: boolean
     showComment: boolean
     showPorts: boolean
-    attachedReviews: Parameters<typeof hasWorktreeCardDetails>[0]['attachedReviews']
-    trackedBranchReviews: Parameters<typeof hasWorktreeCardDetails>[0]['trackedBranchReviews']
+    attachedReviews?: Parameters<typeof hasWorktreeCardDetails>[0]['attachedReviews']
+    trackedBranchReviews?: Parameters<typeof hasWorktreeCardDetails>[0]['trackedBranchReviews']
   }) {
   // Why: unread lives in the left status lane, so the Status toggle owns both the dot/PR slot and unread emphasis.
   const showUnreadEmphasis = showStatus && worktree.isUnread
