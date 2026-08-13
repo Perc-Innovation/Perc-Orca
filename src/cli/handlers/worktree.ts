@@ -236,6 +236,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       linkedIssue: getOptionalNumberFlag(flags, 'issue'),
       ...linearIssueLink,
       comment: getOptionalStringFlag(flags, 'comment'),
+      ...(flags.get('terminal-group') === true ? { terminalGroup: true } : {}),
       runHooks: flags.get('run-hooks') === true,
       activate: flags.get('activate') === true || flags.get('run-hooks') === true,
       ...(setupDecision ? { setupDecision } : {}),
