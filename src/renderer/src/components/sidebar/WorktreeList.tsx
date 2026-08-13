@@ -21,6 +21,7 @@ import {
   ServerOff,
   Shapes,
   SlidersHorizontal,
+  SquareTerminal,
   Trash2
 } from 'lucide-react'
 import { useAppStore } from '@/store'
@@ -663,6 +664,7 @@ type VirtualizedWorktreeViewportProps = {
   toggleGroup: (key: string) => void
   collapsedGroups: Set<string>
   handleCreateForRepo: (projectId: string) => void
+  handleCreateTerminalGroup: (projectId: string) => void
   handleOpenRepoSettings: (projectId: string, sectionId?: string) => void
   handleOpenWorktreeVisibility: (repo: Repo) => void
   handleShowImportedWorktrees: (projectId: string) => void
@@ -1330,6 +1332,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   toggleGroup,
   collapsedGroups,
   handleCreateForRepo,
+  handleCreateTerminalGroup,
   handleOpenRepoSettings,
   handleOpenWorktreeVisibility,
   handleShowImportedWorktrees,
@@ -4630,16 +4633,32 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               )}
                             </DropdownMenuItem>
                             {row.repo && isGitRepoKind(row.repo) ? (
-                              <DropdownMenuItem
-                                onSelect={() => {
-                                  if (row.repo) {
-                                    handleOpenWorktreeVisibility(row.repo)
-                                  }
-                                }}
-                              >
-                                <Eye className="size-3.5" />
-                                {getWorktreeVisibilityMenuLabel(row.repo)}
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    if (row.repo) {
+                                      handleOpenWorktreeVisibility(row.repo)
+                                    }
+                                  }}
+                                >
+                                  <Eye className="size-3.5" />
+                                  {getWorktreeVisibilityMenuLabel(row.repo)}
+                                </DropdownMenuItem>
+                                {/* Folder projects already work this way, so the entry is git-only. */}
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    if (row.repo) {
+                                      handleCreateTerminalGroup(row.repo.id)
+                                    }
+                                  }}
+                                >
+                                  <SquareTerminal className="size-3.5" />
+                                  {translate(
+                                    'auto.components.sidebar.WorktreeList.newTerminalGroup',
+                                    'New terminal group'
+                                  )}
+                                </DropdownMenuItem>
+                              </>
                             ) : null}
                             <DropdownMenuItem
                               onSelect={() => {
@@ -6045,6 +6064,13 @@ const WorktreeList = React.memo(function WorktreeList({
     [openModal]
   )
 
+  const handleCreateTerminalGroup = useCallback(
+    (projectId: string) => {
+      openModal('new-terminal-group', { repoId: projectId })
+    },
+    [openModal]
+  )
+
   const handleOpenRepoSettings = useCallback(
     (projectId: string, sectionId?: string) => {
       openSettingsTarget({ pane: 'repo', repoId: projectId, ...(sectionId ? { sectionId } : {}) })
@@ -6861,6 +6887,7 @@ const WorktreeList = React.memo(function WorktreeList({
         toggleGroup={toggleGroup}
         collapsedGroups={effectiveCollapsedGroups}
         handleCreateForRepo={handleCreateForRepo}
+        handleCreateTerminalGroup={handleCreateTerminalGroup}
         handleOpenRepoSettings={handleOpenRepoSettings}
         handleOpenWorktreeVisibility={handleOpenWorktreeVisibility}
         handleShowImportedWorktrees={handleShowImportedWorktrees}

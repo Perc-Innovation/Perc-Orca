@@ -1,5 +1,5 @@
 import type { Repo, Worktree } from '../../../../shared/types'
-import { isFolderRepo } from '../../../../shared/repo-kind'
+import { sharesProjectCheckout } from '../../../../shared/workspace-instance-worktree'
 import {
   getPersistedWorkspaceCleanupActivityAt,
   isWorkspaceOldForCleanup
@@ -19,7 +19,8 @@ export function countEstimatedInactiveWorkspaces(
   let count = 0
   for (const worktree of worktrees) {
     const repo = repoById.get(worktree.repoId)
-    if (!repo || isFolderRepo(repo) || worktree.isMainWorktree) {
+    // A workspace sharing the project checkout frees no disk, so cleanup never lists one.
+    if (!repo || sharesProjectCheckout(repo, worktree.id) || worktree.isMainWorktree) {
       continue
     }
     // Why: an unstamped workspace (externally created, or never opened here) reads as
