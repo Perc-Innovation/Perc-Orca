@@ -233,8 +233,15 @@ import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
 import {
   FOLDER_WORKSPACE_INSTANCE_SEPARATOR,
   getRepoIdFromWorktreeId,
-  getWorktreePathBasenameFromId
+  getWorktreePathBasenameFromId,
+  isWorkspaceInstanceWorktreeId
 } from '../../shared/worktree-id'
+import {
+  buildWorkspaceInstanceWorktreeId,
+  getProjectCheckoutWorktreeId,
+  getWorkspaceInstanceIdentity,
+  isWorkspaceInstanceWorktreeIdForRepo
+} from '../../shared/workspace-instance-worktree'
 import { prefetchWorktreeCreateBase } from '../worktree-create-base-prefetch'
 import {
   getLocalProjectGitExecOptions,
@@ -753,6 +760,11 @@ type SshWorktreeMetaIndex = Map<string, SshWorktreeMetaCandidate[]>
 function createSshWorktreeMetaIndex(entries: [string, WorktreeMeta][]): SshWorktreeMetaIndex {
   const index: SshWorktreeMetaIndex = new Map()
   for (const [worktreeId, meta] of entries) {
+    // Why: a workspace-instance id carries a suffix the git-worktree synthesizer would read as a
+    // directory, yielding a row whose path is not the checkout. Those rows are built from meta instead.
+    if (isWorkspaceInstanceWorktreeId(worktreeId)) {
+      continue
+    }
     let parsed: { repoId: string; worktreePath: string }
     try {
       parsed = parseWorktreeId(worktreeId)
@@ -802,7 +814,8 @@ function synthesizeSshGitWorktree(repo: Repo, path: string, meta: WorktreeMeta):
 function listDisconnectedSshWorktrees(
   store: Store,
   repo: Repo,
-  metaIndex: SshWorktreeMetaIndex
+  metaIndex: SshWorktreeMetaIndex,
+  metaSnapshot?: Record<string, WorktreeMeta>
 ): ReturnType<typeof mergeWorktree>[] {
   const byWorktreeId = new Map<string, ReturnType<typeof mergeWorktree>>()
   const expectedHostId = getRepoExecutionHostId(repo)
@@ -835,7 +848,8 @@ function listDisconnectedSshWorktrees(
     byWorktreeId.delete(worktree.id)
     byWorktreeId.set(worktree.id, worktree)
   }
-  return [...byWorktreeId.values()]
+  // Terminal groups need no scan to describe them — a disconnected host must keep publishing them.
+  return [...byWorktreeId.values(), ...listTerminalGroupWorkspaces(store, repo, metaSnapshot)]
 }
 
 function buildDetectedGitWorktrees(
@@ -894,21 +908,13 @@ function stampAndMergeVisibleDetectedWorktree(
   return mergeWorktree(repo.id, detected, meta, repo.displayName)
 }
 
-function getFolderWorkspaceRootId(repo: Repo): string {
-  return `${repo.id}::${repo.path}`
-}
-
-function getFolderWorkspaceInstanceId(repo: Repo, instanceId: string): string {
-  return `${getFolderWorkspaceRootId(repo)}${FOLDER_WORKSPACE_INSTANCE_SEPARATOR}${instanceId}`
-}
-
-function getFolderWorkspaceInstanceIdentity(repo: Repo, worktreeId: string): string {
-  const prefix = `${getFolderWorkspaceRootId(repo)}${FOLDER_WORKSPACE_INSTANCE_SEPARATOR}`
-  return worktreeId.startsWith(prefix) ? worktreeId.slice(prefix.length) : randomUUID()
+/** Mints one for a legacy row that predates instance stamping. */
+function getWorkspaceInstanceIdentityOrNew(repo: Repo, worktreeId: string): string {
+  return getWorkspaceInstanceIdentity(repo, worktreeId) ?? randomUUID()
 }
 
 function isFolderWorkspaceIdForRepo(repo: Repo, worktreeId: string): boolean {
-  const rootId = getFolderWorkspaceRootId(repo)
+  const rootId = getProjectCheckoutWorktreeId(repo)
   return (
     worktreeId === rootId ||
     worktreeId.startsWith(`${rootId}${FOLDER_WORKSPACE_INSTANCE_SEPARATOR}`)
@@ -929,7 +935,7 @@ function mergeFolderWorkspace(repo: Repo, worktreeId: string, meta: WorktreeMeta
     head: '',
     branch: '',
     isBare: false,
-    isMainWorktree: worktreeId === getFolderWorkspaceRootId(repo),
+    isMainWorktree: worktreeId === getProjectCheckoutWorktreeId(repo),
     displayName: meta.displayName || repo.displayName,
     comment: meta.comment || '',
     linkedIssue: meta.linkedIssue ?? null,
@@ -964,7 +970,7 @@ function mergeFolderWorkspace(repo: Repo, worktreeId: string, meta: WorktreeMeta
 }
 
 function listFolderWorkspaces(store: Store, repo: Repo): Worktree[] {
-  const rootId = getFolderWorkspaceRootId(repo)
+  const rootId = getProjectCheckoutWorktreeId(repo)
   const allMeta = store.getAllWorktreeMeta()
   const ids = Object.keys(allMeta).filter((worktreeId) =>
     isFolderWorkspaceIdForRepo(repo, worktreeId)
@@ -982,7 +988,7 @@ function listFolderWorkspaces(store: Store, repo: Repo): Worktree[] {
           ? existing
           : store.setWorktreeMeta(worktreeId, {
               instanceId:
-                existing?.instanceId ?? getFolderWorkspaceInstanceIdentity(repo, worktreeId),
+                existing?.instanceId ?? getWorkspaceInstanceIdentityOrNew(repo, worktreeId),
               ...ownershipUpdates,
               ...(existing ? {} : { displayName: repo.displayName, lastActivityAt: Date.now() })
             })
@@ -1027,14 +1033,90 @@ function listVisibleFolderWorkspaces(store: Store, repo: Repo): Worktree[] {
     })
 }
 
-function createFolderWorkspace(
+/**
+ * Terminal groups: a git project's extra workspace instances on its main checkout. They never come
+ * from `git worktree list`, so they are appended to the scan instead of filtered out of it — and
+ * unlike a folder project, the root row here is a real worktree the scan already published.
+ */
+function listTerminalGroupWorkspaces(
+  store: Store,
+  repo: Repo,
+  // Why: `worktrees:listAll` fans out over every repo, so the multi-MB meta map is read once by the
+  // caller and threaded through instead of re-materialized per repo.
+  metaSnapshot?: Record<string, WorktreeMeta>
+): Worktree[] {
+  if (isFolderRepo(repo)) {
+    return []
+  }
+  const expectedHostId = getRepoExecutionHostId(repo)
+  const repoOwnerCount = store.getRepos().filter((candidate) => candidate.id === repo.id).length
+  const allMeta = metaSnapshot ?? store.getAllWorktreeMeta()
+  return Object.keys(allMeta)
+    .filter((worktreeId) => {
+      if (!isWorkspaceInstanceWorktreeIdForRepo(repo, worktreeId)) {
+        return false
+      }
+      // Why: one repo id can be registered on several execution hosts; never republish another host's rows.
+      const meta = allMeta[worktreeId]
+      return meta?.hostId ? meta.hostId === expectedHostId : repoOwnerCount <= 1
+    })
+    .map((worktreeId) => {
+      const existing = allMeta[worktreeId]
+      const ownershipUpdates = getProjectHostSetupMetaUpdates(store, repo, existing)
+      const meta =
+        existing?.instanceId && Object.keys(ownershipUpdates).length === 0
+          ? existing
+          : store.setWorktreeMeta(worktreeId, {
+              instanceId:
+                existing?.instanceId ?? getWorkspaceInstanceIdentityOrNew(repo, worktreeId),
+              ...ownershipUpdates
+            })
+      return mergeFolderWorkspace(repo, worktreeId, meta)
+    })
+    .sort((a, b) => (b.createdAt ?? b.lastActivityAt) - (a.createdAt ?? a.lastActivityAt))
+}
+
+/**
+ * Terminal groups must ride along on the detected listing too: an authoritative refresh purges every
+ * known worktree id it does not report, which would reap their tabs and sessions.
+ */
+function buildTerminalGroupDetectedWorktrees(store: Store, repo: Repo): DetectedWorktree[] {
+  const settings = store.getSettings()
+  return listTerminalGroupWorkspaces(store, repo).map((worktree) =>
+    toDetectedWorktree({
+      repo,
+      worktree,
+      meta: store.getWorktreeMeta(worktree.id),
+      settings,
+      knownOrcaLayouts: [],
+      isLegacyRepoForVisibility: true
+    })
+  )
+}
+
+function listVisibleRepoWorktrees(
+  store: Store,
+  repo: Repo,
+  gitWorktrees: GitWorktreeInfo[],
+  metaSnapshot?: Record<string, WorktreeMeta>
+): Worktree[] {
+  return [
+    ...buildDetectedGitWorktrees(store, repo, gitWorktrees)
+      .filter((worktree) => worktree.visible)
+      .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree)),
+    ...listTerminalGroupWorkspaces(store, repo, metaSnapshot)
+  ]
+}
+
+/** Creates a card that shares the project's checkout: a folder-project workspace or a git-project terminal group. */
+function createWorkspaceInstance(
   args: CreateWorktreeArgsWithSystemProvenance,
   repo: Repo,
   store: Store
 ): CreateWorktreeResult {
   const now = Date.now()
   const instanceId = randomUUID()
-  const worktreeId = getFolderWorkspaceInstanceId(repo, instanceId)
+  const worktreeId = buildWorkspaceInstanceWorktreeId(repo, instanceId)
   const meta = store.setWorktreeMeta(worktreeId, {
     instanceId,
     ...(store.getProjectHostSetups
@@ -1267,7 +1349,10 @@ async function listDetectedWorktreesForCapturedRepo(
       repoId: repo.id,
       authoritative: true,
       source: 'git',
-      worktrees: buildDetectedGitWorktrees(store, repo, gitWorktrees)
+      worktrees: [
+        ...buildDetectedGitWorktrees(store, repo, gitWorktrees),
+        ...buildTerminalGroupDetectedWorktrees(store, repo)
+      ]
     }
   } catch (err) {
     const aborted = abortedResult()
@@ -1836,8 +1921,11 @@ export function registerWorktreeHandlers(
 
   ipcMain.handle('worktrees:listAll', async () => {
     const repos = store.getRepos()
+    // Why one read for the whole fan-out: this map is multi-MB on heavy installs, and both the SSH
+    // fallback index and every repo's terminal groups are derived from it.
+    const allWorktreeMeta = store.getAllWorktreeMeta()
     const sshWorktreeMetaIndex = repos.some((repo) => repo.connectionId)
-      ? createSshWorktreeMetaIndex(Object.entries(store.getAllWorktreeMeta()))
+      ? createSshWorktreeMetaIndex(Object.entries(allWorktreeMeta))
       : new Map()
 
     // Why: each local repo listing can spawn `git worktree list`; cap fan-out so large fleets don't start unbounded subprocesses.
@@ -1855,7 +1943,7 @@ export function registerWorktreeHandlers(
               `${repo.connectionId}:${repo.id}`,
               `[worktrees] SSH git provider unavailable; skipping worktree list for repo "${repo.displayName}" (${repo.id}) at ${repo.path} on connection ${repo.connectionId}`
             )
-            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex, allWorktreeMeta)
           }
           loggedUnavailableSshGitProviders.delete(`${repo.connectionId}:${repo.id}`)
           try {
@@ -1867,7 +1955,7 @@ export function registerWorktreeHandlers(
               `[worktrees] failed to list worktrees for repo "${repo.displayName}" (${repo.id}) at ${repo.path}`,
               err
             )
-            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex)
+            return listDisconnectedSshWorktrees(store, repo, sshWorktreeMetaIndex, allWorktreeMeta)
           }
         } else {
           const scan = await listDetectedGitWorktrees(store, repo)
@@ -1879,9 +1967,7 @@ export function registerWorktreeHandlers(
           pruneLineageForMissingRepoWorktrees(store, repo, gitWorktrees)
         }
         loggedWorktreeListFailures.delete(`${repo.id}:${repo.path}`)
-        return buildDetectedGitWorktrees(store, repo, gitWorktrees)
-          .filter((worktree) => worktree.visible)
-          .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
+        return listVisibleRepoWorktrees(store, repo, gitWorktrees, allWorktreeMeta)
       } catch (err) {
         warnOnce(
           loggedWorktreeListFailures,
@@ -1943,9 +2029,7 @@ export function registerWorktreeHandlers(
         pruneLineageForMissingRepoWorktrees(store, repo, gitWorktrees)
       }
       loggedWorktreeListFailures.delete(`${repo.id}:${repo.path}`)
-      return buildDetectedGitWorktrees(store, repo, gitWorktrees)
-        .filter((worktree) => worktree.visible)
-        .map((worktree) => stampAndMergeVisibleDetectedWorktree(store, repo, worktree))
+      return listVisibleRepoWorktrees(store, repo, gitWorktrees)
     } catch (err) {
       warnOnce(
         loggedWorktreeListFailures,
@@ -2050,6 +2134,10 @@ export function registerWorktreeHandlers(
       for (const worktreeId of worktreeIds) {
         const meta = typeof worktreeId === 'string' ? allMeta[worktreeId] : undefined
         if (!meta || getRepoIdFromWorktreeId(worktreeId) !== repo.id) {
+          continue
+        }
+        // Why: a terminal group's meta IS the workspace record, not a checkout row — no remote scan can retire one.
+        if (isWorkspaceInstanceWorktreeId(worktreeId)) {
           continue
         }
         // An unhosted meta belongs to this repo's only owner; a foreign hostId needs that host's own scan.
@@ -2208,11 +2296,13 @@ export function registerWorktreeHandlers(
           automationProvenance
         }
 
+        // A terminal group shares the project checkout, so it takes the folder path even on a git repo.
+        const sharesCheckout = isFolderRepo(repo) || args.terminalGroup === true
         let result: CreateWorktreeResult
         try {
           // Why: wrap only the helpers; the pre-validation throws above are IPC-shape bugs, not the git/filesystem failures the funnel tracks.
-          result = isFolderRepo(repo)
-            ? createFolderWorkspace(createArgs, repo, store)
+          result = sharesCheckout
+            ? createWorkspaceInstance(createArgs, repo, store)
             : repo.connectionId
               ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
               : await createLocalWorktree(createArgs, repo, store, mainWindow, runtime)
@@ -2231,13 +2321,11 @@ export function registerWorktreeHandlers(
         track('workspace_created', {
           source,
           from_existing_branch:
-            !isFolderRepo(repo) &&
-            typeof args.baseBranch === 'string' &&
-            args.baseBranch.length > 0,
+            !sharesCheckout && typeof args.baseBranch === 'string' && args.baseBranch.length > 0,
           ...getCohortAtEmit()
         })
 
-        if (isFolderRepo(repo)) {
+        if (sharesCheckout) {
           notifyWorktreesChanged(mainWindow, repo.id)
         }
 
@@ -2380,8 +2468,10 @@ export function registerWorktreeHandlers(
       const removal = (async (): Promise<RemoveWorktreeResult> => {
         // Why: worktree.create is traced; delete freezes were invisible without a matching worktree.remove parent span.
         return withWorktreeSpan({ stage: 'remove', path: worktreePath }, async () => {
-          if (isFolderRepo(repo)) {
-            if (args.worktreeId === getFolderWorkspaceRootId(repo)) {
+          // A git project's terminal groups share its checkout, so they take the same
+          // metadata-only teardown — never `git worktree remove` against the main checkout.
+          if (isFolderRepo(repo) || isWorkspaceInstanceWorktreeId(args.worktreeId)) {
+            if (args.worktreeId === getProjectCheckoutWorktreeId(repo)) {
               throw new Error(
                 'Cannot delete the project root workspace. Remove the folder project instead.'
               )
@@ -3013,7 +3103,7 @@ export function registerWorktreeHandlers(
       const forget = (async (): Promise<RemoveWorktreeResult> => {
         // Ambiguous repo lookup must not bypass a live folder root's deletion guard.
         const isFolderRootOf = (candidate: Repo): boolean =>
-          isFolderRepo(candidate) && args.worktreeId === getFolderWorkspaceRootId(candidate)
+          isFolderRepo(candidate) && args.worktreeId === getProjectCheckoutWorktreeId(candidate)
         if (repo ? isFolderRootOf(repo) : store.getRepos().some(isFolderRootOf)) {
           throw new Error(
             'Cannot delete the project root workspace. Remove the folder project instead.'

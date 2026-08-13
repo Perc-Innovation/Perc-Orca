@@ -4,7 +4,7 @@ import { getConnectionId } from '@/lib/connection-context'
 import { getSettingsForWorktreeRuntimeOwner } from '@/lib/worktree-runtime-owner'
 import { getRuntimeGitStatus } from '@/runtime/runtime-git-client'
 import type { Repo, Worktree } from '../../../../shared/types'
-import { isFolderWorkspaceDelete } from './delete-worktree-dialog-copy'
+import { preservesCheckoutOnDelete } from './delete-worktree-dialog-copy'
 
 export function useDeleteWorktreeStatusHydration({
   isOpen,
@@ -27,7 +27,7 @@ export function useDeleteWorktreeStatusHydration({
     const targets = deleteTargets.filter(
       (target) =>
         !target.isMainWorktree &&
-        !isFolderWorkspaceDelete(repoMap, target) &&
+        !preservesCheckoutOnDelete(repoMap, target) &&
         gitStatusByWorktree[target.id] === undefined
     )
     const controller = new AbortController()

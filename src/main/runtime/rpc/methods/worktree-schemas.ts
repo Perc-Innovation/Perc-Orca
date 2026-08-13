@@ -147,6 +147,8 @@ export const WorktreeCreate = z
         presetId: OptionalString
       })
       .optional(),
+    /** Create a terminal group on the project's checkout instead of a worktree. Older hosts ignore it. */
+    terminalGroup: OptionalBoolean,
     pushTarget: z
       .object({
         remoteName: z.string(),

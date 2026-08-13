@@ -89,6 +89,7 @@ import { TOGGLE_WORKSPACE_BOARD_EVENT } from './components/sidebar/useWorkspaceB
 import { WorkspacePortScanner } from './components/ports/WorkspacePortScanner'
 import { CrashReportDialog } from './components/crash-report/CrashReportDialog'
 import NewWorkspaceComposerModal from './components/NewWorkspaceComposerModal'
+import NewTerminalGroupDialog from './components/sidebar/NewTerminalGroupDialog'
 import { RecoverableRenderErrorBoundary } from './components/error-boundaries/RecoverableRenderErrorBoundary'
 import { ConfirmationDialogProvider } from './components/confirmation-dialog'
 import { LinkRoutingPreferenceDialogProvider } from './components/link-routing-preference-dialog'
@@ -2506,6 +2507,16 @@ function App(): React.JSX.Element {
                 compact
               >
                 <NewWorkspaceComposerModal />
+              </RecoverableRenderErrorBoundary>
+            ) : null}
+            {activeModal === 'new-terminal-group' ? (
+              <RecoverableRenderErrorBoundary
+                boundaryId="modal.new-terminal-group"
+                surface="modal"
+                resetKey
+                compact
+              >
+                <NewTerminalGroupDialog />
               </RecoverableRenderErrorBoundary>
             ) : null}
             <Suspense fallback={null}>
