@@ -626,7 +626,6 @@ export type UISlice = {
     | 'activity'
     | 'automations'
     | 'space'
-    | 'skills'
     | 'artifacts'
     | 'mobile'
   previousViewBeforeSettings:
@@ -635,7 +634,6 @@ export type UISlice = {
     | 'activity'
     | 'automations'
     | 'space'
-    | 'skills'
     | 'artifacts'
     | 'mobile'
   previousViewBeforeActivity:
@@ -644,7 +642,6 @@ export type UISlice = {
     | 'tasks'
     | 'automations'
     | 'space'
-    | 'skills'
     | 'artifacts'
     | 'mobile'
   previousViewBeforeAutomations:
@@ -653,7 +650,6 @@ export type UISlice = {
     | 'tasks'
     | 'activity'
     | 'space'
-    | 'skills'
     | 'artifacts'
     | 'mobile'
   previousViewBeforeSpace:
@@ -662,16 +658,6 @@ export type UISlice = {
     | 'tasks'
     | 'activity'
     | 'automations'
-    | 'skills'
-    | 'artifacts'
-    | 'mobile'
-  previousViewBeforeSkills:
-    | 'terminal'
-    | 'settings'
-    | 'tasks'
-    | 'activity'
-    | 'automations'
-    | 'space'
     | 'artifacts'
     | 'mobile'
   previousViewBeforeMobile:
@@ -681,7 +667,6 @@ export type UISlice = {
     | 'activity'
     | 'automations'
     | 'space'
-    | 'skills'
     | 'artifacts'
   previousViewBeforeArtifacts:
     | 'terminal'
@@ -690,7 +675,6 @@ export type UISlice = {
     | 'activity'
     | 'automations'
     | 'space'
-    | 'skills'
     | 'mobile'
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
@@ -770,8 +754,6 @@ export type UISlice = {
   closeAutomationsPage: () => void
   openSpacePage: () => void
   closeSpacePage: () => void
-  openSkillsPage: () => void
-  closeSkillsPage: () => void
   openArtifactsPage: () => void
   closeArtifactsPage: () => void
   openMobilePage: () => void
@@ -863,7 +845,7 @@ export type UISlice = {
   ) => void
   markOrcaHookRepoAlwaysTrusted: (repoId: string) => void
   clearOrcaHookTrustForRepo: (repoId: string) => void
-  setupScriptPromptDismissedRepoIds: string[]
+  setupScriptPromptDismissedRepoIds: readonly string[]
   dismissSetupScriptPrompt: (repoHostIdentity: string) => void
   setupGuideSidebarDismissed: boolean
   setSetupGuideSidebarDismissed: (dismissed: boolean) => void
@@ -914,8 +896,8 @@ export type UISlice = {
   showDotfilesByWorktree: Record<string, boolean>
   setShowDotfilesForWorktree: (worktreeId: string, showDotfiles: boolean) => void
   toggleShowDotfilesForWorktree: (worktreeId: string) => void
-  filterRepoIds: string[]
-  setFilterRepoIds: (ids: string[]) => void
+  filterRepoIds: readonly string[]
+  setFilterRepoIds: (ids: readonly string[]) => void
   collapsedGroups: Set<string>
   toggleCollapsedGroup: (key: string) => void
   worktreeCardProperties: WorktreeCardProperty[]
@@ -1267,7 +1249,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeActivity: 'terminal',
   previousViewBeforeAutomations: 'terminal',
   previousViewBeforeSpace: 'terminal',
-  previousViewBeforeSkills: 'terminal',
   previousViewBeforeMobile: 'terminal',
   previousViewBeforeArtifacts: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
@@ -1506,16 +1487,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeSpacePage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeSpace
-    })),
-  openSkillsPage: () =>
-    set((state) => ({
-      activeView: 'skills',
-      previousViewBeforeSkills:
-        state.activeView === 'skills' ? state.previousViewBeforeSkills : state.activeView
-    })),
-  closeSkillsPage: () =>
-    set((state) => ({
-      activeView: state.previousViewBeforeSkills
     })),
   openArtifactsPage: () =>
     set((state) => ({

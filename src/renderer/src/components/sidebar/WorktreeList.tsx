@@ -105,6 +105,7 @@ import {
   getVirtualRowTransform,
   pruneStaleVirtualRowElementCache,
   shouldUseHeaderTopSpacing,
+  WORKTREE_SIDEBAR_VIRTUAL_ROW_GAP,
   type RenderRow
 } from './worktree-list-virtual-rows'
 import {
@@ -253,6 +254,7 @@ import { ProjectGroupNameDialog } from './ProjectGroupNameDialog'
 import { FolderWorkspaceHostDialog } from './FolderWorkspaceHostDialog'
 import { ProjectGroupDeleteDialog } from './ProjectGroupDeleteDialog'
 import { selectProjectGroupRemovalTargets } from '@/store/slices/project-group-removal-targets'
+import { findRepoForHost } from '@/store/slices/repo-host-identity'
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import {
   effectiveExternalWorktreeVisibility,
@@ -664,7 +666,7 @@ type VirtualizedWorktreeViewportProps = {
   collapsedGroups: Set<string>
   handleCreateForRepo: (projectId: string) => void
   handleOpenRepoSettings: (projectId: string, sectionId?: string) => void
-  handleOpenWorktreeVisibility: (projectId: string) => void
+  handleOpenWorktreeVisibility: (repo: Repo) => void
   handleOpenRepoGitGraph: (repo: Repo) => void
   handleShowImportedWorktrees: (projectId: string) => void
   handleKeepImportedWorktreesHidden: (projectId: string) => void
@@ -1630,6 +1632,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
         groupIds: group.worktreeIds,
         draggedIds: args.draggedIds,
         draggingWorktreeId: args.draggingWorktreeId,
+        fallbackGap: WORKTREE_SIDEBAR_VIRTUAL_ROW_GAP,
         grab: args.grab,
         anchor: args.anchor
       })
@@ -2114,7 +2117,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       [stickyHeaderIndexes]
     ),
     overscan: 10,
-    gap: 6,
+    gap: WORKTREE_SIDEBAR_VIRTUAL_ROW_GAP,
     // Why: the sticky group header lives inside the virtual list, so scroll math needs the same top inset as the DOM reveal.
     scrollPaddingStart: WORKTREE_SIDEBAR_REVEAL_TOP_INSET,
     isScrollingResetDelay: USER_SCROLL_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS,
@@ -4663,7 +4666,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                               <DropdownMenuItem
                                 onSelect={() => {
                                   if (row.repo) {
-                                    handleOpenWorktreeVisibility(row.repo.id)
+                                    handleOpenWorktreeVisibility(row.repo)
                                   }
                                 }}
                               >
@@ -6084,8 +6087,11 @@ const WorktreeList = React.memo(function WorktreeList({
   )
 
   const handleOpenWorktreeVisibility = useCallback(
-    (projectId: string) => {
-      openModal('worktree-visibility', { repoId: projectId })
+    (repo: Repo) => {
+      openModal('worktree-visibility', {
+        repoId: repo.id,
+        hostId: getRepoExecutionHostId(repo)
+      })
     },
     [openModal]
   )
@@ -6887,9 +6893,11 @@ const WorktreeList = React.memo(function WorktreeList({
           if (!suppressExternalWorktreeInboxRepoId) {
             return
           }
-          const projectId = suppressExternalWorktreeInboxRepoId
+          const repo = findRepoForHost(repos, suppressExternalWorktreeInboxRepoId, { settings })
           setSuppressExternalWorktreeInboxRepoId(null)
-          handleOpenWorktreeVisibility(projectId)
+          if (repo) {
+            handleOpenWorktreeVisibility(repo)
+          }
         }}
       />
       <ProjectGroupDeleteDialog

@@ -1197,6 +1197,7 @@ export type PreloadApi = {
           | 'externalWorktreeVisibilityPromptDismissedAt'
           | 'externalWorktreeInboxBaselinePaths'
           | 'importedExternalWorktreePaths'
+          | 'agentWorktreeVisibility'
           | 'projectGroupId'
           | 'projectGroupOrder'
           | 'forkSyncMode'
@@ -1333,6 +1334,7 @@ export type PreloadApi = {
           | 'pendingFirstAgentMessageRename'
           | 'firstAgentMessageRenameError'
           | 'lastActivityAt'
+          | 'diffComments'
         >
       >
     }) => Promise<FolderWorkspace | null>
@@ -1468,9 +1470,12 @@ export type PreloadApi = {
       rows: number
       cwd?: string
       cwdFallback?: 'worktree'
+      /** Create a shell for this pane instead of adopting the one it records; see pty.ts. */
+      createFreshShellForUnreachablePane?: boolean
       env?: Record<string, string>
       envToDelete?: string[]
       command?: string
+      commandDelivery?: 'renderer' | 'provider'
       launchConfig?: SleepingAgentLaunchConfig
       resumeProviderSession?: AgentProviderSessionMetadata
       launchToken?: string
