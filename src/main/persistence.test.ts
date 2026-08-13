@@ -6655,6 +6655,22 @@ describe('Store', () => {
     expect(Object.keys(store.getAllWorktreeMeta())).toContain(folderInstanceKey)
   })
 
+  // A git project's terminal groups are the same instance-keyed record, and no `git worktree list`
+  // can vouch for one — GCing them at load would delete the workspace and its session wiring.
+  it('never GCs terminal-group metas on a git project', async () => {
+    const OLD = Date.now() - 40 * 24 * 60 * 60 * 1000
+    const terminalGroupKey = `r1::${join(testState.dir, 'gone-repo')}::workspace:22222222-2222-4222-8222-222222222222`
+    writeDataFile({
+      repos: [makeRepo()],
+      worktreeMeta: {
+        [terminalGroupKey]: { displayName: 'servers', comment: '', lastActivityAt: OLD }
+      }
+    })
+
+    const store = await createStore()
+    expect(Object.keys(store.getAllWorktreeMeta())).toContain(terminalGroupKey)
+  })
+
   it('never GCs Linux-style WSL worktree paths on Windows', async () => {
     const OLD = Date.now() - 40 * 24 * 60 * 60 * 1000
     const wslLinkedKey = 'r1::/home/user/gone-worktree'

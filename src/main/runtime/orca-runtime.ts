@@ -385,9 +385,11 @@ import {
   FOLDER_WORKSPACE_INSTANCE_SEPARATOR,
   WORKTREE_ID_SEPARATOR,
   getRepoIdFromWorktreeId,
+  isWorkspaceInstanceWorktreeId,
   splitWorktreeId,
   splitWorktreeIdForFilesystem
 } from '../../shared/worktree-id'
+import { isWorkspaceInstanceWorktreeIdForRepo } from '../../shared/workspace-instance-worktree'
 import {
   getProjectIdForProviderIdentity,
   getProjectHostSetupForRepo,
@@ -2241,6 +2243,37 @@ function listRuntimeFolderWorkspaces(
         })
     return mergeRuntimeFolderWorkspace(repo, worktreeId, meta)
   })
+}
+
+/**
+ * A git project's terminal groups: extra workspace instances on its main checkout. `git worktree
+ * list` cannot describe them, so they are appended to every scan rather than filtered out of one.
+ */
+function listRuntimeTerminalGroups(
+  store: Pick<RuntimeStore, 'getAllWorktreeMeta' | 'setWorktreeMeta'>,
+  repo: Repo,
+  // Why: the resolution pass fans out over every repo, so it reads the meta map once and threads
+  // the snapshot through instead of re-materializing it per repo.
+  metaSnapshot?: Record<string, WorktreeMeta>
+): Worktree[] {
+  if (isFolderRepo(repo)) {
+    return []
+  }
+  const allMeta = metaSnapshot ?? store.getAllWorktreeMeta()
+  return Object.keys(allMeta)
+    .filter((worktreeId) => isWorkspaceInstanceWorktreeIdForRepo(repo, worktreeId))
+    .map((worktreeId) => {
+      const existing = allMeta[worktreeId]
+      const meta = existing?.instanceId
+        ? existing
+        : store.setWorktreeMeta(worktreeId, {
+            instanceId: getRuntimeFolderWorkspaceInstanceIdentity(repo, worktreeId)
+          })
+      return mergeRuntimeFolderWorkspace(repo, worktreeId, meta)
+    })
+    .sort((left, right) => {
+      return (right.createdAt ?? right.lastActivityAt) - (left.createdAt ?? left.lastActivityAt)
+    })
 }
 
 function parseExactWorktreeIdSelector(selector: string): RuntimeWorktreeRemovalTarget | null {
@@ -21082,11 +21115,19 @@ export class OrcaRuntimeService {
       }
       return applyMetadataFallbackVisibility(detectedWorktree)
     })
+    // Why: an authoritative listing is proof of absence for everything it omits — callers purge
+    // renderer state and sweep PTYs against it, so terminal groups have to ride along.
+    const terminalGroups = listRuntimeTerminalGroups(store, repo).map((worktree) =>
+      this.toRuntimeDetectedWorktree(repo, worktree)
+    )
     return {
       repoId: repo.id,
       authoritative: scan.ok,
       source: scan.ok ? 'git' : 'metadata-fallback',
-      worktrees: projectResolvedWorktreeLineage(detected, store.getAllWorktreeLineage?.() ?? {})
+      worktrees: projectResolvedWorktreeLineage(
+        [...detected, ...terminalGroups],
+        store.getAllWorktreeLineage?.() ?? {}
+      )
     }
   }
 
@@ -21864,6 +21905,8 @@ export class OrcaRuntimeService {
     workspaceStatus?: string
     manualOrder?: number
     sparseCheckout?: { directories: string[]; presetId?: string }
+    /** Terminal group on the project's existing checkout; ignored by folder projects. */
+    terminalGroup?: boolean
     pushTarget?: GitPushTarget
     runHooks?: boolean
     activate?: boolean
@@ -21925,7 +21968,8 @@ export class OrcaRuntimeService {
         draftStartup?.agent ??
         (requestedAgentEnabled ? requestedAgent : undefined))
     const effectiveDraftPaste = args.startupDraftPaste ?? draftStartup?.draftPaste
-    if (isFolderRepo(repo)) {
+    // A terminal group shares the project checkout, so a git repo takes the folder path too.
+    if (isFolderRepo(repo) || args.terminalGroup === true) {
       const now = Date.now()
       const settings = createSettings
       const instanceId = randomUUID()
@@ -24511,7 +24555,9 @@ export class OrcaRuntimeService {
             warning: `Project ${removalTarget.repoId} is no longer tracked, so ${removalTarget.path} was forgotten without deleting the directory or its Git worktree registration.`
           }
         }
-        if (isFolderRepo(repo)) {
+        // A git project's terminal groups share its checkout, so they take the same metadata-only
+        // teardown — never `git worktree remove` against the main checkout.
+        if (isFolderRepo(repo) || isWorkspaceInstanceWorktreeId(removalTarget.id)) {
           if (removalTarget.id === getRuntimeFolderWorkspaceRootId(repo)) {
             throw new Error(
               'Cannot delete the project root workspace. Remove the folder project instead.'
@@ -29262,7 +29308,25 @@ export class OrcaRuntimeService {
         if (scan.ok) {
           pruneLineageForMissingRepoWorktrees(this.requireStore(), repo, gitWorktrees)
         }
-        return gitWorktrees.map((gitWorktree) => {
+        const terminalGroups = listRuntimeTerminalGroups(this.requireStore(), repo, metaById).map(
+          (worktree) => ({
+            ...worktree,
+            hostId: worktree.hostId ?? getRepoExecutionHostId(repo),
+            parentWorktreeId: null,
+            childWorktreeIds: [],
+            lineage: null,
+            git: {
+              path: worktree.path,
+              head: worktree.head,
+              branch: worktree.branch,
+              isBare: worktree.isBare,
+              isMainWorktree: worktree.isMainWorktree
+            },
+            displayName: worktree.displayName,
+            comment: worktree.comment
+          })
+        )
+        const checkoutRows = gitWorktrees.map((gitWorktree) => {
           const worktreeId = `${repo.id}::${gitWorktree.path}`
           // Why: lineage validation needs a durable instance ID even when the runtime sees a workspace before renderer discovery-stamp.
           const existingMeta = metaById[worktreeId]
@@ -29290,6 +29354,7 @@ export class OrcaRuntimeService {
             comment: merged.comment
           }
         })
+        return [...checkoutRows, ...terminalGroups]
       })
     )
     const worktrees = projectResolvedWorktreeLineage(
@@ -29442,6 +29507,10 @@ export class OrcaRuntimeService {
     for (const [worktreeId, meta] of Object.entries(store.getAllWorktreeMeta())) {
       const parsed = splitWorktreeId(worktreeId)
       if (!parsed || parsed.repoId !== repo.id) {
+        continue
+      }
+      // Why: a workspace instance's id suffix is not a directory; those rows are built from meta.
+      if (isWorkspaceInstanceWorktreeId(worktreeId)) {
         continue
       }
       // Why: one repo id can be registered on several execution hosts, so a degraded host must not republish another host's rows (same gate as worktrees.ts).

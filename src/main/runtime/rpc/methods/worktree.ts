@@ -137,6 +137,7 @@ export const WORKTREE_METHODS: RpcMethod[] = [
             workspaceStatus: params.workspaceStatus,
             manualOrder: params.manualOrder,
             sparseCheckout: params.sparseCheckout,
+            ...(params.terminalGroup === true ? { terminalGroup: true } : {}),
             pushTarget: params.pushTarget,
             runHooks: params.runHooks === true,
             activate: params.activate === true,
