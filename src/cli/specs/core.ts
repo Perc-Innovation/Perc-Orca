@@ -1,6 +1,7 @@
 import type { CommandSpec } from '../args'
 import { GLOBAL_FLAGS } from '../args'
 import { SERVE_COMMAND_SPECS } from './serve'
+import { WORKTREE_COMMAND_SPECS } from './worktree-specs'
 
 export const CORE_COMMAND_SPECS: CommandSpec[] = [
   {
@@ -60,137 +61,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     usage: 'orca repo search-refs --repo <selector> --query <text> [--limit <n>] [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'repo', 'query', 'limit']
   },
-  {
-    path: ['worktree', 'list'],
-    summary: 'List Orca-managed worktrees',
-    usage: 'orca worktree list [--repo <selector>] [--limit <n>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'repo', 'limit']
-  },
-  {
-    path: ['worktree', 'show'],
-    summary: 'Show one worktree',
-    usage: 'orca worktree show --worktree <selector> [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'worktree']
-  },
-  {
-    path: ['worktree', 'current'],
-    summary: 'Show the Orca-managed worktree for the current directory',
-    usage: 'orca worktree current [--json]',
-    allowedFlags: [...GLOBAL_FLAGS],
-    notes: [
-      'Resolves the current shell directory to a path: selector so agents can target the enclosing Orca worktree without spelling out $PWD.'
-    ],
-    examples: ['orca worktree current', 'orca worktree current --json']
-  },
-  {
-    path: ['worktree', 'create'],
-    summary: 'Create a new Orca-managed worktree',
-    usage:
-      'orca worktree create --name <name> [--repo <selector>|--project <id> [--host <host-id>]|--project-host-setup <id>] [--branch <name>] [--terminal-group] [--agent <id>] [--prompt <text>] [--setup run|skip|inherit] [--base-branch <ref>] [--issue <number>] [--linear-issue <identifier-or-url>] [--comment <text>] [--parent-worktree <selector>] [--no-parent] [--run-hooks] [--activate] [--json]',
-    allowedFlags: [
-      ...GLOBAL_FLAGS,
-      'repo',
-      'project',
-      'host',
-      'project-host-setup',
-      'name',
-      'branch',
-      'terminal-group',
-      'agent',
-      'prompt',
-      'base-branch',
-      'issue',
-      'linear-issue',
-      'comment',
-      'setup',
-      'parent-worktree',
-      'no-parent',
-      'run-hooks',
-      'activate'
-    ],
-    notes: [
-      'This creates a new checkout. For a fresh agent in an existing worktree, use `orca terminal create --worktree active --command "codex"` instead.',
-      'Pass --terminal-group for terminals and agents on the project checkout without a new worktree: no branch, no base ref, and no source-control surfaces. Folder projects already work this way, so the flag is a no-op there.',
-      'By default, Orca records the new worktree as a child of the caller context when it can infer one from the Orca terminal or current directory.',
-      'If --repo is omitted, Orca infers the repo from the current Orca-managed worktree.',
-      'Use --branch to set the git branch name verbatim, bypassing both the slugified --name and the global branch prefix. This is the only way to create a branch containing slashes, such as feat/PROJ-123-thing. The name is validated with `git check-ref-format`.',
-      'Use --project with --host to create on a ready project host setup without spelling the backing repo id.',
-      'For related work, use the inferred parent or pass --parent-worktree active, folder:<id>, or worktree:<worktreeId> to make the relationship explicit. Worktree ids are the full <repo-id>::<path> values returned by `orca worktree list --json`.',
-      'Use --no-parent when the new worktree should be independent of the current context.',
-      '--no-parent only affects Orca lineage; omit --base-branch to use the repo default base, or pass the default base ref explicitly for independent top-level work.',
-      'By default this creates the worktree and its first terminal without switching the active Orca view.',
-      'Pass --agent to launch an agent in the first terminal; --prompt sends initial work to that agent.',
-      'With --agent --json, read the new agent handle from result.agentTerminalHandle; older runtimes return only result.startupTerminal.handle, and may return neither for folder-based repos.',
-      'Repo-defined setup hooks follow the repository setup policy; pass --setup run to force them.',
-      'Pass --activate when the CLI caller intentionally wants to reveal the new worktree in the app.',
-      'Passing --run-hooks is kept as a legacy alias for --setup run and reveals the worktree.'
-    ],
-    examples: [
-      'orca worktree create --name agent-task --agent codex --prompt "hi" --json',
-      'orca worktree create --name PROJ-123 --branch feat/PROJ-123-add-login --json',
-      'orca worktree create --repo id:<repoId> --name servers --terminal-group --json',
-      'orca worktree create --repo id:<repoId> --name related-task --json',
-      'orca worktree create --project github:stablyai/orca --host runtime:gpu --name benchmark --json',
-      'orca worktree create --repo id:<repoId> --name linear-task --linear-issue https://linear.app/stably/issue/STA-335/test-issue --json',
-      'orca worktree create --repo id:<repoId> --name agent-task --agent codex --prompt "hi" --json',
-      'orca worktree create --repo id:<repoId> --name folder-child --parent-worktree folder:<folderId> --json',
-      'orca worktree create --repo id:<repoId> --name related-task --parent-worktree active --json',
-      'orca worktree create --repo id:<repoId> --name independent-task --no-parent --json'
-    ]
-  },
-  {
-    path: ['worktree', 'set'],
-    summary: 'Update Orca metadata for a worktree',
-    usage:
-      'orca worktree set --worktree <selector> [--display-name <name>] [--issue <number|null>] [--linear-issue <identifier-or-url|null>] [--jira <key|url|null>] [--comment <text>] [--workspace-status <id>] [--parent-worktree <selector>|--no-parent] [--json]',
-    allowedFlags: [
-      ...GLOBAL_FLAGS,
-      'worktree',
-      'display-name',
-      'issue',
-      'linear-issue',
-      'jira',
-      'add-pr',
-      'clear-prs',
-      'track-branch',
-      'clear-branches',
-      'comment',
-      'workspace-status',
-      'parent-worktree',
-      'no-parent'
-    ],
-    notes: [
-      'Use --jira with an issue key (PROJ-123) or a Jira issue URL to link the workspace to a ticket; the title and URL are resolved from the connected Jira site. Pass null to clear. The card shows it when the jira-issue card property is enabled.',
-      'Use --add-pr with one or more pull/merge request URLs (comma-separated) to attach reviews beyond the one auto-detected from the branch — a branch shipping to several destinations has more than one. Pass a JSON array like \'[{"url":"...","baseRef":"stage","title":"..."}]\' to record where each one is headed, which is what tells them apart on the card. Calls are additive; --clear-prs drops them, and combining both replaces the list.',
-      'Use --track-branch with one or more branch names (comma-separated) to make the card also surface the reviews of sibling branches of the same change (a release cherry-pick, a stage variant). Unlike --add-pr, a tracked branch keeps resolving to whatever PR currently ships from it. Calls are additive; --clear-branches drops them, and combining both replaces the list.',
-      'Workspace status ids match the board columns (defaults: todo, in-progress, in-review, completed); custom statuses use their configured id.',
-      'Pass --linear-issue null to clear the Linear issue link.'
-    ],
-    examples: [
-      'orca worktree set --worktree active --linear-issue STA-335 --json',
-      'orca worktree set --worktree active --linear-issue null --json'
-    ]
-  },
-  {
-    path: ['worktree', 'rm'],
-    // Why: agents reach for git's `remove`/`delete` verbs; accept them as
-    // aliases so a conventional guess resolves instead of dead-ending.
-    aliases: [
-      ['worktree', 'remove'],
-      ['worktree', 'delete']
-    ],
-    destructive: true,
-    summary: 'Remove a worktree from Orca and git',
-    usage: 'orca worktree rm --worktree <selector> [--force] [--run-hooks] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'worktree', 'force', 'run-hooks'],
-    notes: ['Repo-defined orca.yaml archive hooks are skipped unless --run-hooks is passed.']
-  },
-  {
-    path: ['worktree', 'ps'],
-    summary: 'Show a compact orchestration summary across worktrees',
-    usage: 'orca worktree ps [--limit <n>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'limit']
-  },
+  ...WORKTREE_COMMAND_SPECS,
   {
     path: ['terminal', 'list'],
     summary: 'List live Orca-managed terminals',
@@ -210,17 +81,23 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
   {
     path: ['terminal', 'read'],
     summary: 'Read bounded terminal output',
-    usage: 'orca terminal read [--terminal <handle>] [--cursor <n>] [--limit <n>] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'cursor', 'limit'],
+    usage:
+      'orca terminal read [--terminal <handle>] [--cursor <n>] [--limit <n>] [--screen] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'cursor', 'limit', 'screen'],
     notes: [
       'Omit --terminal to target the active terminal in the current worktree.',
+      'By default this returns accumulated terminal output with escape sequences stripped, not the rendered screen. Any program that repaints a line — shells, progress bars, TUIs — comes back as stacked fragments, so one `clear` keystroke by keystroke reads as `cclclecleaclear`, and spaces a prompt draws by moving the cursor are absent.',
+      'Use --screen to read what the terminal actually renders. Prefer it whenever the answer depends on how output looks rather than what was emitted over time; the default is unsuitable for verifying rendered output.',
+      'The result reports source: stream or screen, so a caller can tell which question was answered. A --screen read falls back to source: stream when no rendered state exists rather than passing the stream off as a screen.',
+      '--screen and --cursor are mutually exclusive: a screen read is the current frame and has no history to page.',
       'Use --cursor with the nextCursor value from a previous read to get only new output since that read.',
       'Use --limit to request more retained lines for long agent responses; output reports oldestCursor when older lines were dropped.',
       'Useful for capturing the response to a command: read before sending, then read --cursor <prev> after waiting.'
     ],
     examples: [
       'orca terminal read --json',
-      'orca terminal read --terminal term_abc123 --cursor 42 --limit 1000 --json'
+      'orca terminal read --terminal term_abc123 --cursor 42 --limit 1000 --json',
+      'orca terminal read --terminal term_abc123 --screen --json'
     ]
   },
   {

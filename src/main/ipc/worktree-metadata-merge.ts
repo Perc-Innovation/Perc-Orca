@@ -1,5 +1,6 @@
 import { basename } from 'node:path'
-import type { GitWorktreeInfo, Worktree, WorktreeMeta } from '../../shared/types'
+import type { WorktreeMeta } from '../../shared/worktree/meta-types'
+import type { GitWorktreeInfo, Worktree } from '../../shared/worktree/types'
 import { DEFAULT_WORKSPACE_STATUS_ID } from '../../shared/workspace-statuses'
 import { normalizeAttachedReviews } from '../../shared/attached-reviews'
 import { normalizeTrackedBranches } from '../../shared/tracked-branches'
@@ -25,6 +26,9 @@ export function mergeWorktree(
     ...(meta?.hostId !== undefined ? { hostId: meta.hostId } : {}),
     ...(meta?.projectHostSetupId !== undefined
       ? { projectHostSetupId: meta.projectHostSetupId }
+      : {}),
+    ...(meta?.ephemeralVmCheckoutMode !== undefined
+      ? { ephemeralVmCheckoutMode: meta.ephemeralVmCheckoutMode }
       : {}),
     ...(creatorProvenance ? { creatorProvenance } : {}),
     path: git.path,

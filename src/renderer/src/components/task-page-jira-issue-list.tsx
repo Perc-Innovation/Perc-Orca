@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import type { Worktree } from '../../../shared/worktree/types'
 import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, GitBranch } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -6,7 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
-import type { JiraIssue, JiraProjectStatusOrder, Worktree } from '../../../shared/types'
+import type { JiraIssue, JiraProjectStatusOrder } from '../../../shared/jira-types'
 
 export type TaskPageJiraIssueSection = {
   key: string

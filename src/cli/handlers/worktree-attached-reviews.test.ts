@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getAttachedReviewsUpdate } from './worktree-attached-reviews'
-import type { AttachedReview } from '../../shared/types'
+import type { AttachedReview } from '../../shared/attached-reviews'
 
 function flags(entries: Record<string, string | boolean>): Map<string, string | boolean> {
   return new Map(Object.entries(entries))

@@ -1,3 +1,8 @@
+import {
+  getPresentStringFlag,
+  getOptionalStartupAgent,
+  getOptionalSetupDecision
+} from './worktree-create-flag-readers'
 import type {
   RuntimeWorktreeListResult,
   RuntimeWorktreePsResult,
@@ -22,7 +27,6 @@ import {
   getRequiredWorktreeSelector,
   resolveCurrentWorktreeSelector
 } from '../selectors'
-import { isTuiAgent } from '../../shared/tui-agent-config'
 import { isWorkspaceKey, worktreeWorkspaceKey } from '../../shared/workspace-scope'
 import { printLineageSummary } from './worktree-lineage-summary'
 import {
@@ -87,54 +91,6 @@ function getEnvParentWorkspace(): string | undefined {
     return isWorkspaceKey(worktreeId) ? worktreeId : worktreeWorkspaceKey(worktreeId)
   }
   return undefined
-}
-
-function getPresentStringFlag(
-  flags: Map<string, string | boolean>,
-  name: string,
-  options: { allowEmpty?: boolean } = {}
-): string | undefined {
-  if (!flags.has(name)) {
-    return undefined
-  }
-  const value = flags.get(name)
-  if (typeof value === 'string' && (options.allowEmpty || value.length > 0)) {
-    return value
-  }
-  throw new RuntimeClientError('invalid_argument', `Missing value for --${name}`)
-}
-
-function getOptionalStartupAgent(flags: Map<string, string | boolean>): string | undefined {
-  const agent = getPresentStringFlag(flags, 'agent')
-  if (agent === undefined) {
-    if (flags.has('prompt')) {
-      throw new RuntimeClientError('invalid_argument', '--prompt requires --agent')
-    }
-    return undefined
-  }
-  if (!isTuiAgent(agent)) {
-    throw new RuntimeClientError('invalid_argument', `Unknown TUI agent "${agent}"`)
-  }
-  return agent
-}
-
-function getOptionalSetupDecision(
-  flags: Map<string, string | boolean>
-): 'run' | 'skip' | 'inherit' | undefined {
-  const setup = getPresentStringFlag(flags, 'setup')
-  if (setup !== undefined && setup !== 'run' && setup !== 'skip' && setup !== 'inherit') {
-    throw new RuntimeClientError('invalid_argument', '--setup must be one of: run, skip, inherit')
-  }
-  if (flags.get('run-hooks') === true) {
-    if (setup !== undefined && setup !== 'run') {
-      throw new RuntimeClientError(
-        'invalid_argument',
-        'Choose either --run-hooks or --setup run, not contradictory setup flags.'
-      )
-    }
-    return setup
-  }
-  return setup
 }
 
 function getRepoSelectorFromWorktreeSelector(selector: string | undefined): string | undefined {
@@ -233,6 +189,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     }
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
     const branchNameOverride = getOptionalStringFlag(flags, 'branch')
+    const activate = flags.get('activate') === true || flags.get('run-hooks') === true
     const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
       name: getRequiredStringFlag(flags, 'name'),
@@ -247,7 +204,10 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       comment: getOptionalStringFlag(flags, 'comment'),
       ...(flags.get('terminal-group') === true ? { terminalGroup: true } : {}),
       runHooks: flags.get('run-hooks') === true,
-      activate: flags.get('activate') === true || flags.get('run-hooks') === true,
+      activate,
+      // Why: the CLI pairs as a runtime device but is not a viewer, so caller-scoped
+      // delivery would make --activate a no-op against a remote runtime.
+      ...(activate ? { navigation: 'all' as const } : {}),
       ...(setupDecision ? { setupDecision } : {}),
       parentWorktree: explicitParentWorktree,
       ...(explicitParentWorkspace ? { parentWorkspace: explicitParentWorkspace } : {}),
@@ -306,8 +266,20 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     printResult(result, json, formatWorktreeShow)
   },
   'worktree rm': async ({ flags, client, cwd, json }) => {
+    const worktree = await getRequiredWorktreeSelector(flags, 'worktree', cwd, client)
+    const resolved = await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.show', {
+      worktree
+    })
+    const hostId = resolved.result.worktree.hostId
+    if (!hostId) {
+      throw new RuntimeClientError(
+        'worktree_host_unresolved',
+        'Orca cannot tell which host owns this workspace. Refresh projects and try again.'
+      )
+    }
     const result = await client.call<RuntimeWorktreeRemoveResult>('worktree.rm', {
-      worktree: await getRequiredWorktreeSelector(flags, 'worktree', cwd, client),
+      worktree,
+      hostId,
       force: flags.get('force') === true,
       // Why (#11960): --force is explicit here, so it may also waive PTY-stop proof.
       allowUnverifiedPtyStop: flags.get('force') === true,

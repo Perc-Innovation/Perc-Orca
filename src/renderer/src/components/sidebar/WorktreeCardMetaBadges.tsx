@@ -48,6 +48,8 @@ export const WorktreeCardMetaBadges = React.forwardRef<
     linearIssue,
     jiraIssue,
     review,
+    attachedReviews,
+    trackedBranchReviews,
     comment,
     automationProvenance,
     cliProvenance,
@@ -62,6 +64,8 @@ export const WorktreeCardMetaBadges = React.forwardRef<
       linearIssue,
       jiraIssue,
       review,
+      attachedReviews,
+      trackedBranchReviews,
       comment,
       automationProvenance,
       cliProvenance

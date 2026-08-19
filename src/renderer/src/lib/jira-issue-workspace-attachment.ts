@@ -1,4 +1,5 @@
-import type { JiraIssue, WorkspaceLinkedItem, Worktree } from '../../../shared/types'
+import type { JiraIssue } from '../../../shared/jira-types'
+import type { WorkspaceLinkedItem, Worktree } from '../../../shared/worktree/types'
 import { getWorktreeAttachmentLabel } from './worktree-attachment-label'
 
 export type JiraIssueAttachmentRef = Pick<JiraIssue, 'key'> & Partial<Pick<JiraIssue, 'url'>>

@@ -11,7 +11,8 @@ import {
 } from '@/lib/jira-board-drag-payload'
 import type { JiraBoardIssueDragRef } from '@/lib/jira-board-drag-payload'
 import { getJiraIssueWorkspaceAttachmentLabel } from '@/lib/jira-issue-workspace-attachment'
-import type { JiraIssue, JiraProjectStatusOrder, Worktree } from '../../../shared/types'
+import type { JiraIssue, JiraProjectStatusOrder } from '../../../shared/jira-types'
+import type { Worktree } from '../../../shared/worktree/types'
 import {
   buildJiraBoardSections,
   type TaskPageJiraBoardSection

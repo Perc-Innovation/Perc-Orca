@@ -6,7 +6,9 @@ import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { TUI_AGENT_CONFIG } from '../../../../shared/tui-agent-config'
 import { repoIsRemote } from '../../../../shared/agent-launch-remote'
 import { resolveLocalWindowsAgentStartupShell } from '../../../../shared/windows-terminal-shell'
-import type { Repo, TuiAgent, Worktree } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
+import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { Worktree } from '../../../../shared/worktree/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 
 export type TerminalGroupLaunchRepo = Pick<Repo, 'id' | 'displayName' | 'path' | 'connectionId'>

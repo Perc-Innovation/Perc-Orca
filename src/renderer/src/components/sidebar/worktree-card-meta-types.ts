@@ -1,10 +1,10 @@
 import type { ExecutionHostId } from '../../../../shared/execution-host'
+import type { IssueInfo } from '../../../../shared/github/pull-request-types'
+import type { AttachedReview } from '../../../../shared/attached-reviews'
 import type {
-  AttachedReview,
   AutomationWorkspaceProvenance,
-  CliWorkspaceProvenance,
-  IssueInfo
-} from '../../../../shared/types'
+  CliWorkspaceProvenance
+} from '../../../../shared/worktree/types'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 import type { CardReviewRow } from './worktree-card-attached-reviews'
 import type { WorktreeCardDetailsHoverControl } from './worktree-card-details-hover-state'

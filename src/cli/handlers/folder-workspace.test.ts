@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FOLDER_WORKSPACE_HANDLERS } from './folder-workspace'
 import type { HandlerContext } from '../dispatch'
 import type { RuntimeClient } from '../runtime-client'
-import type { FolderWorkspace, ProjectGroup } from '../../shared/types'
+import type { FolderWorkspace } from '../../shared/folder-workspace-types'
+import type { ProjectGroup } from '../../shared/project-group-types'
 
 const GROUPS = [
   { id: 'group-cce', name: 'CCE', connectionId: null },

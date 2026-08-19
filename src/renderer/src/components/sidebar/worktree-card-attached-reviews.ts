@@ -1,4 +1,4 @@
-import type { AttachedReview } from '../../../../shared/types'
+import type { AttachedReview } from '../../../../shared/attached-reviews'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 
 /** One review as the hover renders it, whether Orca found it or the user attached it. */

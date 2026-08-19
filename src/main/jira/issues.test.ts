@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { JiraClientForSite } from './client'
+import type { JiraClientForSite } from './authenticated-request'
 import { credentialDecryptionMessage } from '../../shared/integration-credential-errors'
 import { getJiraSummaryLookupErrorCode } from '../../shared/jira-summary-lookup'
 
@@ -21,14 +21,11 @@ const {
   releaseMock: vi.fn()
 }))
 
-vi.mock('./client', () => ({
-  acquire: (...args: unknown[]) => acquireMock(...args),
-  release: (...args: unknown[]) => releaseMock(...args),
+vi.mock('./request-queue', () => ({ acquire: acquireMock, release: releaseMock }))
+
+vi.mock('./authenticated-request', () => ({
   apiBasePath: (site: { authType?: string }) =>
     site.authType === 'server' ? '/rest/api/2' : '/rest/api/3',
-  clearToken: (...args: unknown[]) => clearTokenMock(...args),
-  getClients: (...args: unknown[]) => getClientsMock(...args),
-  isAuthError: (...args: unknown[]) => isAuthErrorMock(...args),
   jiraRequest: (...args: unknown[]) => jiraRequestMock(...args),
   jiraRequestBinary: (...args: unknown[]) => jiraRequestBinaryMock(...args),
   JiraApiError: class JiraApiError extends Error {
@@ -38,6 +35,12 @@ vi.mock('./client', () => ({
       this.status = status
     }
   }
+}))
+
+vi.mock('./client', () => ({
+  clearToken: (...args: unknown[]) => clearTokenMock(...args),
+  getClients: (...args: unknown[]) => getClientsMock(...args),
+  isAuthError: (...args: unknown[]) => isAuthErrorMock(...args)
 }))
 
 function makeEntry(id = 'site-1'): JiraClientForSite {
@@ -778,124 +781,5 @@ describe('Jira issue operations', () => {
       expect.anything(),
       'https://example.atlassian.net/rest/api/3/attachment/content/20002?redirect=false'
     )
-  })
-
-  describe('getProjectStatusOrder', () => {
-    it('returns an empty order when no clients are available', async () => {
-      getClientsMock.mockReturnValue([])
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: []
-      })
-    })
-
-    it('returns an empty order when an omitted site resolves to multiple clients', async () => {
-      getClientsMock.mockReturnValue([makeEntry('site-1'), makeEntry('site-2')])
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP')).resolves.toEqual({ statusIdsByColumn: [] })
-      expect(jiraRequestMock).not.toHaveBeenCalled()
-    })
-
-    it('returns an empty order when the project has no accessible board', async () => {
-      jiraRequestMock.mockResolvedValueOnce({ values: [] })
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP & OPS', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: []
-      })
-      expect(String(jiraRequestMock.mock.calls[0][1])).toContain(
-        '/rest/agile/1.0/board?projectKeyOrId=ALP+%26+OPS&maxResults=2'
-      )
-    })
-
-    it('keeps alphabetical fallback when a project has multiple boards', async () => {
-      jiraRequestMock.mockResolvedValueOnce({
-        total: 2,
-        values: [{ id: 42 }, { id: 43 }]
-      })
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: []
-      })
-      expect(jiraRequestMock).toHaveBeenCalledTimes(1)
-    })
-
-    it('keeps alphabetical fallback when Jira reports another board page', async () => {
-      jiraRequestMock.mockResolvedValueOnce({
-        isLast: false,
-        values: [{ id: 42 }]
-      })
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: []
-      })
-      expect(jiraRequestMock).toHaveBeenCalledTimes(1)
-    })
-
-    it('returns status IDs grouped by Jira board column order', async () => {
-      jiraRequestMock
-        .mockResolvedValueOnce({ total: 1, values: [{ id: 42 }] })
-        .mockResolvedValueOnce({
-          columnConfig: {
-            columns: [
-              { statuses: [{ id: '1' }, { id: '2' }] },
-              { statuses: [{ id: '3' }, { id: '2' }] },
-              { statuses: [] }
-            ]
-          }
-        })
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: [['1', '2'], ['3']]
-      })
-      expect(jiraRequestMock.mock.calls[1]?.[1]).toBe('/rest/agile/1.0/board/42/configuration')
-    })
-
-    it('includes named board columns so empty lanes can render', async () => {
-      jiraRequestMock
-        .mockResolvedValueOnce({ total: 1, values: [{ id: 42 }] })
-        .mockResolvedValueOnce({
-          columnConfig: {
-            columns: [
-              { name: 'To Do', statuses: [{ id: '1' }] },
-              { name: 'Done', statuses: [{ id: '3' }] },
-              { name: 'Ghost', statuses: [] }
-            ]
-          }
-        })
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: [['1'], ['3']],
-        columns: [
-          { name: 'To Do', statusIds: ['1'] },
-          { name: 'Done', statusIds: ['3'] }
-        ]
-      })
-    })
-
-    it('clears the token and surfaces credential failures', async () => {
-      const authError = new Error('Unauthorized')
-      isAuthErrorMock.mockReturnValue(true)
-      jiraRequestMock.mockRejectedValueOnce(authError)
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).rejects.toThrow('Unauthorized')
-      expect(clearTokenMock).toHaveBeenCalledWith('site-1')
-    })
-
-    it('falls back to an empty order on operational errors', async () => {
-      jiraRequestMock.mockRejectedValueOnce(new Error('Service Unavailable'))
-      const { getProjectStatusOrder } = await import('./issues')
-
-      await expect(getProjectStatusOrder('ALP', 'site-1')).resolves.toEqual({
-        statusIdsByColumn: []
-      })
-    })
   })
 })

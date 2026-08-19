@@ -6,7 +6,7 @@ import {
   findJiraIssueWorkspaceAttachmentInIndex,
   getJiraIssueWorkspaceAttachmentLabel
 } from './jira-issue-workspace-attachment'
-import type { WorkspaceLinkedItem, Worktree } from '../../../shared/types'
+import type { WorkspaceLinkedItem, Worktree } from '../../../shared/worktree/types'
 
 function jiraLink(overrides: Partial<WorkspaceLinkedItem> = {}): WorkspaceLinkedItem {
   return {

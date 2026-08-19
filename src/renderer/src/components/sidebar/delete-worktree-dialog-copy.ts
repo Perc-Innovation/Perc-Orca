@@ -1,5 +1,6 @@
 import { sharesProjectCheckout } from '../../../../shared/workspace-instance-worktree'
-import type { Repo, Worktree } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
+import type { Worktree } from '../../../../shared/worktree/types'
 
 type WorktreeRepoRef = Pick<Worktree, 'id' | 'repoId'>
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addAttachedReview, normalizeAttachedReviews } from './attached-reviews'
-import type { AttachedReview } from './types'
+import type { AttachedReview } from './attached-reviews'
 
 const review = (over: Partial<AttachedReview> = {}): AttachedReview => ({
   provider: 'github',

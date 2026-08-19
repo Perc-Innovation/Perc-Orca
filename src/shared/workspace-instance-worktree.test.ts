@@ -7,7 +7,7 @@ import {
   isWorkspaceInstanceWorktreeIdForRepo,
   sharesProjectCheckout
 } from './workspace-instance-worktree'
-import { isWorkspaceInstanceWorktreeId } from './worktree-id'
+import { isWorkspaceInstanceWorktreeId } from './worktree/id'
 
 const UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const gitRepo = { id: 'repo-1', path: '/workspace/repo', kind: 'git' as const }

@@ -1,4 +1,4 @@
-import type { JiraSavedFilter, JiraSiteSelection } from '../../../shared/types'
+import type { JiraSavedFilter, JiraSiteSelection } from '../../../shared/jira-types'
 import { callRuntimeRpc, RuntimeRpcCallError } from './runtime-rpc-client'
 import { getJiraRuntimeTarget, type RuntimeJiraSettings } from './runtime-jira-target'
 

@@ -1,4 +1,4 @@
-import type { JiraIssue, JiraTransition } from '../../../shared/types'
+import type { JiraIssue, JiraTransition } from '../../../shared/jira-types'
 import { jiraListTransitions, type RuntimeJiraSettings } from '@/runtime/runtime-jira-client'
 import { createMetadataRequestStore, loadMetadata } from '@/hooks/metadata-request-cache'
 import type { TaskPageJiraBoardSection } from './task-page-jira-board-sections'

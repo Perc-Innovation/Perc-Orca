@@ -1,10 +1,10 @@
-import type { Repo } from './types'
+import type { Repo } from './repo-types'
 import { isFolderRepo } from './repo-kind'
 import {
   FOLDER_WORKSPACE_INSTANCE_SEPARATOR,
   WORKTREE_ID_SEPARATOR,
   isWorkspaceInstanceWorktreeId
-} from './worktree-id'
+} from './worktree/id'
 
 /**
  * A *workspace instance* is a card that shares its project's existing checkout instead of owning

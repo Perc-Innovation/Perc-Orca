@@ -22,7 +22,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import { getFolderWorkspacePathStatusTitle } from '@/lib/folder-workspace-path-status'
 import type { FolderWorkspacePathStatus } from '../../../../shared/folder-workspace-path-status'
-import type { ProjectGroup } from '../../../../shared/types'
+import type { ProjectGroup } from '../../../../shared/project-group-types'
 
 const LOCAL_HOST_VALUE = 'local'
 const PATH_CHECK_DEBOUNCE_MS = 400

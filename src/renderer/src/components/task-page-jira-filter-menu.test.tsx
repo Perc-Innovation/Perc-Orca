@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import type { JiraSavedFilter } from '../../../shared/types'
+import type { JiraSavedFilter } from '../../../shared/jira-types'
 import type { ActiveJiraFilterRef, JiraCustomFilter } from '../../../shared/jira-custom-filters'
 import { TaskPageJiraFilterMenu } from './task-page-jira-filter-menu'
 

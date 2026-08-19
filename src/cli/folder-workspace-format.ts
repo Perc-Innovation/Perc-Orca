@@ -1,4 +1,4 @@
-import type { FolderWorkspace } from '../shared/types'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
 
 function formatFolderWorkspaceHost(workspace: FolderWorkspace): string {
   return workspace.connectionId ? `ssh:${workspace.connectionId}` : 'local'

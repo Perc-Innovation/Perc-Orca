@@ -1,7 +1,7 @@
-import { parseGitHubIssueOrPRLink } from '../../shared/github-links'
+import { parseGitHubIssueOrPRLink } from '../../shared/new-workspace/github-links'
 import { addAttachedReview } from '../../shared/attached-reviews'
 import { RuntimeClientError } from '../runtime-client'
-import type { AttachedReview } from '../../shared/types'
+import type { AttachedReview } from '../../shared/attached-reviews'
 
 /**
  * Builds the attached-review list from `--add-pr` / `--clear-prs`.

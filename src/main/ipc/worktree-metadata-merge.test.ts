@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeWorktree } from './worktree-metadata-merge'
-import type { GitWorktreeInfo, WorktreeMeta } from '../../shared/types'
+import type { GitWorktreeInfo } from '../../shared/worktree/types'
+import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 
 const git = (over: Partial<GitWorktreeInfo> = {}): GitWorktreeInfo => ({
   path: '/repos/app',

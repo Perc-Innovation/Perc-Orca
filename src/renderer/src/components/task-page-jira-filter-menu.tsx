@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import type { JiraSavedFilter } from '../../../shared/types'
+import type { JiraSavedFilter } from '../../../shared/jira-types'
 import type { ActiveJiraFilterRef, JiraCustomFilter } from '../../../shared/jira-custom-filters'
 
 export type JiraCustomFilterDraft = { name: string; jql: string }

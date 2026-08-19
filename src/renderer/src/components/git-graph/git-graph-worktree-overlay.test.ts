@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Worktree } from '../../../../shared/types'
+import type { Worktree } from '../../../../shared/worktree/types'
 import { buildGitGraphWorktreeOverlay } from './git-graph-worktree-overlay'
 
 function worktree(overrides: Partial<Worktree> & Pick<Worktree, 'id' | 'branch'>): Worktree {

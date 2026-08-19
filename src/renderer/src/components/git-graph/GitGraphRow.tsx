@@ -5,8 +5,11 @@ import { translate } from '@/i18n/i18n'
 import type { GitHistoryItem, GitHistoryItemRef } from '../../../../shared/git-history'
 import type { GitHistoryItemViewModel } from '../../../../shared/git-history-graph'
 import { dedupeRemoteTrackingRefs } from '../../../../shared/git-history-ref-display'
-import { GitHistoryGraphSvg, graphColor } from '../right-sidebar/GitHistoryGraphSvg'
-import { formatGitHistoryTimestamp } from '../right-sidebar/git-history-format'
+import {
+  GitHistoryGraphSvg,
+  graphColor
+} from '../right-sidebar/source-control/sync/git-history-graph-svg'
+import { formatGitHistoryTimestamp } from '../right-sidebar/source-control/sync/git-history-format'
 import { GitGraphWorktreeBadge } from './GitGraphWorktreeBadge'
 import type { GitGraphWorktreeOverlayEntry } from './git-graph-worktree-overlay'
 

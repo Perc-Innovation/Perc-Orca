@@ -1,12 +1,13 @@
 import { parseGitHubIssueOrPRLink, parseGitHubIssueOrPRNumber } from '@/lib/github-links'
+import { normalizeTrackedBranches } from '../../../../shared/tracked-branches'
 import {
   buildLinearIssueLinkUpdates,
   LINEAR_ISSUE_LINK_CLEARED
-} from '../../../../shared/linear-links'
+} from '../../../../shared/linear/links'
 import { parseIssueLinkInput, type IssueLinkProvider } from '../../../../shared/issue-link-input'
 import type { WorkspaceSourceProvider } from '../../../../shared/new-workspace/workspace-source'
-import type { WorkspaceLinkedItem, WorktreeMeta } from '../../../../shared/types'
-import { normalizeTrackedBranches } from '../../../../shared/tracked-branches'
+import type { WorktreeMeta } from '../../../../shared/worktree/meta-types'
+import type { WorkspaceLinkedItem } from '../../../../shared/worktree/types'
 
 export type WorktreeMetaSavedPayload = {
   worktreeId: string

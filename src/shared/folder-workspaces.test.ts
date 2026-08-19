@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { normalizeFolderWorkspaces } from './folder-workspaces'
-import type { ProjectGroup } from './types'
+import type { ProjectGroup } from './project-group-types'
 
 function group(overrides: Partial<ProjectGroup>): ProjectGroup {
   return {

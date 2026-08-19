@@ -1,4 +1,30 @@
-import type { AttachedReview } from './types'
+/**
+ * A review explicitly attached to a workspace, on top of the one auto-detected
+ * from the branch.
+ *
+ * Why a separate list instead of turning `linkedPR` and friends into arrays:
+ * those scalars are read in ~57 files across renderer, main and CLI, and each
+ * provider has its own. Keeping them untouched means auto-detection, the card's
+ * primary review and every existing consumer behave exactly as before, and only
+ * code that wants the extras opts in.
+ *
+ * The common case for more than one is a single branch that ships to several
+ * destinations (a release branch plus trunk) or a feature split across repos.
+ */
+export type AttachedReview = {
+  provider: 'github' | 'gitlab' | 'bitbucket' | 'azure-devops' | 'gitea'
+  number: number
+  url: string
+  /** Destination branch, when known. It is what distinguishes reviews that
+   *  share a head branch, so it is worth storing rather than re-fetching. */
+  baseRef?: string
+  title?: string
+  /** Whether the review is still live. Attached reviews are not polled, so this
+   *  is whatever the caller knew when it attached them — without it a merged
+   *  review and an open one render identically, which is the opposite of what
+   *  a stack of destinations is for. */
+  state?: 'open' | 'merged' | 'closed' | 'draft'
+}
 
 const PROVIDERS: readonly AttachedReview['provider'][] = [
   'github',

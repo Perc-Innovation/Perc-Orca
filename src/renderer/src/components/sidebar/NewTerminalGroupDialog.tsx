@@ -18,7 +18,7 @@ import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-co
 import { useRepoById } from '@/store/selectors'
 import { filterEnabledTuiAgents } from '../../../../shared/tui-agent-selection'
 import { getExecutionHostLabel, getRepoExecutionHostId } from '../../../../shared/execution-host'
-import type { TuiAgent } from '../../../../shared/types'
+import type { TuiAgent } from '../../../../shared/tui-agent'
 import { translate } from '@/i18n/i18n'
 import { submitTerminalGroupCreate } from './new-terminal-group-submit'
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { JiraIssue, JiraStatus, JiraTransition } from '../../../shared/types'
+import type { JiraIssue, JiraStatus, JiraTransition } from '../../../shared/jira-types'
 
 const mocks = vi.hoisted(() => ({
   jiraListTransitions: vi.fn()

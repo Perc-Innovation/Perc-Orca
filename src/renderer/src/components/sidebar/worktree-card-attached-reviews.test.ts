@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getCardReviewList } from './worktree-card-attached-reviews'
-import type { AttachedReview } from '../../../../shared/types'
+import type { AttachedReview } from '../../../../shared/attached-reviews'
 import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
 
 const attached = (over: Partial<AttachedReview> = {}): AttachedReview => ({

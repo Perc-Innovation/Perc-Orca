@@ -5,7 +5,7 @@ import {
   type ParsedJiraIssueUrl
 } from '../../shared/jira-issue-url'
 import { RuntimeClientError, type RuntimeClient } from '../runtime-client'
-import type { WorkspaceLinkedItem } from '../../shared/types'
+import type { WorkspaceLinkedItem } from '../../shared/worktree/types'
 import type { JiraIssue, JiraSite } from '../../shared/jira-types'
 
 export type JiraIssueLinkInput =
