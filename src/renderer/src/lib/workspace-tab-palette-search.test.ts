@@ -633,4 +633,35 @@ describe('workspace-tab-palette-search', () => {
     })
     expect(hyphenated[0]?.occupantAgent).toBeNull()
   })
+
+  // Why this guards a real gap: folder workspaces live in their own store slice and never reach
+  // the palette, so their terminals are unsearchable. A terminal group is an ordinary worktree row
+  // under its repo, so it must not inherit that — its terminals are reachable from Cmd+J.
+  it('enumerates terminals inside a git project terminal group', () => {
+    const groupId = 'repo-1::/workspace/repo::workspace:11111111-1111-4111-8111-111111111111'
+    const group = makeWorktree({
+      id: groupId,
+      path: '/workspace/repo',
+      branch: '',
+      head: '',
+      isMainWorktree: false,
+      displayName: 'Terminals'
+    })
+    const entries = buildEntries({
+      worktrees: [group],
+      worktreeOrder: new Map([[groupId, 0]]),
+      unifiedTabsByWorktree: {
+        [groupId]: [makeUnifiedTab({ worktreeId: groupId, label: 'Revisión WOLF-2323' })]
+      },
+      tabsByWorktree: { [groupId]: [makeTerminalTab({ worktreeId: groupId })] },
+      activeGroupIdByWorktree: { [groupId]: 'group-1' },
+      groupsByWorktree: { [groupId]: [makeGroup()] },
+      activeWorktreeId: groupId,
+      activeTabIdByWorktree: { [groupId]: 'terminal-1' },
+      activeTabTypeByWorktree: { [groupId]: 'terminal' }
+    })
+
+    expect(entries.map((entry) => entry.title)).toContain('Revisión WOLF-2323')
+    expect(searchWorkspaceTabs(entries, 'WOLF-2323')).not.toHaveLength(0)
+  })
 })
