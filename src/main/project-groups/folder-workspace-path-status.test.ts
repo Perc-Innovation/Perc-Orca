@@ -172,7 +172,7 @@ describe('folder workspace path status', () => {
     ).toEqual({ kind: 'ambiguous' })
   })
 
-  it('reports ambiguous connection when explicit SSH scope conflicts with repos', () => {
+  it('trusts an explicit SSH connection over other-connection repos in scope', () => {
     expect(
       inferFolderWorkspacePathConnection({
         folderPath: '/workspace/platform',
@@ -184,7 +184,34 @@ describe('folder workspace path status', () => {
           makeRepo({ id: 'repo-2', connectionId: 'ssh-2' })
         ]
       })
-    ).toEqual({ kind: 'ambiguous' })
+    ).toEqual({ kind: 'ssh', connectionId: 'ssh-1' })
+  })
+
+  it('pins an explicit null connection to local even with remote repos in scope', () => {
+    expect(
+      inferFolderWorkspacePathConnection({
+        folderPath: '/workspace/platform',
+        projectGroupId: 'group-1',
+        connectionId: null,
+        projectGroups: [makeGroup({ connectionId: 'ssh-1' })],
+        repos: [makeRepo({ connectionId: 'ssh-1' })]
+      })
+    ).toEqual({ kind: 'local' })
+  })
+
+  it('trusts an explicit SSH connection inside a local-repo project group', () => {
+    expect(
+      inferFolderWorkspacePathConnection({
+        folderPath: '/remote/workspace/platform',
+        projectGroupId: 'group-1',
+        connectionId: 'ssh-1',
+        projectGroups: [makeGroup()],
+        repos: [
+          makeRepo({ id: 'repo-1', projectGroupId: 'group-1', connectionId: undefined }),
+          makeRepo({ id: 'repo-2', path: '/remote/workspace/platform', connectionId: 'ssh-1' })
+        ]
+      })
+    ).toEqual({ kind: 'ssh', connectionId: 'ssh-1' })
   })
 
   it('supports direct path scope without a persisted project group', async () => {

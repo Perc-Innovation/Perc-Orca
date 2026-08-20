@@ -108,7 +108,9 @@ function isCurrentWorkspaceTab({
 function isWorkspaceTabContentType(
   contentType: TabContentType
 ): contentType is WorkspaceTabContentType {
-  return ['terminal', 'editor', 'diff', 'conflict-review', 'check-details'].includes(contentType)
+  return ['terminal', 'editor', 'diff', 'conflict-review', 'check-details', 'git-graph'].includes(
+    contentType
+  )
 }
 
 export function buildSearchableWorkspaceTabEntries({

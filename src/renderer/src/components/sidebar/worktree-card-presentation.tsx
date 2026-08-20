@@ -48,6 +48,8 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
     metaComment,
     metaAutomationProvenance,
     metaCliProvenance,
+    metaAttachedReviews,
+    trackedBranchReviewRows,
     hoverIssue,
     hoverLinearIssue,
     hoverJiraIssue,
@@ -132,6 +134,7 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
       linearIssue: hoverLinearIssue,
       jiraIssue: hoverJiraIssue,
       review: hoverReview,
+      trackedBranchReviews: trackedBranchReviewRows,
       comment: hoverComment,
       automationProvenance: metaAutomationProvenance,
       cliProvenance: metaCliProvenance
@@ -150,6 +153,8 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
             linearIssue={metaLinearIssue}
             jiraIssue={metaJiraIssue}
             review={metaReview}
+            attachedReviews={metaAttachedReviews}
+            trackedBranchReviews={trackedBranchReviewRows}
             comment={metaComment}
             automationProvenance={metaAutomationProvenance}
             cliProvenance={metaCliProvenance}
@@ -207,6 +212,7 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
             linearIssue={metaLinearIssue}
             jiraIssue={metaJiraIssue}
             review={newCardStyle ? null : metaReview}
+            trackedBranchReviews={trackedBranchReviewRows}
             comment={metaComment}
             automationProvenance={metaAutomationProvenance}
             cliProvenance={metaCliProvenance}
@@ -222,6 +228,8 @@ export function buildWorktreeCardPresentation(card: WorktreeCardController) {
         linearIssue={metaLinearIssue}
         jiraIssue={metaJiraIssue}
         review={metaReview}
+        attachedReviews={metaAttachedReviews}
+        trackedBranchReviews={trackedBranchReviewRows}
         comment={metaComment}
         automationProvenance={metaAutomationProvenance}
         cliProvenance={metaCliProvenance}

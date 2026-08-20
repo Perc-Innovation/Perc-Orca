@@ -31,8 +31,11 @@ export function getRenderableFolderWorkspaces(
   const renderable: RenderableFolderWorkspace[] = []
   for (const folderWorkspace of folderWorkspaces) {
     const projectGroup = projectGroupsById.get(folderWorkspace.projectGroupId)
-    // A group filtered out for host visibility legitimately hides its workspaces.
-    if (!projectGroup?.parentPath) {
+    // Why: a folder workspace carries its own folderPath, so it renders in any
+    // existing group — requiring the group's parentPath silently hid workspaces
+    // created in a manually-made group. A group filtered out for host visibility
+    // legitimately hides its workspaces.
+    if (!projectGroup) {
       continue
     }
     renderable.push({ folderWorkspace, projectGroup })

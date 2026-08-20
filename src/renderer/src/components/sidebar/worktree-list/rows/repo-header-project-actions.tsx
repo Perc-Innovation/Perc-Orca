@@ -8,7 +8,9 @@ import {
   Plus,
   Shapes,
   SlidersHorizontal,
-  Trash2
+  Trash2,
+  GitBranch,
+  SquareTerminal
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -65,6 +67,8 @@ export type RepoHeaderProjectActions = {
   onRemoveProjectFromGroup: (repo: Repo) => void
   onRemoveProject: (repo: Repo) => void
   onCreateForRepo: (projectId: string) => void
+  onOpenRepoGitGraph: (repo: Repo) => void
+  onCreateTerminalGroup: (projectId: string) => void
 }
 
 export function RepoHeaderProjectActionsMenu({
@@ -132,6 +136,22 @@ export function RepoHeaderProjectActionsMenu({
           <DropdownMenuItem onSelect={() => actions.onOpenWorktreeVisibility(repo)}>
             <Eye className="size-3.5" />
             {getWorktreeVisibilityMenuLabel(repo, actions.getWorktreeVisibilityDefaults(repo))}
+          </DropdownMenuItem>
+        ) : null}
+        {isGitRepoKind(repo) ? (
+          <DropdownMenuItem onSelect={() => actions.onOpenRepoGitGraph(repo)}>
+            <GitBranch className="size-3.5" />
+            {translate('auto.components.sidebar.WorktreeList.openGitGraph', 'Open Git Graph')}
+          </DropdownMenuItem>
+        ) : null}
+        {/* Folder projects already work this way, so the entry is git-only. */}
+        {isGitRepoKind(repo) ? (
+          <DropdownMenuItem onSelect={() => actions.onCreateTerminalGroup(repo.id)}>
+            <SquareTerminal className="size-3.5" />
+            {translate(
+              'auto.components.sidebar.WorktreeList.newTerminalGroup',
+              'New terminal group'
+            )}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onSelect={() => actions.onCreateGroupFromRepo(repo)}>

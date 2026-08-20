@@ -9,7 +9,7 @@ export function openWorkspaceEditorItem(
   fileId: string,
   worktreeId: string,
   label: string,
-  contentType: 'editor' | 'diff' | 'conflict-review' | 'check-details',
+  contentType: 'editor' | 'diff' | 'conflict-review' | 'check-details' | 'git-graph',
   isPreview?: boolean,
   targetGroupId?: string
 ): string {

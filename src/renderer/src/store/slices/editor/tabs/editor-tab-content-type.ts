@@ -5,6 +5,7 @@ export function isEditorTabContentType(contentType: Tab['contentType']): boolean
     contentType === 'editor' ||
     contentType === 'diff' ||
     contentType === 'conflict-review' ||
-    contentType === 'check-details'
+    contentType === 'check-details' ||
+    contentType === 'git-graph'
   )
 }

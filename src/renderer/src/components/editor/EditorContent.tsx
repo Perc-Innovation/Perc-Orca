@@ -29,6 +29,7 @@ import {
 import { getDiffContentSignature } from './diff-content-signature'
 import { translate } from '@/i18n/i18n'
 import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
+import { GitGraphView } from '../git-graph/GitGraphView'
 import { ExternalFileChangeBanner } from './ExternalFileChangeBanner'
 
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
@@ -642,6 +643,10 @@ export function EditorContent({
         }}
       />
     )
+  }
+
+  if (activeFile.mode === 'git-graph') {
+    return <GitGraphView worktreeId={activeFile.worktreeId} />
   }
 
   if (activeFile.mode === 'conflict-review') {

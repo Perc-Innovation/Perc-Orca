@@ -79,6 +79,7 @@ export type TaskResumeState = {
   }
   jiraPreset?: 'assigned' | 'reported' | 'all' | 'done'
   jiraQuery?: string
+  jiraViewMode?: 'list' | 'board'
 }
 
 export type RightSidebarTab =

@@ -146,6 +146,7 @@ export type EditorFilesSlice = {
     entries: ConflictReviewEntry[],
     source: ConflictReviewState['source']
   ) => void
+  openGitGraph: (worktreeId: string) => void
   openCheckRunDetails: (
     worktreeId: string,
     contextKey: string,

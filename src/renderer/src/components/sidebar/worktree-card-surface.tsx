@@ -45,6 +45,7 @@ export function WorktreeCardSurface({ card }: { card: WorktreeCardController }):
     hoverComment,
     metaAutomationProvenance,
     metaCliProvenance,
+    trackedBranchReviewRows,
     workspacePorts,
     detailsHoverControl,
     handleRenameTitle,
@@ -79,6 +80,7 @@ export function WorktreeCardSurface({ card }: { card: WorktreeCardController }):
         linearIssue={hoverLinearIssue}
         jiraIssue={hoverJiraIssue}
         review={hoverReview}
+        trackedBranchReviews={trackedBranchReviewRows}
         comment={hoverComment}
         automationProvenance={metaAutomationProvenance}
         cliProvenance={metaCliProvenance}

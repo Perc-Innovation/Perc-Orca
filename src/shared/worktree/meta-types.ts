@@ -12,6 +12,7 @@ import type {
 import type { TuiAgent } from '../tui-agent'
 import type { OrcaWorkspaceLayout } from '../global-settings-types'
 import type { DiffComment, MobileDiffReviewState } from '../diff-comment-types'
+import type { AttachedReview } from '../attached-reviews'
 
 // ─── Worktree metadata (persisted user-authored fields only) ─────────
 export type WorktreeMeta = {
@@ -31,6 +32,10 @@ export type WorktreeMeta = {
   comment: string
   linkedIssue: number | null
   linkedPR: number | null
+  /** Reviews attached on top of the branch-detected one. */
+  attachedReviews?: AttachedReview[]
+  /** See Worktree.trackedBranches. */
+  trackedBranches?: string[]
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null

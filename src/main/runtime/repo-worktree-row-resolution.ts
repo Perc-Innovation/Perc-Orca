@@ -1,4 +1,8 @@
-import { splitWorktreeId, splitWorktreeIdForFilesystem } from '../../shared/worktree/id'
+import {
+  splitWorktreeId,
+  splitWorktreeIdForFilesystem,
+  isWorkspaceInstanceWorktreeId
+} from '../../shared/worktree/id'
 import { getRepoExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
 import { isFolderRepo } from '../../shared/repo-kind'
 import { projectResolvedWorktreeLineage } from '../../shared/resolved-worktree-lineage'
@@ -61,6 +65,10 @@ export function listStoredWorktreeRowsForRepo(
   for (const [worktreeId, meta] of Object.entries(store.getAllWorktreeMeta())) {
     const parsed = splitWorktreeId(worktreeId)
     if (!parsed || parsed.repoId !== repo.id) {
+      continue
+    }
+    // Why: a workspace instance's id suffix is not a directory; those rows are built from meta.
+    if (isWorkspaceInstanceWorktreeId(worktreeId)) {
       continue
     }
     // Why: one repo id can be registered on several execution hosts, so a degraded host must not republish another host's rows (same gate as worktrees.ts).

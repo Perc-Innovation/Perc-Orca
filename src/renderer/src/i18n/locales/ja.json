@@ -1915,7 +1915,22 @@
         "jiraLinkSourceUnavailable": "この Jira Issue をリンクできませんでした。Jira に再接続するか該当するサイトを選択してから、もう一度お試しください。",
         "loadPageUnreachable": "ページ {{value0}} は GitHub 検索が返せる範囲を超えています。",
         "loadPageFailed": "GitHub からページ {{value0}} を読み込めませんでした。",
-        "loadPageNoMoreResults": "ページ {{value0}} にはこれ以上結果がありません。"
+        "loadPageNoMoreResults": "ページ {{value0}} にはこれ以上結果がありません。",
+        "jiraFiltersMenuLabel": "フィルター",
+        "jiraFiltersSavedHeading": "Jira に保存済み",
+        "jiraFiltersCustomHeading": "マイフィルター",
+        "jiraFiltersLoadingSaved": "読み込み中…",
+        "jiraFiltersSavedEmpty": "保存済みフィルターはありません",
+        "jiraFiltersNewCustom": "新しいカスタムフィルター…",
+        "jiraFiltersEditAria": "フィルター「{{name}}」を編集",
+        "jiraFiltersDeleteAria": "フィルター「{{name}}」を削除",
+        "jiraFiltersDialogTitleEdit": "フィルターを編集",
+        "jiraFiltersDialogTitleNew": "新しいフィルター",
+        "jiraFiltersDialogDescription": "このデバイスに保存されます。JQL は接続済みの Jira サイトに対して実行されます。",
+        "jiraFiltersNameLabel": "名前",
+        "jiraFiltersNamePlaceholder": "例: 自分の未解決バグ",
+        "jiraFiltersJqlLabel": "JQL",
+        "jiraFiltersSave": "保存"
       },
       "Terminal": {
         "73768427cf": "閉じる",
@@ -4605,7 +4620,8 @@
           "hostDisconnected": "切断済み",
           "failedNestWorkspace": "ワークスペースをネストできませんでした",
           "sidebarRowMissing": "対象はもう存在しません",
-          "failedUnnestWorkspace": "ワークスペースの展開に失敗しました"
+          "failedUnnestWorkspace": "ワークスペースの展開に失敗しました",
+          "newTerminalGroup": "新しいターミナルグループ"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "キャンセル",
@@ -5154,6 +5170,15 @@
           "3b7ea51793": "検索をクリア",
           "7f1c2e94a5": "検索テキストが長すぎます — ボードは絞り込まれていません",
           "9a4d0f6b21": "長すぎます"
+        },
+        "NewTerminalGroupDialog": {
+          "title": "新しいターミナルグループ",
+          "description": "{{value1}} 上の {{value0}} で実行されるターミナルと Agent。新しいワークツリーもブランチも作成しません。",
+          "nameLabel": "名前",
+          "namePlaceholder": "servers、research、scripts…",
+          "agentLabel": "Agent",
+          "cancel": "キャンセル",
+          "create": "グループを作成"
         }
       },
       "shared": {

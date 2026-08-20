@@ -59,6 +59,7 @@ export type SectionHeaderRowContext = {
   onRenameProjectGroup: (groupId: string, currentName: string) => void
   onDeleteProjectGroup: (groupId: string, groupName: string) => void
   onCreateFolderWorkspace: (projectGroup: ProjectGroup) => void
+  onCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
   onWorkspaceStatusDragOver: (event: React.DragEvent, status: WorkspaceStatus) => void
   onWorkspaceStatusDragLeave: (event: React.DragEvent) => void
   onWorkspacePinDragOver: (event: React.DragEvent) => void
@@ -354,7 +355,11 @@ export function renderWorktreeSectionHeaderRow(args: {
             <ProjectGroupHeaderMenu
               groupId={projectGroupIdForHeader}
               label={row.label}
+              projectGroup={
+                typeof row.projectGroup?.id === 'string' ? (row.projectGroup as ProjectGroup) : null
+              }
               onRename={ctx.onRenameProjectGroup}
+              onCreateFolderWorkspaceOnHost={ctx.onCreateFolderWorkspaceOnHost}
               onDelete={ctx.onDeleteProjectGroup}
             />
           ) : null}

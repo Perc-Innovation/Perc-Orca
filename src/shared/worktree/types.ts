@@ -3,6 +3,7 @@ import type { AutomationExecutionTargetType } from '../automations-types'
 import type { TaskSourceContext } from '../task-source-context'
 import type { TuiAgent } from '../tui-agent'
 import type { DiffComment, MobileDiffReviewState } from '../diff-comment-types'
+import type { AttachedReview } from '../attached-reviews'
 import type { EphemeralVmCheckoutMode } from '../orca-yaml-hook-types'
 import type { BuiltInWorktreeVisibilitySourceId } from '../repo-types'
 
@@ -77,6 +78,11 @@ export type Worktree = {
   comment: string
   linkedIssue: number | null
   linkedPR: number | null
+  /** Reviews attached on top of the branch-detected one. */
+  attachedReviews?: AttachedReview[]
+  /** Sibling head branches whose reviews the card also surfaces (e.g. the
+   *  `-v1.15.0` / `-stage` cherry-pick branches of this worktree's change). */
+  trackedBranches?: string[]
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null

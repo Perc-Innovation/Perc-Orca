@@ -87,8 +87,15 @@ export type JiraStatus = {
   colorName?: string
 }
 
+export type JiraProjectStatusOrderColumn = {
+  name: string
+  statusIds: string[]
+}
+
 export type JiraProjectStatusOrder = {
   statusIdsByColumn: string[][]
+  // Why: optional so old remote runtimes that omit it keep the id-only shape.
+  columns?: JiraProjectStatusOrderColumn[]
 }
 
 export type JiraTransition = {
@@ -133,6 +140,16 @@ export type JiraIssueUpdate = {
 }
 
 export type JiraIssueFilter = 'assigned' | 'reported' | 'all' | 'done'
+
+/** A saved filter fetched from Jira (owned or favourite), with its JQL expanded. */
+export type JiraSavedFilter = {
+  id: string
+  name: string
+  jql: string
+  siteId: string
+  siteName?: string
+  favourite?: boolean
+}
 
 export type JiraConnectArgs = {
   siteUrl: string

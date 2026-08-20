@@ -127,6 +127,9 @@ export async function resolvePRForBranchOutcome(input: {
     candidate: PullRequestLookupData | null,
     candidateRepo: OwnerRepo | null
   ) => {
+    if (options.acceptMergedBranchPR === true) {
+      return false
+    }
     if (!candidate || !isMergedImplicitPR(candidate, linkedPRNumber)) {
       return false
     }

@@ -204,7 +204,8 @@ export function createCloseFileAction(
             (entry.contentType === 'editor' ||
               entry.contentType === 'diff' ||
               entry.contentType === 'conflict-review' ||
-              entry.contentType === 'check-details')
+              entry.contentType === 'check-details' ||
+              entry.contentType === 'git-graph')
         )
         if (unifiedTab) {
           get().closeUnifiedTab(unifiedTab.id)

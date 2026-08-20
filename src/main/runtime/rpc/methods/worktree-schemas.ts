@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AttachedReviewSchema } from './worktree-create-schemas'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import { RUNTIME_NAVIGATION_TARGETS } from '../../../../shared/runtime-navigation'
@@ -128,6 +129,8 @@ export const WorktreeSet = WorktreeSelector.extend({
   linkedAzureDevOpsPR: TriStateLinkedIssue,
   linkedGiteaPR: TriStateLinkedIssue,
   linkedWorkItem: WorkspaceLinkedItemSchema.nullable().optional(),
+  attachedReviews: z.array(AttachedReviewSchema).optional(),
+  trackedBranches: z.array(z.string()).optional(),
   linkedTaskSourceContext: TaskSourceContextSchema.nullable().optional(),
   isArchived: OptionalBoolean,
   isUnread: OptionalBoolean,

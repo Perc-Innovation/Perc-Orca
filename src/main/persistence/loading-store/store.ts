@@ -3901,6 +3901,8 @@ function getDefaultWorktreeMeta(): WorktreeMeta {
     linkedGiteaPR: null,
     linkedWorkItem: null,
     linkedTaskSourceContext: null,
+    attachedReviews: [],
+    trackedBranches: [],
     isArchived: false,
     isUnread: false,
     isPinned: false,

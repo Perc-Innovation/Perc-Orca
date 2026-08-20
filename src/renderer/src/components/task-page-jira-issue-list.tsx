@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowRight, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
+import type { Worktree } from '../../../shared/worktree/types'
+import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, GitBranch } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -16,6 +17,7 @@ export type TaskPageJiraIssueSection = {
 
 type TaskPageJiraIssueListProps = {
   formatUpdatedAt: (updatedAt: string) => string
+  getAttachedWorkspace: (issue: JiraIssue) => Worktree | null
   getStatusTone: (categoryKey: string) => string
   issues: JiraIssue[]
   onOpenIssue: (issue: JiraIssue) => void
@@ -85,6 +87,7 @@ function isSelectedIssue(issue: JiraIssue, selectedIssue: JiraIssue | null): boo
 }
 
 function JiraIssueRow({
+  attachedWorkspace,
   formatUpdatedAt,
   getStatusTone,
   issue,
@@ -93,6 +96,7 @@ function JiraIssueRow({
   selected,
   showSiteContext
 }: {
+  attachedWorkspace: Worktree | null
   formatUpdatedAt: (updatedAt: string) => string
   getStatusTone: (categoryKey: string) => string
   issue: JiraIssue
@@ -225,27 +229,49 @@ function JiraIssueRow({
         </TooltipContent>
       </Tooltip>
 
-      <div className="flex shrink-0 items-center justify-end gap-1 md:opacity-0 md:transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100">
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-end gap-1',
+          // Why: a linked workspace keeps its solid Open button visible;
+          // hover-reveal would hide the row's only link cue.
+          !attachedWorkspace &&
+            'md:opacity-0 md:transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100'
+        )}
+      >
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              variant="ghost"
+              variant={attachedWorkspace ? 'default' : 'ghost'}
               size="icon-xs"
               onClick={(event) => {
                 event.stopPropagation()
                 onStartWorkspace(issue)
               }}
-              aria-label={translate(
-                'auto.components.TaskPage.ff90d0abc7',
-                'Start workspace from {{value0}}',
-                { value0: issue.key }
-              )}
+              aria-label={
+                attachedWorkspace
+                  ? translate(
+                      'auto.components.TaskPage.linearOpenAttachedWorkspace',
+                      'Open workspace attached to {{value0}}',
+                      { value0: issue.key }
+                    )
+                  : translate(
+                      'auto.components.TaskPage.ff90d0abc7',
+                      'Start workspace from {{value0}}',
+                      { value0: issue.key }
+                    )
+              }
             >
-              <ArrowRight className="size-3.5" />
+              {attachedWorkspace ? (
+                <GitBranch className="size-3.5" />
+              ) : (
+                <ArrowRight className="size-3.5" />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={6}>
-            {translate('auto.components.TaskPage.9497f2787c', 'Start workspace')}
+            {attachedWorkspace
+              ? translate('auto.components.TaskPage.606a85c774', 'Open')
+              : translate('auto.components.TaskPage.9497f2787c', 'Start workspace')}
           </TooltipContent>
         </Tooltip>
         <Tooltip>
@@ -277,6 +303,7 @@ function JiraIssueRow({
 
 export function TaskPageJiraIssueList({
   formatUpdatedAt,
+  getAttachedWorkspace,
   getStatusTone,
   issues,
   onOpenIssue,
@@ -335,6 +362,7 @@ export function TaskPageJiraIssueList({
               {section.issues.map((issue) => (
                 <JiraIssueRow
                   key={`${issue.siteId ?? 'site'}:${issue.id || issue.key}`}
+                  attachedWorkspace={getAttachedWorkspace(issue)}
                   formatUpdatedAt={formatUpdatedAt}
                   getStatusTone={getStatusTone}
                   issue={issue}

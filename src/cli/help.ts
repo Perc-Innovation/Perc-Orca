@@ -67,6 +67,10 @@ Repos:
   repo set-base-ref         Set the repo's default base ref for future worktrees
   repo search-refs          Search branch/tag refs within a repo
 
+Folder Workspaces:
+  folder-workspace list     List folder workspaces
+  folder-workspace create   Create a folder workspace in a project group
+
 Worktrees:
   worktree list             List Orca-managed worktrees
   worktree show             Show one worktree
@@ -529,6 +533,8 @@ export function formatFlagHelp(flag: string): string {
   const helpByFlag: Record<string, string> = {
     agent: '--agent <id>          Launch a known TUI agent in the first terminal',
     'base-branch': '--base-branch <ref>    Base branch/ref to create the worktree from',
+    branch: '--branch <name>        Exact git branch name; skips slugifying and the branch prefix',
+    jira: '--jira <key|url|null>   Link a Jira issue to the workspace; null clears it',
     command: '--command <text>       Command to run in the terminal on startup',
     comment: '--comment <text>       Comment stored in Orca metadata',
     cursor: '--cursor <n>           Line cursor from a previous read (returns only new output)',
@@ -551,6 +557,8 @@ export function formatFlagHelp(flag: string): string {
     'include-visual-layouts':
       '--include-visual-layouts Include tab and pane topology in JSON output',
     interrupt: '--interrupt            Send as an interrupt-style input when supported',
+    group: '--group <id|name>      Project group id or exact name',
+    host: '--host <host-id>       Execution host id such as local, ssh:<target-id>, or runtime:<env>',
     id: '--id <id>             Identifier for a target item or permission',
     issue: '--issue <number|null>  Linked GitHub issue number',
     'linear-issue':

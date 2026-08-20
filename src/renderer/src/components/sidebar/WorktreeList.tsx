@@ -18,6 +18,8 @@ import { getPinnedWorktreeDisplayPolicy } from './worktree-list/grouping/row-typ
 import { selectWorktreeListReviewCacheInputs } from './worktree-list/listing/review-cache-inputs'
 import type { VirtualizedScrollAnchor } from '@/hooks/useVirtualizedScrollAnchor'
 import { SidebarWorktreeListDialogs } from './worktree-list/rows/ProjectGroupDialogs'
+import { FolderWorkspaceHostDialog } from './FolderWorkspaceHostDialog'
+import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { SidebarWorktreeListEmptyState } from './worktree-list/listing/EmptyState'
 import { VirtualizedWorktreeViewport } from './worktree-list/viewport/VirtualizedWorktreeViewport'
 import { markSidebarWorktreeActiveImmediately } from './worktree-list/rows/option-dom'
@@ -223,6 +225,39 @@ const WorktreeList = React.memo(function WorktreeList({
     [openModal]
   )
 
+  const [folderWorkspaceHostDialogGroup, setFolderWorkspaceHostDialogGroup] =
+    React.useState<ProjectGroup | null>(null)
+  const handleCreateFolderWorkspaceOnHost = useCallback((projectGroup: ProjectGroup) => {
+    setFolderWorkspaceHostDialogGroup(projectGroup)
+  }, [])
+
+  const handleCreateTerminalGroup = useCallback(
+    (projectId: string) => {
+      openModal('new-terminal-group', { repoId: projectId })
+    },
+    [openModal]
+  )
+
+  // Why: the graph is repo-scoped but tabs live in a workspace — reuse the
+  // active workspace when it belongs to this repo, else jump to the main
+  // (or first live) worktree so the tab lands somewhere sensible.
+  const handleOpenRepoGitGraph = useCallback((repo: Repo) => {
+    const state = useAppStore.getState()
+    const repoWorktrees = state.worktreesByRepo[repo.id] ?? []
+    const target =
+      repoWorktrees.find((candidate) => candidate.id === state.activeWorktreeId) ??
+      repoWorktrees.find((candidate) => candidate.isMainWorktree && !candidate.isArchived) ??
+      repoWorktrees.find((candidate) => !candidate.isArchived) ??
+      repoWorktrees[0]
+    if (!target) {
+      return
+    }
+    if (target.id !== state.activeWorktreeId) {
+      activateAndRevealWorktree(target.id)
+    }
+    state.openGitGraph(target.id)
+  }, [])
+
   useSidebarRevealRequests({
     groupBy,
     renderedSidebarRowKeys: rowModel.renderedSidebarRowKeys,
@@ -250,6 +285,15 @@ const WorktreeList = React.memo(function WorktreeList({
 
   return (
     <>
+      <FolderWorkspaceHostDialog
+        open={folderWorkspaceHostDialogGroup !== null}
+        projectGroup={folderWorkspaceHostDialogGroup}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setFolderWorkspaceHostDialogGroup(null)
+          }
+        }}
+      />
       <SidebarWorktreeListDialogs
         dialogs={projectGroupDialogs}
         repos={repos}
@@ -302,6 +346,9 @@ const WorktreeList = React.memo(function WorktreeList({
         handleRenameProjectGroup={projectGroupDialogs.handleRenameProjectGroup}
         handleDeleteProjectGroup={projectGroupDialogs.handleDeleteProjectGroup}
         handleCreateFolderWorkspace={handleCreateFolderWorkspace}
+        handleCreateFolderWorkspaceOnHost={handleCreateFolderWorkspaceOnHost}
+        handleOpenRepoGitGraph={handleOpenRepoGitGraph}
+        handleCreateTerminalGroup={handleCreateTerminalGroup}
         activeModal={activeModal}
         pendingRevealWorktree={pendingRevealWorktree}
         pendingRevealSidebarRow={pendingRevealSidebarRow}

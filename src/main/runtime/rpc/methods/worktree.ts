@@ -143,6 +143,8 @@ export const WORKTREE_METHODS: RpcMethod[] = [
         linkedAzureDevOpsPR: params.linkedAzureDevOpsPR,
         linkedGiteaPR: params.linkedGiteaPR,
         linkedWorkItem: params.linkedWorkItem,
+        attachedReviews: params.attachedReviews,
+        trackedBranches: params.trackedBranches,
         linkedTaskSourceContext: params.linkedTaskSourceContext,
         comment: params.comment,
         isArchived: params.isArchived,

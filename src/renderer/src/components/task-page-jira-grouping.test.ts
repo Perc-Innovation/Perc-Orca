@@ -173,6 +173,7 @@ describe('Jira issue status grouping', () => {
         null,
         React.createElement(TaskPageJiraIssueList, {
           formatUpdatedAt: () => 'today',
+          getAttachedWorkspace: () => null,
           getStatusTone: () => 'border-border',
           issues: [
             jiraIssue('ALP-1', 'First issue', '1', 'To Do'),

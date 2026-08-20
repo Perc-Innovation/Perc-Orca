@@ -7,6 +7,7 @@ import { useWorktreeCardLifecycleEffects } from './use-worktree-card-lifecycle-e
 import { useWorktreeCardLinkedDetails } from './use-worktree-card-linked-details'
 import { useWorktreeCardReviewDetails } from './use-worktree-card-review-details'
 import { useWorktreeCardSecondaryDetails } from './use-worktree-card-secondary-details'
+import { useWorktreeCardTrackedBranchReviews } from './use-worktree-card-tracked-branch-reviews'
 import { useWorktreeCardWorkspaceActions } from './use-worktree-card-workspace-actions'
 
 export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
@@ -43,6 +44,19 @@ export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
   const shouldRefreshHostedReview = foundation.newCardStyle ? showStatus : showPR
   const detailsHoverControl = useWorktreeCardDetailsHoverControl()
   const hoverDetailsOpen = detailsHoverControl.hoverOpen
+
+  const trackedBranchReviewRows = useWorktreeCardTrackedBranchReviews({
+    worktree,
+    repo,
+    settings: foundation.settings,
+    isFolder: review.isFolder,
+    branch: review.branch,
+    newCardStyle: foundation.newCardStyle,
+    showPR,
+    hoverDetailsOpen,
+    fetchHostedReviewForBranch: foundation.fetchHostedReviewForBranch
+  })
+  const metaAttachedReviews = showPR ? worktree.attachedReviews : undefined
 
   useWorktreeCardLifecycleEffects({
     worktree,
@@ -136,7 +150,9 @@ export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
     workspacePorts: foundation.workspacePorts,
     openTaskPage: foundation.openTaskPage,
     updateWorktreeMeta: foundation.updateWorktreeMeta,
-    settings: foundation.settings
+    settings: foundation.settings,
+    attachedReviews: metaAttachedReviews,
+    trackedBranchReviews: trackedBranchReviewRows
   })
 
   return {
@@ -155,6 +171,8 @@ export function useWorktreeCardController(props: ResolvedWorktreeCardProps) {
     showComment,
     showPorts,
     shouldRefreshHostedReview,
+    trackedBranchReviewRows,
+    metaAttachedReviews,
     ...activation,
     showDeleteQuickAction,
     ...workspaceActions,

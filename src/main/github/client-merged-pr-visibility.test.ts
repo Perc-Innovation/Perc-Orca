@@ -87,6 +87,54 @@ describe('getPRForBranch', () => {
     expect(pr).toBeNull()
   })
 
+  it('keeps a merged branch PR visible for guard-exempt lookups (tracked sibling branches)', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            number: 5511,
+            title: 'Merged sibling branch PR',
+            state: 'closed',
+            merged_at: '2026-06-16T17:15:33Z',
+            html_url: 'https://github.com/acme/widgets/pull/5511',
+            updated_at: '2026-06-16T17:15:33Z',
+            draft: false,
+            mergeable_state: 'clean',
+            head: { ref: 'task-fix-stage', sha: 'head-oid' },
+            base: { ref: 'stage', sha: 'base-oid' }
+          }
+        ])
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          number: 5511,
+          title: 'Merged sibling branch PR',
+          state: 'MERGED',
+          url: 'https://github.com/acme/widgets/pull/5511',
+          statusCheckRollup: [],
+          updatedAt: '2026-06-16T17:15:33Z',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          baseRefName: 'stage',
+          headRefName: 'task-fix-stage',
+          baseRefOid: 'base-oid',
+          headRefOid: 'head-oid'
+        })
+      })
+    gitExecFileAsyncMock.mockResolvedValue({ stdout: '', stderr: '' })
+
+    const pr = await getPRForBranch('/repo-root', 'task-fix-stage', null, undefined, null, {
+      acceptMergedBranchPR: true
+    })
+
+    // The guard short-circuits before probing any HEAD to compare against.
+    expect(gitExecFileAsyncMock).not.toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
+      cwd: '/repo-root'
+    })
+    expect(pr).toMatchObject({ number: 5511, state: 'merged' })
+  })
+
   it('shows a merged branch PR when it still matches the current HEAD', async () => {
     getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
     ghExecFileAsyncMock

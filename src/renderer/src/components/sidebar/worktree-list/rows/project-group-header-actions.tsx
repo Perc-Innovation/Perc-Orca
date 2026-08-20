@@ -23,12 +23,16 @@ import {
 export function ProjectGroupHeaderMenu({
   groupId,
   label,
+  projectGroup = null,
   onRename,
+  onCreateFolderWorkspaceOnHost,
   onDelete
 }: {
   groupId: string
   label: string
+  projectGroup?: ProjectGroup | null
   onRename: (groupId: string, currentName: string) => void
+  onCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
   onDelete: (groupId: string, groupName: string) => void
 }): React.JSX.Element {
   return (
@@ -64,6 +68,14 @@ export function ProjectGroupHeaderMenu({
         onClick={stopRepoHeaderMenuEvent}
         onKeyDown={stopRepoHeaderMenuEvent}
       >
+        {projectGroup ? (
+          <DropdownMenuItem onSelect={() => onCreateFolderWorkspaceOnHost(projectGroup)}>
+            {translate(
+              'auto.components.sidebar.WorktreeList.newFolderWorkspaceOnHost',
+              'New folder workspace on host...'
+            )}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onSelect={() => onRename(groupId, label)}>
           {translate('auto.components.sidebar.WorktreeList.4d7b73658c', 'Rename group')}
         </DropdownMenuItem>

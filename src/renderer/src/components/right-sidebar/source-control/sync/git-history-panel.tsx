@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, CircleHelp, RefreshCw } from 'lucide-react'
+import {
+  GitHistoryOpenGraphButton,
+  GitHistoryRefsHelpTooltip
+} from './git-history-header-affordances'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -45,6 +49,7 @@ export function GitHistoryPanel({
   collapsed,
   onToggle,
   onRefresh,
+  onOpenGraph,
   onOpenCommit,
   onLoadCommitFiles,
   onOpenCommitFile,
@@ -54,6 +59,7 @@ export function GitHistoryPanel({
   collapsed: boolean
   onToggle: () => void
   onRefresh: () => void
+  onOpenGraph?: () => void
   onOpenCommit?: (item: GitHistoryItem) => void
   onLoadCommitFiles?: (item: GitHistoryItem) => Promise<GitBranchChangeEntry[]>
   onOpenCommitFile?: (
@@ -260,31 +266,8 @@ export function GitHistoryPanel({
             {result && <span className="text-[10px] font-medium tabular-nums">{count}</span>}
             {result?.hasMore && <span className="text-[10px] font-medium">+</span>}
           </button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="my-auto h-auto w-auto p-0.5 text-muted-foreground hover:bg-transparent hover:text-muted-foreground dark:hover:bg-transparent [&_svg]:size-3"
-                aria-label={translate(
-                  'auto.components.right.sidebar.GitHistoryPanel.9289ba0cb9',
-                  'What are refs?'
-                )}
-                onClick={(event) => {
-                  event.stopPropagation()
-                }}
-              >
-                <CircleHelp className="size-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6} className="max-w-72">
-              {translate(
-                'auto.components.right.sidebar.GitHistoryPanel.9f7535d22b',
-                'Refs are branch or tag names pointing at that exact commit. They only appear where Git has a named ref for the commit.'
-              )}
-            </TooltipContent>
-          </Tooltip>
+          <GitHistoryRefsHelpTooltip />
+          {onOpenGraph && <GitHistoryOpenGraphButton onOpenGraph={onOpenGraph} />}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

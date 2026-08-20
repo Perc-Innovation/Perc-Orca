@@ -50,6 +50,24 @@ export type HostedReviewInfo = {
   /** Target branch name for review-created worktree compare-base repair. */
   baseRefName?: string
   conflictSummary?: PRConflictSummary
+  /**
+   * Los otros PRs que alimenta la misma rama.
+   *
+   * Una rama puede ir a varios destinos a la vez —la base del repo, stage, una
+   * release— y `number`/`state` describen solo al que representa la rama. Estos
+   * vienen del mismo lookup, así que envejecen a la par y no hay nada que
+   * sincronizar aparte.
+   */
+  siblings?: HostedReviewSibling[]
+}
+
+/** Un PR hermano: lo mínimo para renderizarlo y abrirlo, sin sus checks. */
+export type HostedReviewSibling = {
+  number: number
+  url: string
+  title?: string
+  baseRef?: string
+  state: HostedReviewState
 }
 
 export type HostedReviewForBranchArgs = {
@@ -64,6 +82,9 @@ export type HostedReviewForBranchArgs = {
   linkedGiteaPR?: number | null
   // The worktree's checked-out HEAD oid (GitHub merged-at-head visibility).
   currentHeadOid?: string | null
+  // Tracked sibling branches: a merged review is the answer, not a stale
+  // leftover of a reused branch name, so the merged-implicit guard must not run.
+  acceptMergedBranchReview?: boolean
   /**
    * Set only by surfaces scoped to the selected worktree. That tier is O(1), so
    * the host re-checks it per minute; the worktree list is O(N) and is paced far

@@ -1,3 +1,8 @@
+import {
+  getPresentStringFlag,
+  getOptionalStartupAgent,
+  getOptionalSetupDecision
+} from './worktree-create-flag-readers'
 import type {
   RuntimeWorktreeListResult,
   RuntimeWorktreePsResult,
@@ -8,6 +13,8 @@ import type {
 import type { CommandHandler } from '../dispatch'
 import { formatWorktreeList, formatWorktreePs, formatWorktreeShow, printResult } from '../format'
 import { RuntimeClientError } from '../runtime-client'
+import { getAttachedReviewsUpdate } from './worktree-attached-reviews'
+import { getTrackedBranchesUpdate } from './worktree-tracked-branches'
 import {
   getOptionalNullableNumberFlag,
   getOptionalNumberFlag,
@@ -20,7 +27,6 @@ import {
   getRequiredWorktreeSelector,
   resolveCurrentWorktreeSelector
 } from '../selectors'
-import { isTuiAgent } from '../../shared/tui-agent-config'
 import { isWorkspaceKey, worktreeWorkspaceKey } from '../../shared/workspace-scope'
 import { printLineageSummary } from './worktree-lineage-summary'
 import {
@@ -33,6 +39,7 @@ import {
   resolveCreateParentSelector
 } from './worktree-create-parent-selector'
 import { getOptionalLinearIssueLinkFlag } from './worktree-linear-issue-link'
+import { getOptionalJiraIssueLinkFlag, resolveJiraWorkItem } from './worktree-jira-issue-link'
 
 type HookWarningResult = {
   warning?: string
@@ -84,54 +91,6 @@ function getEnvParentWorkspace(): string | undefined {
     return isWorkspaceKey(worktreeId) ? worktreeId : worktreeWorkspaceKey(worktreeId)
   }
   return undefined
-}
-
-function getPresentStringFlag(
-  flags: Map<string, string | boolean>,
-  name: string,
-  options: { allowEmpty?: boolean } = {}
-): string | undefined {
-  if (!flags.has(name)) {
-    return undefined
-  }
-  const value = flags.get(name)
-  if (typeof value === 'string' && (options.allowEmpty || value.length > 0)) {
-    return value
-  }
-  throw new RuntimeClientError('invalid_argument', `Missing value for --${name}`)
-}
-
-function getOptionalStartupAgent(flags: Map<string, string | boolean>): string | undefined {
-  const agent = getPresentStringFlag(flags, 'agent')
-  if (agent === undefined) {
-    if (flags.has('prompt')) {
-      throw new RuntimeClientError('invalid_argument', '--prompt requires --agent')
-    }
-    return undefined
-  }
-  if (!isTuiAgent(agent)) {
-    throw new RuntimeClientError('invalid_argument', `Unknown TUI agent "${agent}"`)
-  }
-  return agent
-}
-
-function getOptionalSetupDecision(
-  flags: Map<string, string | boolean>
-): 'run' | 'skip' | 'inherit' | undefined {
-  const setup = getPresentStringFlag(flags, 'setup')
-  if (setup !== undefined && setup !== 'run' && setup !== 'skip' && setup !== 'inherit') {
-    throw new RuntimeClientError('invalid_argument', '--setup must be one of: run, skip, inherit')
-  }
-  if (flags.get('run-hooks') === true) {
-    if (setup !== undefined && setup !== 'run') {
-      throw new RuntimeClientError(
-        'invalid_argument',
-        'Choose either --run-hooks or --setup run, not contradictory setup flags.'
-      )
-    }
-    return setup
-  }
-  return setup
 }
 
 function getRepoSelectorFromWorktreeSelector(selector: string | undefined): string | undefined {
@@ -229,14 +188,21 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       }
     }
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
+    const branchNameOverride = getOptionalStringFlag(flags, 'branch')
     const activate = flags.get('activate') === true || flags.get('run-hooks') === true
     const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
       name: getRequiredStringFlag(flags, 'name'),
       baseBranch: getOptionalStringFlag(flags, 'base-branch'),
+      // Why: --name is slugified into the branch, which collapses slashes, so
+      // the CLI could not produce the `type/scope` branch names many teams
+      // require. --branch reaches the same override the composer already
+      // exposes, and the runtime validates it with `git check-ref-format`.
+      ...(branchNameOverride ? { branchNameOverride } : {}),
       linkedIssue: getOptionalNumberFlag(flags, 'issue'),
       ...linearIssueLink,
       comment: getOptionalStringFlag(flags, 'comment'),
+      ...(flags.get('terminal-group') === true ? { terminalGroup: true } : {}),
       runHooks: flags.get('run-hooks') === true,
       activate,
       // Why: the CLI pairs as a runtime device but is not a viewer, so caller-scoped
@@ -268,11 +234,30 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue', {
       allowNull: true
     })
+    const selector = await getRequiredWorktreeSelector(flags, 'worktree', cwd, client)
+    const jiraLink = await resolveJiraWorkItem(
+      getOptionalJiraIssueLinkFlag(flags, 'jira', { allowNull: true }),
+      client
+    )
+    // Attaching/tracking are additive, so the current lists have to be read before merging.
+    const attaching = flags.has('add-pr') || flags.get('clear-prs') === true
+    const tracking = flags.has('track-branch') || flags.get('clear-branches') === true
+    const shown =
+      attaching || tracking
+        ? (
+            await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.show', {
+              worktree: selector
+            })
+          ).result?.worktree
+        : undefined
     const result = await client.call<{ worktree: RuntimeWorktreeRecord }>('worktree.set', {
-      worktree: await getRequiredWorktreeSelector(flags, 'worktree', cwd, client),
+      worktree: selector,
+      ...getAttachedReviewsUpdate(flags, shown?.attachedReviews),
+      ...getTrackedBranchesUpdate(flags, shown?.trackedBranches),
       displayName: getOptionalStringFlag(flags, 'display-name'),
       linkedIssue: getOptionalNullableNumberFlag(flags, 'issue'),
       ...linearIssueLink,
+      ...jiraLink,
       comment: getOptionalStringFlag(flags, 'comment'),
       workspaceStatus: getOptionalStringFlag(flags, 'workspace-status'),
       parentWorktree: await getOptionalWorktreeSelector(flags, 'parent-worktree', cwd, client),

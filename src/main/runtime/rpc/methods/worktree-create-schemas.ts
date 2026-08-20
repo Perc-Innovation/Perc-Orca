@@ -18,6 +18,15 @@ import {
   OptionalTuiAgent
 } from './worktree-schemas'
 
+export const AttachedReviewSchema = z.object({
+  provider: z.enum(['github', 'gitlab', 'bitbucket', 'azure-devops', 'gitea']),
+  number: z.number().int().positive(),
+  url: z.string().min(1),
+  baseRef: z.string().optional(),
+  title: z.string().optional(),
+  state: z.enum(['open', 'merged', 'closed', 'draft']).optional()
+})
+
 export const WorktreeCreate = z
   .object({
     repo: z
@@ -31,6 +40,10 @@ export const WorktreeCreate = z
     baseBranch: OptionalString,
     compareBaseRef: OptionalString,
     branchNameOverride: OptionalString,
+    attachedReviews: z.array(AttachedReviewSchema).optional(),
+    trackedBranches: z.array(z.string()).optional(),
+    /** Create a terminal group on the project's checkout instead of a worktree. Older hosts ignore it. */
+    terminalGroup: OptionalBoolean,
     linkedIssue: TriStateLinkedIssue,
     linkedPR: TriStateLinkedIssue,
     linkedLinearIssue: z.string().optional(),

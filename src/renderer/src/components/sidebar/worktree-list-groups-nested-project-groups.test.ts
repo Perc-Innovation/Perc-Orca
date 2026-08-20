@@ -220,7 +220,11 @@ describe('project groups', () => {
     ])
   })
 
-  it('does not render folder workspaces under non-folder Project Groups', () => {
+  // Why: folder workspaces used to be creatable only from a folder-backed group's
+  // "+" button, so requiring parentPath was invisible. The host dialog and the CLI
+  // can target any group, and a workspace carries its own folderPath — dropping the
+  // row would strand it in the store with no way to reach it.
+  it('renders folder workspaces under manually created Project Groups', () => {
     const group: ProjectGroup = {
       id: 'group-manual',
       name: 'Manual',
@@ -236,7 +240,7 @@ describe('project groups', () => {
     const folderWorkspace: FolderWorkspace = {
       id: 'folder-workspace-1',
       projectGroupId: group.id,
-      name: 'Hidden',
+      name: 'Terminals',
       folderPath: '/monorepo',
       linkedTask: null,
       comment: '',
@@ -275,10 +279,14 @@ describe('project groups', () => {
       {
         type: 'header',
         key: 'project-group:group-manual',
-        count: 0
+        count: 1
+      },
+      {
+        type: 'folder-workspace',
+        folderWorkspace: { id: 'folder-workspace-1' },
+        projectGroup: { id: 'group-manual' }
       }
     ])
-    expect(rows.some((row) => row.type === 'folder-workspace')).toBe(false)
   })
 
   it('renders imported repos under nested Project Groups before worktree rows load', () => {

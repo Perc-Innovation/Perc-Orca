@@ -98,11 +98,14 @@ export function buildWorktreeVirtualRowContext(args: BuildArgs): WorktreeVirtual
         onMoveProjectToGroup: props.handleMoveProjectToGroup,
         onRemoveProjectFromGroup: props.handleRemoveProjectFromGroup,
         onRemoveProject: props.handleRemoveProject,
-        onCreateForRepo: props.handleCreateForRepo
+        onCreateForRepo: props.handleCreateForRepo,
+        onOpenRepoGitGraph: props.handleOpenRepoGitGraph,
+        onCreateTerminalGroup: props.handleCreateTerminalGroup
       },
       onRenameProjectGroup: props.handleRenameProjectGroup,
       onDeleteProjectGroup: props.handleDeleteProjectGroup,
       onCreateFolderWorkspace: props.handleCreateFolderWorkspace,
+      onCreateFolderWorkspaceOnHost: props.handleCreateFolderWorkspaceOnHost,
       onWorkspaceStatusDragOver: statusDrag.handleWorkspaceStatusDragOver,
       onWorkspaceStatusDragLeave: statusDrag.handleWorkspaceStatusDragLeave,
       onWorkspacePinDragOver: statusDrag.handleWorkspacePinDragOver,

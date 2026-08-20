@@ -146,6 +146,11 @@ import {
   getLinearIssueWorkspaceAttachmentLabel
 } from '@/lib/linear-issue-workspace-attachment'
 import { openLinearIssueWorkspaceOrStart } from '@/lib/linear-issue-workspace-open'
+import {
+  buildJiraIssueWorkspaceAttachmentIndex,
+  findJiraIssueWorkspaceAttachmentInIndex
+} from '@/lib/jira-issue-workspace-attachment'
+import { openJiraIssueWorkspaceOrStart } from '@/lib/jira-issue-workspace-open'
 import { folderWorkspaceToWorktree } from '../../../shared/folder-workspace-worktree'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useRepoAssigneesBySlug } from '@/hooks/useGitHubSlugMetadata'
@@ -201,6 +206,12 @@ import {
 } from '@/components/linear-project-view-surfaces'
 import JiraIssueWorkspace from '@/components/JiraIssueWorkspace'
 import { TaskPageJiraIssueList } from '@/components/task-page-jira-issue-list'
+import type { TaskPageJiraBoardSection } from '@/components/task-page-jira-board-sections'
+import { TaskPageJiraBoard, jiraBoardIssueRefKey } from '@/components/task-page-jira-board'
+import {
+  findJiraBoardSectionTransition,
+  loadTaskPageJiraIssueTransitions
+} from '@/components/task-page-jira-board-transitions'
 import {
   getSingleJiraProjectScope,
   getTaskPageJiraStatusOrderScopeKey,
@@ -364,7 +375,8 @@ import type {
   JiraIssueType,
   JiraPriority,
   JiraProject,
-  JiraProjectStatusOrder
+  JiraProjectStatusOrder,
+  JiraSavedFilter
 } from '../../../shared/jira-types'
 import type { LinearIssue } from '../../../shared/linear/issue-types'
 import type {
@@ -411,8 +423,18 @@ import {
   jiraListCreateFields,
   jiraListIssueTypes,
   jiraListProjects,
-  jiraListPriorities
+  jiraListPriorities,
+  jiraUpdateIssue,
+  jiraListSavedFilters
 } from '@/runtime/runtime-jira-client'
+import { TaskPageJiraFilterMenu } from './task-page-jira-filter-menu'
+import { loadJiraFilterViewState, saveJiraFilterViewState } from './jira-custom-filters-storage'
+import {
+  MAX_JIRA_CUSTOM_FILTERS,
+  resolveActiveJiraFilterJql,
+  type ActiveJiraFilterRef,
+  type JiraCustomFilter
+} from '../../../shared/jira-custom-filters'
 import {
   sortJiraIssues,
   type JiraIssueSortColumn,
@@ -439,6 +461,7 @@ import {
   getLinearModeOptions,
   getLinearOrderOptions,
   getLinearPriorityLabel,
+  getJiraViewOptions,
   getLinearViewOptions,
   getSourceOptions,
   type GitHubTaskKind,
@@ -450,6 +473,7 @@ import {
   type LinearGroupBy,
   type LinearMode,
   type LinearOrderBy,
+  type JiraViewMode,
   type LinearViewMode
 } from '@/components/task-page-localized-options'
 import { useGitHubTaskSearchCommit } from '@/components/use-github-task-search-commit'
@@ -3185,6 +3209,7 @@ export default function TaskPage(): React.JSX.Element {
   const gitLabIssueFilters = getGitLabIssueFilters()
   const gitLabMRFilters = getGitLabMRFilters()
   const linearViewOptions = getLinearViewOptions()
+  const jiraViewOptions = getJiraViewOptions()
   const linearGroupOptions = getLinearGroupOptions()
   const linearOrderOptions = getLinearOrderOptions()
   const linearDisplayPropertyOptions = getLinearDisplayProperties()
@@ -4431,6 +4456,10 @@ export default function TaskPage(): React.JSX.Element {
   const linearAttributeFilterReadRef = useRef<LinearIssueListFilterRead | null>(null)
   const linearPrimaryTeamRef = useRef<LinearPrimaryTeamObservation | null>(null)
   const [linearViewMode, setLinearViewMode] = useState<LinearViewMode>(DEFAULT_LINEAR_VIEW_MODE)
+  const [jiraViewMode, setJiraViewMode] = useState<JiraViewMode>('list')
+  const [jiraBoardUpdatingIssueKeys, setJiraBoardUpdatingIssueKeys] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
   const [linearGroupBy, setLinearGroupBy] = useState<LinearGroupBy>(DEFAULT_LINEAR_GROUP_BY)
   const [linearOrderBy, setLinearOrderBy] = useState<LinearOrderBy>(DEFAULT_LINEAR_ORDER_BY)
   const [linearDisplayProperties, setLinearDisplayProperties] = useState<
@@ -4613,6 +4642,10 @@ export default function TaskPage(): React.JSX.Element {
   const [appliedJiraSearch, setAppliedJiraSearch] = useState('')
   const [activeJiraPreset, setActiveJiraPreset] = useState<JiraPresetId>('assigned')
   const [jiraRefreshNonce, setJiraRefreshNonce] = useState(0)
+  const [jiraSavedFilters, setJiraSavedFilters] = useState<JiraSavedFilter[]>([])
+  const [jiraSavedFiltersLoading, setJiraSavedFiltersLoading] = useState(false)
+  const [jiraCustomFilters, setJiraCustomFilters] = useState<JiraCustomFilter[]>([])
+  const [activeJiraFilter, setActiveJiraFilter] = useState<ActiveJiraFilterRef | null>(null)
   const [jiraProjectStatusOrder, setJiraProjectStatusOrder] = useState<{
     order: JiraProjectStatusOrder
     scopeKey: string
@@ -4678,6 +4711,64 @@ export default function TaskPage(): React.JSX.Element {
     [jiraOrderBy]
   )
 
+  const handleSelectJiraSavedFilter = useCallback(
+    (filter: JiraSavedFilter) => {
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      // Snapshot name/jql so the filter can run before the next list refresh.
+      setActiveJiraFilter({
+        source: 'saved',
+        siteId: filter.siteId,
+        filterId: filter.id,
+        name: filter.name,
+        jql: filter.jql
+      })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [setTaskResumeState]
+  )
+
+  const handleSelectJiraCustomFilter = useCallback(
+    (filter: JiraCustomFilter) => {
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      setActiveJiraFilter({ source: 'custom', id: filter.id })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [setTaskResumeState]
+  )
+
+  const handleCreateJiraCustomFilter = useCallback(
+    (draft: { name: string; jql: string }) => {
+      if (jiraCustomFilters.length >= MAX_JIRA_CUSTOM_FILTERS) {
+        return
+      }
+      const id = crypto.randomUUID()
+      setJiraCustomFilters((current) => [...current, { id, ...draft }])
+      setJiraSearchInput('')
+      setAppliedJiraSearch('')
+      setActiveJiraFilter({ source: 'custom', id })
+      setTaskResumeState({ jiraQuery: '' })
+    },
+    [jiraCustomFilters.length, setTaskResumeState]
+  )
+
+  const handleUpdateJiraCustomFilter = useCallback(
+    (id: string, draft: { name: string; jql: string }) => {
+      setJiraCustomFilters((current) =>
+        current.map((filter) => (filter.id === id ? { ...filter, ...draft } : filter))
+      )
+    },
+    []
+  )
+
+  const handleDeleteJiraCustomFilter = useCallback((id: string) => {
+    setJiraCustomFilters((current) => current.filter((filter) => filter.id !== id))
+    setActiveJiraFilter((current) =>
+      current?.source === 'custom' && current.id === id ? null : current
+    )
+  }, [])
+
   useEffect(() => {
     if (taskResumeAppliedRef.current || !persistedUIReady || !settings) {
       return
@@ -4726,6 +4817,11 @@ export default function TaskPage(): React.JSX.Element {
     setActiveJiraPreset(jiraPreset)
     setJiraSearchInput(jiraQuery)
     setAppliedJiraSearch(jiraQuery)
+    setJiraViewMode(taskResumeState?.jiraViewMode ?? 'list')
+
+    const jiraFilterView = loadJiraFilterViewState()
+    setJiraCustomFilters(jiraFilterView.customFilters)
+    setActiveJiraFilter(jiraFilterView.activeFilter ?? null)
 
     // Why: settings/UI hydrate async; apply the restored Tasks context exactly once so later source/filter clicks stay local.
     taskResumeAppliedRef.current = true
@@ -5285,6 +5381,14 @@ export default function TaskPage(): React.JSX.Element {
     () => buildLinearIssueWorkspaceAttachmentIndex(linearAttachmentWorkspaces),
     [linearAttachmentWorkspaces]
   )
+  const jiraIssueAttachmentIndex = useMemo(
+    () => buildJiraIssueWorkspaceAttachmentIndex(linearAttachmentWorkspaces),
+    [linearAttachmentWorkspaces]
+  )
+  const getJiraIssueAttachedWorkspace = useCallback(
+    (issue: JiraIssue) => findJiraIssueWorkspaceAttachmentInIndex(jiraIssueAttachmentIndex, issue),
+    [jiraIssueAttachmentIndex]
+  )
   const inOrcaLinkedLinearRefs = useMemo(
     () =>
       collectLinkedLinearIssueRefsFromWorktrees(linearAttachmentWorkspaces, {
@@ -5736,6 +5840,89 @@ export default function TaskPage(): React.JSX.Element {
       jiraPrioritiesBySite
     )
   }, [displayedJiraIssues, jiraOrderBy, jiraOrderDirection, jiraPrioritiesBySite])
+
+  const patchJiraIssue = useAppStore((s) => s.patchJiraIssue)
+  const handleJiraBoardMoveIssue = useCallback(
+    async (issue: JiraIssue, section: TaskPageJiraBoardSection): Promise<void> => {
+      const refKey = jiraBoardIssueRefKey(issue)
+      if (jiraBoardUpdatingIssueKeys.has(refKey)) {
+        return
+      }
+      setJiraBoardUpdatingIssueKeys((prev) => {
+        const next = new Set(prev)
+        next.add(refKey)
+        return next
+      })
+
+      const previousStatus = issue.status
+      const providerSettings = jiraTaskSourceContext ?? settings
+      try {
+        const transitions = await loadTaskPageJiraIssueTransitions(
+          providerSettings,
+          jiraTaskSourceScopeKey,
+          issue
+        )
+        const transition = findJiraBoardSectionTransition(transitions, section)
+        if (!transition) {
+          toast.error(
+            translate(
+              'auto.components.TaskPage.jiraBoardNoTransition',
+              'No Jira transition to "{{value0}}" is available for {{value1}}',
+              { value0: section.label, value1: issue.key }
+            )
+          )
+          return
+        }
+
+        patchJiraIssue(
+          issue.key,
+          { status: transition.to },
+          { sourceContext: jiraTaskSourceContext }
+        )
+        const result = await jiraUpdateIssue(
+          providerSettings,
+          issue.key,
+          { transitionId: transition.id },
+          issue.siteId
+        )
+        if (result.ok === false) {
+          patchJiraIssue(
+            issue.key,
+            { status: previousStatus },
+            { sourceContext: jiraTaskSourceContext }
+          )
+          toast.error(
+            result.error ??
+              translate('auto.components.TaskPage.jiraBoardMoveFailed', 'Failed to move Jira issue')
+          )
+          return
+        }
+        useAppStore.getState().recordFeatureInteraction('jira-tasks')
+      } catch {
+        patchJiraIssue(
+          issue.key,
+          { status: previousStatus },
+          { sourceContext: jiraTaskSourceContext }
+        )
+        toast.error(
+          translate('auto.components.TaskPage.jiraBoardMoveFailed', 'Failed to move Jira issue')
+        )
+      } finally {
+        setJiraBoardUpdatingIssueKeys((prev) => {
+          const next = new Set(prev)
+          next.delete(refKey)
+          return next
+        })
+      }
+    },
+    [
+      jiraBoardUpdatingIssueKeys,
+      jiraTaskSourceContext,
+      jiraTaskSourceScopeKey,
+      patchJiraIssue,
+      settings
+    ]
+  )
   // New Linear project dialog state
   const [newLinearProjectOpen, setNewLinearProjectOpen] = useState(false)
   const [newLinearProjectName, setNewLinearProjectName] = useState('')
@@ -8608,12 +8795,76 @@ export default function TaskPage(): React.JSX.Element {
     if (!taskResumeApplied) {
       return
     }
+    saveJiraFilterViewState({
+      customFilters: jiraCustomFilters,
+      activeFilter: activeJiraFilter ?? undefined
+    })
+  }, [activeJiraFilter, jiraCustomFilters, taskResumeApplied])
+
+  useEffect(() => {
+    if (!taskResumeApplied) {
+      return
+    }
     if (!jiraSearchPersistReadyRef.current) {
       jiraSearchPersistReadyRef.current = true
       return
     }
     setTaskResumeState({ jiraQuery: appliedJiraSearch.trim() })
   }, [appliedJiraSearch, setTaskResumeState, taskResumeApplied])
+
+  useEffect(() => {
+    if (!taskResumeApplied || taskSource !== 'jira' || !jiraConnected) {
+      return
+    }
+    let cancelled = false
+    setJiraSavedFiltersLoading(true)
+    jiraListSavedFilters(jiraTaskSourceContext ?? settings, selectedJiraSiteId)
+      .then((filters) => {
+        if (cancelled) {
+          return
+        }
+        setJiraSavedFilters(filters)
+        // Reconcile the active saved filter: pick up renames/JQL edits, and fall
+        // back to presets when the filter was deleted in Jira or is out of scope.
+        setActiveJiraFilter((current) => {
+          if (current?.source !== 'saved') {
+            return current
+          }
+          const match = filters.find(
+            (filter) => filter.siteId === current.siteId && filter.id === current.filterId
+          )
+          if (!match) {
+            return null
+          }
+          return match.name !== current.name || match.jql !== current.jql
+            ? { ...current, name: match.name, jql: match.jql }
+            : current
+        })
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          // Keep the panel usable without saved filters (e.g. older remote hosts).
+          setJiraSavedFilters([])
+          console.warn('[jira] saved filters load failed:', error)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setJiraSavedFiltersLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    taskSource,
+    jiraConnected,
+    selectedJiraSiteId,
+    jiraRefreshNonce,
+    taskResumeApplied,
+    jiraTaskSourceContext,
+    settings
+  ])
 
   useEffect(() => {
     if (!taskResumeApplied) {
@@ -8632,12 +8883,18 @@ export default function TaskPage(): React.JSX.Element {
     setJiraErrorDetailsOpen(false)
 
     const trimmed = appliedJiraSearch.trim()
+    const activeFilterJql =
+      trimmed.length === 0 ? resolveActiveJiraFilterJql(activeJiraFilter, jiraCustomFilters) : null
     const request =
       trimmed.length > 0
         ? searchJiraIssues(trimmed, JIRA_ITEM_LIMIT, { sourceContext: jiraTaskSourceContext })
-        : listJiraIssues(activeJiraPreset, JIRA_ITEM_LIMIT, {
-            sourceContext: jiraTaskSourceContext
-          })
+        : activeFilterJql
+          ? searchJiraIssues(activeFilterJql, JIRA_ITEM_LIMIT, {
+              sourceContext: jiraTaskSourceContext
+            })
+          : listJiraIssues(activeJiraPreset, JIRA_ITEM_LIMIT, {
+              sourceContext: jiraTaskSourceContext
+            })
 
     void request
       .then((issues) => {
@@ -8687,6 +8944,8 @@ export default function TaskPage(): React.JSX.Element {
     selectedJiraSiteId,
     appliedJiraSearch,
     activeJiraPreset,
+    activeJiraFilter,
+    jiraCustomFilters,
     jiraRefreshNonce,
     taskResumeApplied,
     jiraTaskSourceContext,
@@ -8862,6 +9121,15 @@ export default function TaskPage(): React.JSX.Element {
       openComposerForJiraItem(issue)
     },
     [openComposerForJiraItem]
+  )
+
+  const handleOpenOrUseJiraItem = useCallback(
+    (issue: JiraIssue): void => {
+      if (openJiraIssueWorkspaceOrStart(issue, () => handleUseJiraItem(issue)) === 'opened') {
+        useAppStore.getState().recordFeatureInteraction('jira-tasks')
+      }
+    },
+    [handleUseJiraItem]
   )
 
   const taskPageListChromeHidden = shouldHideTaskPageListChrome({
@@ -9703,7 +9971,8 @@ export default function TaskPage(): React.JSX.Element {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap gap-2">
                         {jiraPresets.map((preset) => {
-                          const active = !jiraSearchInput && activeJiraPreset === preset.id
+                          const active =
+                            !jiraSearchInput && !activeJiraFilter && activeJiraPreset === preset.id
                           return (
                             <button
                               key={preset.id}
@@ -9712,6 +9981,7 @@ export default function TaskPage(): React.JSX.Element {
                                 setJiraSearchInput('')
                                 setAppliedJiraSearch('')
                                 setActiveJiraPreset(preset.id)
+                                setActiveJiraFilter(null)
                                 setTaskResumeState({ jiraPreset: preset.id, jiraQuery: '' })
                                 setJiraRefreshNonce((n) => n + 1)
                               }}
@@ -9726,6 +9996,19 @@ export default function TaskPage(): React.JSX.Element {
                             </button>
                           )
                         })}
+                        <TaskPageJiraFilterMenu
+                          savedFilters={jiraSavedFilters}
+                          savedFiltersLoading={jiraSavedFiltersLoading}
+                          customFilters={jiraCustomFilters}
+                          activeFilter={jiraSearchInput ? null : activeJiraFilter}
+                          showSiteName={selectedJiraSiteId === 'all'}
+                          initialJql={jiraSearchInput.trim()}
+                          onSelectSaved={handleSelectJiraSavedFilter}
+                          onSelectCustom={handleSelectJiraCustomFilter}
+                          onCreateCustom={handleCreateJiraCustomFilter}
+                          onUpdateCustom={handleUpdateJiraCustomFilter}
+                          onDeleteCustom={handleDeleteJiraCustomFilter}
+                        />
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <Tooltip>
@@ -10908,17 +11191,62 @@ export default function TaskPage(): React.JSX.Element {
                   <div className="min-w-0 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                     {translate('auto.components.TaskPage.63b2abd3aa', 'Jira issues')}
                   </div>
-                  <div className="shrink-0 text-[11px] text-muted-foreground">
-                    {displayedJiraIssues.length}{' '}
-                    {translate('auto.components.TaskPage.b7bae28b6a', 'shown')}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div
+                      className="flex items-center rounded-md border border-border/50 bg-background/70 p-0.5"
+                      aria-label={translate(
+                        'auto.components.TaskPage.jiraViewMode',
+                        'Jira view mode'
+                      )}
+                    >
+                      {jiraViewOptions.map(({ id, label, Icon }) => {
+                        const active = jiraViewMode === id
+                        return (
+                          <Tooltip key={id}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setJiraViewMode(id)
+                                  setTaskResumeState({ jiraViewMode: id })
+                                }}
+                                aria-label={translate(
+                                  'auto.components.TaskPage.af377b13b1',
+                                  '{{value0}} view',
+                                  { value0: label }
+                                )}
+                                aria-pressed={active}
+                                className={cn(
+                                  'inline-flex size-6 items-center justify-center rounded text-muted-foreground transition hover:text-foreground',
+                                  active && 'bg-accent text-accent-foreground shadow-xs'
+                                )}
+                              >
+                                <Icon className="size-3.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" sideOffset={6}>
+                              {translate('auto.components.TaskPage.af377b13b1', '{{value0}} view', {
+                                value0: label
+                              })}
+                            </TooltipContent>
+                          </Tooltip>
+                        )
+                      })}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {displayedJiraIssues.length}{' '}
+                      {translate('auto.components.TaskPage.b7bae28b6a', 'shown')}
+                    </div>
                   </div>
                 </div>
 
-                <TaskPageJiraSortControls
-                  direction={jiraOrderDirection}
-                  onSort={handleJiraSort}
-                  orderBy={jiraOrderBy}
-                />
+                {jiraViewMode === 'list' ? (
+                  <TaskPageJiraSortControls
+                    direction={jiraOrderDirection}
+                    onSort={handleJiraSort}
+                    orderBy={jiraOrderBy}
+                  />
+                ) : null}
 
                 <div
                   className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek"
@@ -10970,17 +11298,35 @@ export default function TaskPage(): React.JSX.Element {
                     </div>
                   ) : null}
 
-                  <TaskPageJiraIssueList
-                    formatUpdatedAt={formatRelativeTime}
-                    getStatusTone={getJiraStatusTone}
-                    issues={sortedJiraIssues}
-                    onOpenIssue={openJiraDetailPage}
-                    onStartWorkspace={handleUseJiraItem}
-                    selectedIssue={selectedJiraIssue}
-                    showSiteContext={selectedJiraSiteId === 'all'}
-                    statusDirection={jiraOrderBy === 'status' ? jiraOrderDirection : 'asc'}
-                    statusOrder={displayedJiraStatusOrder}
-                  />
+                  {jiraViewMode === 'list' ? (
+                    <TaskPageJiraIssueList
+                      formatUpdatedAt={formatRelativeTime}
+                      getAttachedWorkspace={getJiraIssueAttachedWorkspace}
+                      getStatusTone={getJiraStatusTone}
+                      issues={sortedJiraIssues}
+                      onOpenIssue={openJiraDetailPage}
+                      onStartWorkspace={handleOpenOrUseJiraItem}
+                      selectedIssue={selectedJiraIssue}
+                      showSiteContext={selectedJiraSiteId === 'all'}
+                      statusDirection={jiraOrderBy === 'status' ? jiraOrderDirection : 'asc'}
+                      statusOrder={displayedJiraStatusOrder}
+                    />
+                  ) : (
+                    <TaskPageJiraBoard
+                      formatUpdatedAt={formatRelativeTime}
+                      getAttachedWorkspace={getJiraIssueAttachedWorkspace}
+                      getStatusTone={getJiraStatusTone}
+                      issues={sortedJiraIssues}
+                      onMoveIssue={handleJiraBoardMoveIssue}
+                      onOpenIssue={openJiraDetailPage}
+                      onStartWorkspace={handleOpenOrUseJiraItem}
+                      selectedIssue={selectedJiraIssue}
+                      showSiteContext={selectedJiraSiteId === 'all'}
+                      statusDirection={jiraOrderBy === 'status' ? jiraOrderDirection : 'asc'}
+                      statusOrder={displayedJiraStatusOrder}
+                      updatingIssueKeys={jiraBoardUpdatingIssueKeys}
+                    />
+                  )}
                 </div>
                 <JiraIssueWorkspace
                   issue={selectedJiraIssue}

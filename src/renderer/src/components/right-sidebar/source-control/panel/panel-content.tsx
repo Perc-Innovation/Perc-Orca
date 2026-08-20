@@ -1,3 +1,4 @@
+import { useAppStore } from '@/store'
 import { GitHistoryPanel } from '../sync/git-history-panel'
 import { shouldShowSourceControlCompareUnavailableCard } from './header-toolbar'
 import { shouldRenderCommitArea } from '../commit/component-gates'
@@ -218,6 +219,11 @@ export function SourceControlPanelContent(props: SourceControlPanelReadyProps) {
             onLoadCommitFiles={loadCommitFiles}
             onOpenCommitFile={openCommitFile}
             onCommitAction={handleCommitAction}
+            onOpenGraph={
+              currentWorktreeId
+                ? () => useAppStore.getState().openGitGraph(currentWorktreeId)
+                : undefined
+            }
           />
         </div>
       )}

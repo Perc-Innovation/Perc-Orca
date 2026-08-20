@@ -2078,7 +2078,26 @@
         "linearModeHasWorktreeTooltip": "Linear tickets linked to an Orca workspace",
         "linearEmptyHasWorktree": "No Linear tickets are linked to an Orca workspace yet. Start work from a Linear issue to see it here.",
         "linearOpenAttachedWorkspace": "Open workspace attached to {{value0}}",
-        "linearWorktreesColumn": "Workspaces"
+        "linearWorktreesColumn": "Workspaces",
+        "jiraBoardNoTransition": "No Jira transition to \"{{value0}}\" is available for {{value1}}",
+        "jiraBoardMoveFailed": "Failed to move Jira issue",
+        "jiraViewMode": "Jira view mode",
+        "jiraBoardEmptyColumn": "No issues",
+        "jiraFiltersMenuLabel": "Filters",
+        "jiraFiltersSavedHeading": "Saved in Jira",
+        "jiraFiltersLoadingSaved": "Loading…",
+        "jiraFiltersSavedEmpty": "No saved filters",
+        "jiraFiltersCustomHeading": "My filters",
+        "jiraFiltersEditAria": "Edit filter “{{name}}”",
+        "jiraFiltersDeleteAria": "Delete filter “{{name}}”",
+        "jiraFiltersNewCustom": "New custom filter…",
+        "jiraFiltersDialogTitleEdit": "Edit filter",
+        "jiraFiltersDialogTitleNew": "New filter",
+        "jiraFiltersDialogDescription": "Saved on this device. The JQL runs against your connected Jira sites.",
+        "jiraFiltersNameLabel": "Name",
+        "jiraFiltersNamePlaceholder": "e.g. My open bugs",
+        "jiraFiltersJqlLabel": "JQL",
+        "jiraFiltersSave": "Save"
       },
       "Terminal": {
         "73768427cf": "Close",
@@ -5197,7 +5216,8 @@
         },
         "WorktreeCardReviewDetailSection": {
           "copyLink": "Copy link",
-          "reviewHeader": "{{value0}} #{{value1}}"
+          "reviewHeader": "{{value0}} #{{value1}}",
+          "reviewListHeader": "{{value0}} reviews"
         },
         "WorktreeCardMeta": {
           "3e65e11cc6": "Workspace metadata",
@@ -5335,7 +5355,10 @@
           "groupDeleteFailedDesc": "Something went wrong while deleting the group. No projects were removed.",
           "failedNestWorkspace": "Failed to nest workspace",
           "sidebarRowMissing": "Target no longer exists",
-          "failedUnnestWorkspace": "Failed to unnest workspace"
+          "failedUnnestWorkspace": "Failed to unnest workspace",
+          "openGitGraph": "Open Git Graph",
+          "newFolderWorkspaceOnHost": "New folder workspace on host...",
+          "newTerminalGroup": "New terminal group"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",
@@ -5357,7 +5380,10 @@
           "382fd11a3e": "Edit Worktree Details",
           "2174f17011": "Save",
           "61d6f612cf": "Saving...",
-          "a0d191b7a7": "Edit issue links, pull request links, and notes for this workspace."
+          "a0d191b7a7": "Edit issue links, pull request links, and notes for this workspace.",
+          "trackedBranchesLabel": "Tracked Branches",
+          "trackedBranchesPlaceholder": "task/x-v1.15.0, task/x-stage",
+          "trackedBranchesHelp": "Comma-separated sibling branches whose pull requests also show on this card. Leave blank to track none."
         },
         "WorktreeOpenInMenu": {
           "localOnly": "Local only",
@@ -5886,6 +5912,21 @@
           "authFailedTooltip": "{{value0}} · authentication failed",
           "failedTooltip": "{{value0}} · connection failed"
         },
+        "FolderWorkspaceHostDialog": {
+          "title": "New folder workspace",
+          "description": "Open terminals in a folder of {{value0}} on the host you choose.",
+          "nameLabel": "Name",
+          "hostLabel": "Host",
+          "localHost": "This computer",
+          "disconnectedHost": "{{value0}} (disconnected)",
+          "connectHint": "Connect this host to verify the folder and create the workspace.",
+          "pathLabel": "Folder path",
+          "pathPlaceholder": "/path/to/folder/on/host",
+          "checkingPath": "Checking folder…",
+          "cancel": "Cancel",
+          "creating": "Creating…",
+          "create": "Create workspace"
+        },
         "preserved": {
           "branch": {
             "batch": {
@@ -5927,6 +5968,15 @@
         },
         "WorktreeListScrollToTopButton": {
           "jumpToTop": "Jump to top"
+        },
+        "NewTerminalGroupDialog": {
+          "title": "New terminal group",
+          "description": "Terminals and agents that run in {{value0}} on {{value1}}. No new worktree, no branch.",
+          "nameLabel": "Name",
+          "namePlaceholder": "servers, research, scripts…",
+          "agentLabel": "Agent",
+          "cancel": "Cancel",
+          "create": "Create group"
         },
         "WorktreeVisibilitySourceList": {
           "claude": "Claude Code",
@@ -11444,7 +11494,9 @@
             "62e685d5ec": "idle",
             "111e1d0db4": "error",
             "e5e81e59a6": "Resize commits",
-            "6d1e0a7c3b": "Failed to load commit files"
+            "6d1e0a7c3b": "Failed to load commit files",
+            "openGraph": "Open git graph",
+            "openGraphTooltip": "Open the all-branches graph"
           },
           "HostedReviewActions": {
             "4d5fb5a284": "Close",
@@ -15843,6 +15895,29 @@
         "expiredCompact": "Expired",
         "typeMarkdown": "Markdown",
         "typeHtml": "HTML"
+      },
+      "git": {
+        "graph": {
+          "GitGraphRow": {
+            "openCommit": "Open commit {{value0}}: {{value1}}"
+          },
+          "GitGraphView": {
+            "title": "Git Graph",
+            "refresh": "Refresh graph",
+            "remoteUnsupported": "The remote host runs an older Orca and returned current-branch history only. Update Orca on the host to see all branches.",
+            "loading": "Loading graph...",
+            "empty": "No commits yet",
+            "loadMore": "Load more commits"
+          },
+          "GitGraphWorktreeBadge": {
+            "openWorktree": "Open worktree {{value0}}",
+            "currentWorkspace": "Current workspace",
+            "clickToOpen": "Click to open this worktree"
+          },
+          "useGitGraphHistory": {
+            "loadFailed": "Failed to load the repository graph"
+          }
+        }
       }
     },
     "i18n": {

@@ -3,6 +3,8 @@ import type { Repo } from '../../shared/repo-types'
 import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 import type { Worktree } from '../../shared/worktree/types'
 import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR } from '../../shared/worktree/id'
+import { normalizeAttachedReviews } from '../../shared/attached-reviews'
+import { normalizeTrackedBranches } from '../../shared/tracked-branches'
 import { normalizeWorkspaceCreatorProvenance } from '../../shared/workspace-creator-provenance'
 
 export function getRuntimeFolderWorkspaceRootId(repo: Repo): string {
@@ -56,6 +58,8 @@ export function mergeRuntimeFolderWorkspace(
     linkedGiteaPR: meta.linkedGiteaPR ?? null,
     linkedWorkItem: meta.linkedWorkItem ?? null,
     linkedTaskSourceContext: meta.linkedTaskSourceContext ?? null,
+    attachedReviews: normalizeAttachedReviews(meta.attachedReviews),
+    trackedBranches: normalizeTrackedBranches(meta.trackedBranches),
     isArchived: meta.isArchived ?? false,
     isUnread: meta.isUnread ?? false,
     isPinned: meta.isPinned ?? false,

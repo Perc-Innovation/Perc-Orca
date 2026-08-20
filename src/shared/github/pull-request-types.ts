@@ -1,4 +1,6 @@
 export type PRState = 'open' | 'closed' | 'merged' | 'draft'
+import type { HostedReviewSibling } from '../hosted-review'
+
 export type IssueState = 'open' | 'closed'
 export type CheckStatus = 'pending' | 'success' | 'failure' | 'neutral'
 
@@ -68,6 +70,9 @@ export type PRInfo = {
   // Keeping the head SHA in cached PR metadata lets the checks panel poll the
   // correct commit without re-querying GitHub or guessing from local branch refs.
   headSha?: string
+  /** Los otros PRs que alimenta la misma rama. Solo lo llena el lookup REST por
+   *  rama; un lookup por número exacto no sabe de hermanos. */
+  siblings?: HostedReviewSibling[]
   // Why: a merged branch-matched PR stays visible when the worktree head is one
   // of the PR's own commits (behind update-branch/web commits). Cache staleness
   // checks must honor that confirmation without re-querying GitHub.

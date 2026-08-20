@@ -21,11 +21,11 @@ export function normalizeFolderWorkspaces(
   if (!Array.isArray(value)) {
     return []
   }
-  const folderGroups = new Map<string, ProjectGroup>()
+  // Groups without a parentPath (manual groups) still own workspaces that carry
+  // their own folderPath; requiring parentPath here silently deleted them on load.
+  const groupsById = new Map<string, ProjectGroup>()
   for (const group of projectGroups) {
-    if (group.parentPath) {
-      folderGroups.set(group.id, group)
-    }
+    groupsById.set(group.id, group)
   }
 
   const workspaces: FolderWorkspace[] = []
@@ -40,11 +40,11 @@ export function normalizeFolderWorkspaces(
       raw.id.trim().length === 0 ||
       seen.has(raw.id) ||
       typeof raw.projectGroupId !== 'string' ||
-      !folderGroups.has(raw.projectGroupId)
+      !groupsById.has(raw.projectGroupId)
     ) {
       continue
     }
-    const group = folderGroups.get(raw.projectGroupId)
+    const group = groupsById.get(raw.projectGroupId)
     const folderPath =
       typeof raw.folderPath === 'string' && raw.folderPath.trim().length > 0
         ? raw.folderPath

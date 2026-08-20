@@ -1514,7 +1514,10 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
         {
           folderPath,
           projectGroupId: group.id,
-          connectionId: args.connectionId ?? group.connectionId ?? null,
+          // Why: undefined inherits the group connection (or infers when the group
+          // has none); an explicit null pins the workspace to local.
+          connectionId:
+            args.connectionId === undefined ? (group.connectionId ?? undefined) : args.connectionId,
           projectGroups,
           repos: store.getRepos()
         },
