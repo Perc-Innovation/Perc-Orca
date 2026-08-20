@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AttachedReviewSchema } from './attached-review-schema'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import { workspaceSourceSchema } from '../../../../shared/telemetry-events'
 import { sleepingAgentLaunchConfigSchema } from '../../../../shared/workspace-session-sleeping-agents'
@@ -18,14 +19,7 @@ import {
   OptionalTuiAgent
 } from './worktree-schemas'
 
-export const AttachedReviewSchema = z.object({
-  provider: z.enum(['github', 'gitlab', 'bitbucket', 'azure-devops', 'gitea']),
-  number: z.number().int().positive(),
-  url: z.string().min(1),
-  baseRef: z.string().optional(),
-  title: z.string().optional(),
-  state: z.enum(['open', 'merged', 'closed', 'draft']).optional()
-})
+export { AttachedReviewSchema }
 
 export const WorktreeCreate = z
   .object({
