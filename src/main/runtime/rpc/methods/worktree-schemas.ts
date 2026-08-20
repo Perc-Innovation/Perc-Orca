@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AttachedReviewSchema } from './worktree-create-schemas'
+import { AttachedReviewSchema } from './attached-review-schema'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import { RUNTIME_NAVIGATION_TARGETS } from '../../../../shared/runtime-navigation'
