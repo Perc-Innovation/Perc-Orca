@@ -58,6 +58,8 @@ export type SectionHeaderRowContext = {
   projectActions: RepoHeaderProjectActions
   onRenameProjectGroup: (groupId: string, currentName: string) => void
   onDeleteProjectGroup: (groupId: string, groupName: string) => void
+  onCreateProjectSubgroup: (parentGroupId: string, parentName: string) => void
+  onMoveProjectGroupToGroup: (groupId: string, parentGroupId: string | null) => void
   onCreateFolderWorkspace: (projectGroup: ProjectGroup) => void
   onCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
   onWorkspaceStatusDragOver: (event: React.DragEvent, status: WorkspaceStatus) => void
@@ -358,9 +360,12 @@ export function renderWorktreeSectionHeaderRow(args: {
               projectGroup={
                 typeof row.projectGroup?.id === 'string' ? (row.projectGroup as ProjectGroup) : null
               }
+              projectGroups={ctx.projectGroups}
               onRename={ctx.onRenameProjectGroup}
               onCreateFolderWorkspaceOnHost={ctx.onCreateFolderWorkspaceOnHost}
               onDelete={ctx.onDeleteProjectGroup}
+              onCreateSubgroup={ctx.onCreateProjectSubgroup}
+              onMoveToGroup={ctx.onMoveProjectGroupToGroup}
             />
           ) : null}
 
