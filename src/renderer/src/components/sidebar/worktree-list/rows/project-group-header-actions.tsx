@@ -17,6 +17,7 @@ import { translate } from '@/i18n/i18n'
 import { getFolderWorkspacePathStatusDescription } from '@/lib/folder-workspace-path-status'
 import type { ProjectGroup } from '../../../../../../shared/project-group-types'
 import type { FolderWorkspacePathStatus } from '../../../../../../shared/folder-workspace-path-status'
+import type { ExecutionHostId } from '../../../../../../shared/execution-host'
 import { REPO_HEADER_ACTION_BUTTON_CLASS } from '../../repo-header-action-button-class'
 import {
   handleRepoHeaderActionPointerDown,
@@ -72,6 +73,7 @@ function ProjectGroupMoveSubmenu({
 
 export function ProjectGroupHeaderMenu({
   groupId,
+  hostId,
   label,
   projectGroup = null,
   projectGroups,
@@ -82,12 +84,14 @@ export function ProjectGroupHeaderMenu({
   onMoveToGroup
 }: {
   groupId: string
+  /** Owner host of the group row, so rename/delete route to the host that holds it. */
+  hostId?: ExecutionHostId
   label: string
   projectGroup?: ProjectGroup | null
   projectGroups: readonly ProjectGroup[]
-  onRename: (groupId: string, currentName: string) => void
+  onRename: (groupId: string, currentName: string, hostId?: ExecutionHostId) => void
   onCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
-  onDelete: (groupId: string, groupName: string) => void
+  onDelete: (groupId: string, groupName: string, hostId?: ExecutionHostId) => void
   onCreateSubgroup: (parentGroupId: string, parentName: string) => void
   onMoveToGroup: (groupId: string, parentGroupId: string | null) => void
 }): React.JSX.Element {
@@ -143,11 +147,11 @@ export function ProjectGroupHeaderMenu({
           projectGroups={projectGroups}
           onMoveToGroup={onMoveToGroup}
         />
-        <DropdownMenuItem onSelect={() => onRename(groupId, label)}>
+        <DropdownMenuItem onSelect={() => onRename(groupId, label, hostId)}>
           {translate('auto.components.sidebar.WorktreeList.4d7b73658c', 'Rename group')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={() => onDelete(groupId, label)}>
+        <DropdownMenuItem variant="destructive" onSelect={() => onDelete(groupId, label, hostId)}>
           {translate('auto.components.sidebar.WorktreeList.902115cdbe', 'Delete group')}
         </DropdownMenuItem>
       </DropdownMenuContent>
