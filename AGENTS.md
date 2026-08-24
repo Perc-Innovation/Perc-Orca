@@ -47,6 +47,10 @@ All changes must consider the SSH use case. Don't assume local-only execution. B
 
 All changes must consider folder workspaces as well as git worktrees. Don't assume every workspace is a git worktree.
 
+## Moving a Tab Between Workspaces
+
+A tab can be rehomed to another workspace on the same execution host without killing its process. Before changing tab↔workspace ownership, follow [`docs/reference/tab-workspace-move.md`](./docs/reference/tab-workspace-move.md): state keyed by tab id must stay untouched, a running process keeps the working directory it was launched in and the UI must say so rather than imply it followed, and main's PTY worktree binding has to be re-keyed explicitly or the moved pane stops resolving.
+
 ## Remote Wire Compatibility
 
 Clients and remote Orca servers update independently, so mixed versions are the normal state. Before changing anything a paired client and host exchange — RPC params, stream frames, or the content either side publishes over them — follow [`docs/reference/remote-wire-compatibility.md`](./docs/reference/remote-wire-compatibility.md). A new optional field is safe; a new stream opcode must be capability-negotiated because decoders drop unknown opcodes silently; and changing what the host publishes reaches old clients even with no wire change.

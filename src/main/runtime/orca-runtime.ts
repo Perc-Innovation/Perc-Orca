@@ -494,6 +494,7 @@ import {
   RUNTIME_GRAPH_RELOAD_TIMEOUT_MS,
   RuntimeGraphReloadLifecycle
 } from './runtime-graph-reload-lifecycle'
+import { rehomeTerminalTabWorktreeRecords } from './terminal-tab-worktree-rehome'
 import {
   LINEAR_SEARCH_MAX_LIMIT,
   LINEAR_WRITE_BODY_CAP,
@@ -18402,6 +18403,21 @@ export class OrcaRuntimeService {
         `Agent launcher ${agent} is disabled or unavailable.`
       )
     }
+  }
+
+  /** Re-keys a live terminal tab's workspace binding after the renderer moves it
+   *  between workspaces. Never spawns, kills or reattaches a PTY. */
+  rehomeTerminalTabWorktree(tabId: string, worktreeId: string): { rehomedPtyIds: string[] } {
+    const rehomedPtyIds = rehomeTerminalTabWorktreeRecords(
+      { tabs: this.tabs, leaves: this.leaves, ptys: this.ptysById },
+      tabId,
+      worktreeId
+    )
+    for (const ptyId of rehomedPtyIds) {
+      // Why: the shared lifecycle point also rebinds the advertised-URL watcher.
+      this.recordPtyWorktree(ptyId, worktreeId)
+    }
+    return { rehomedPtyIds }
   }
 
   resolveTerminalPane(paneKey: string, expectedWorktreeId?: string): RuntimeTerminalResolvePane {

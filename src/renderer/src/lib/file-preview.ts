@@ -10,7 +10,7 @@ import { createWebRuntimeSessionBrowserTab } from '@/runtime/web-runtime-session
 import { observeE2eWebRuntimeBrowserCreation } from '@/runtime/web-runtime-browser-creation-e2e-fault'
 import { useAppStore } from '@/store'
 import type { AppState } from '@/store/types'
-import { findSiblingGroupId } from '@/store/slices/tabs'
+import { findSiblingGroupId } from '@/store/slices/tab-group-layout-tree'
 
 export type PreviewableLanguage = 'html'
 export const REMOTE_FILE_BROWSER_UNSUPPORTED_MESSAGE =
