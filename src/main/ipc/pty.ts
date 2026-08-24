@@ -2476,6 +2476,7 @@ export function registerPtyHandlers(
   ipc.removeHandler('pty:kill')
   ipc.removeHandler('pty:listSessions')
   ipc.removeHandler('pty:hasPty')
+  ipc.removeHandler('pty:rehomeTabWorktree')
   ipc.removeHandler('pty:hasChildProcesses')
   ipc.removeHandler('pty:getForegroundProcess')
   ipc.removeHandler('pty:inspectProcess')
@@ -7876,6 +7877,23 @@ export function registerPtyHandlers(
       return null
     }
   })
+
+  ipc.handle(
+    'pty:rehomeTabWorktree',
+    async (
+      _event,
+      args: { tabId: string; worktreeId: string }
+    ): Promise<{ rehomedPtyIds: string[] }> => {
+      // Why: the renderer owns which workspaces a tab may move between (execution
+      // host, catalog); main only re-keys what it already tracks for that tab.
+      if (!args?.tabId || !args?.worktreeId || !isValidTerminalTabId(args.tabId)) {
+        return { rehomedPtyIds: [] }
+      }
+      return (
+        runtime?.rehomeTerminalTabWorktree(args.tabId, args.worktreeId) ?? { rehomedPtyIds: [] }
+      )
+    }
+  )
 
   ipc.handle('pty:hasChildProcesses', async (_event, args: { id: string }): Promise<boolean> => {
     if (!hasPtyProviderForInspection(args.id)) {
