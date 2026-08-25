@@ -1,8 +1,8 @@
 import type { JiraSavedFilter, JiraSite, JiraSiteSelection } from '../../shared/jira-types'
+import { shouldSurfaceSiteFailure } from './jira-read-failure'
 import { acquire, release } from './request-queue'
 import { apiBasePath, jiraRequest } from './authenticated-request'
 import { clearToken, getClients, isAuthError } from './client'
-import { shouldSurfaceSiteFailure } from './issues'
 
 type JiraRecord = Record<string, unknown>
 

@@ -100,8 +100,8 @@ export function useTabGroupTabCloseCommands({
             reason: 'user'
           })
         }
-        destroyWorkspaceWebviews(browserState.browserPagesByWorkspace, item.entityId)
         closeBrowserTab(item.entityId)
+        destroyWorkspaceWebviews(browserState.browserPagesByWorkspace, item.entityId)
         closeUnifiedTab(item.id)
       } else if (item.contentType === 'simulator') {
         closeUnifiedTab(item.id)
@@ -160,8 +160,8 @@ export function useTabGroupTabCloseCommands({
               reason: 'user'
             })
           }
-          destroyWorkspaceWebviews(browserState.browserPagesByWorkspace, item.entityId)
           closeBrowserTab(item.entityId)
+          destroyWorkspaceWebviews(browserState.browserPagesByWorkspace, item.entityId)
           closeUnifiedTab(item.id)
         } else if (item.contentType === 'terminal') {
           closeTab(item.entityId)
