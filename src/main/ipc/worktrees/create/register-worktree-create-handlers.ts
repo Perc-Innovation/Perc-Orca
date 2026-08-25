@@ -27,13 +27,16 @@ import type { CreateWorktreeArgsWithSystemProvenance } from '../ipc-context-sche
 import { createFolderWorkspace } from './folder-workspace-creation'
 import { findExactRepoOwner, isCapturedRepoCurrent } from '../listing/worktree-host-ownership'
 import type { WorktreeIpcContext } from '../worktree-ipc-context'
+import { resolveIpcSenderWindow } from '../../ipc-sender-window'
 
 export function registerWorktreeCreateHandlers(context: WorktreeIpcContext): void {
   const { mainWindow, store, runtime, options } = context
 
   ipcMain.handle(
     'worktrees:create',
-    async (_event, rawArgs: CreateWorktreeArgs): Promise<CreateWorktreeResult> => {
+    async (event, rawArgs: CreateWorktreeArgs): Promise<CreateWorktreeResult> => {
+      // Why: creation progress belongs to the window that asked for the worktree.
+      const targetWindow = resolveIpcSenderWindow(event, mainWindow)
       const args = normalizeLinkedWorkItemFields(rawArgs)
       // Why span here: parent the child git spans for the trace tree; don't attach branch name/remote URL (user content) — repo ID is the safer correlator.
       return withWorktreeSpan({ stage: 'create' }, async () => {
@@ -62,8 +65,8 @@ export function registerWorktreeCreateHandlers(context: WorktreeIpcContext): voi
           result = isFolderRepo(repo)
             ? createFolderWorkspace(createArgs, repo, store)
             : repo.connectionId
-              ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
-              : await createLocalWorktree(createArgs, repo, store, mainWindow, runtime)
+              ? await createRemoteWorktree(createArgs, repo, store, targetWindow)
+              : await createLocalWorktree(createArgs, repo, store, targetWindow, runtime)
         } catch (error) {
           releaseAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
           track('workspace_create_failed', {

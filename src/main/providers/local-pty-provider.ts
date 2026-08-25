@@ -1557,10 +1557,17 @@ export class LocalPtyProvider implements IPtyProvider {
 
   // ─── Local-only helpers (not part of IPtyProvider interface) ───────
 
-  /** Kill orphaned PTYs from previous page loads. */
-  killOrphanedPtys(currentGeneration: number): { id: string }[] {
+  /** Kill orphaned PTYs from previous page loads. `candidateIds` narrows the sweep
+   *  to one window's PTYs, so a reload never reaps another live window's terminals. */
+  killOrphanedPtys(currentGeneration: number, candidateIds?: Iterable<string>): { id: string }[] {
     const killed: { id: string }[] = []
-    for (const [id, proc] of ptyProcesses) {
+    const candidates = candidateIds
+      ? [...candidateIds].flatMap((id) => {
+          const proc = ptyProcesses.get(id)
+          return proc ? ([[id, proc]] as [string, pty.IPty][]) : []
+        })
+      : ptyProcesses.entries()
+    for (const [id, proc] of candidates) {
       if ((ptyLoadGeneration.get(id) ?? -1) < currentGeneration) {
         requestPtyTermination(id, proc)
         killed.push({ id })

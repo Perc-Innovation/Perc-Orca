@@ -7,11 +7,15 @@ import { markSystemSessionEnding } from '../crash-reporting/expected-teardown-st
 import { recordDurableCrashBreadcrumb } from '../crash-reporting/durable-crash-breadcrumb'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
 import type { Store } from '../persistence'
+import { clearTrustedClipboardRendererWebContentsId } from './clipboard-ipc-handlers'
 import { closeDashboardPopout } from './dashboard-popout-window'
 import {
+  closeWindowAfterConfirmation,
   installMainWindowCloseLifecycle,
+  requestWindowCloseForQuit,
   WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS
 } from './main-window-close-lifecycle'
+import { getLastActiveMainWindow, hasLiveMainWindows } from './main-window-registry'
 import type { CreateMainWindowOptions } from './main-window-contracts'
 import { installMainWindowFocusLifecycle } from './main-window-focus-lifecycle'
 import { installMainWindowShortcutRouting } from './main-window-shortcut-routing'
@@ -29,6 +33,8 @@ import { installMainWindowWebviewSecurity } from './main-window-webview-security
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { installWindowsPathRegistryChangeListener } from '../pty/windows-path-registry-change'
 
+export { closeWindowAfterConfirmation, requestWindowCloseForQuit }
+export { _resetWindowControlIpcHandlersForTests } from './window-control-registration-latch'
 export { WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS }
 
 export function loadMainWindow(mainWindow: BrowserWindow): void {
@@ -59,6 +65,24 @@ export function createMainWindow(
     )
   }
   const savedMaximized = store?.getUI().windowMaximized ?? false
+  // Why: a second window stacked exactly on the last active one reads as a failed
+  // open, so cascade it — but only onto bounds that still land on a real display.
+  const lastActiveWindow = getLastActiveMainWindow()
+  const offsetBounds = (() => {
+    if (!lastActiveWindow || lastActiveWindow.isDestroyed()) {
+      return undefined
+    }
+    const bounds = lastActiveWindow.getBounds()
+    const candidate = {
+      x: bounds.x + 32,
+      y: bounds.y + 32,
+      width: bounds.width,
+      height: bounds.height
+    }
+    return rectHasVisibleAreaOnAnyDisplay(candidate, MIN_WIDTH / 2, MIN_HEIGHT / 2)
+      ? candidate
+      : undefined
+  })()
   // Why: on first launch fill the primary display work area so the window feels spacious without maximize(); saved bounds win later.
   const defaultBounds = (() => {
     try {
@@ -81,9 +105,13 @@ export function createMainWindow(
     blur && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}
 
   const mainWindow = new BrowserWindow({
-    width: savedBounds?.width ?? defaultBounds.width,
-    height: savedBounds?.height ?? defaultBounds.height,
-    ...(savedBounds ? { x: savedBounds.x, y: savedBounds.y } : {}),
+    width: offsetBounds?.width ?? savedBounds?.width ?? defaultBounds.width,
+    height: offsetBounds?.height ?? savedBounds?.height ?? defaultBounds.height,
+    ...(offsetBounds
+      ? { x: offsetBounds.x, y: offsetBounds.y }
+      : savedBounds
+        ? { x: savedBounds.x, y: savedBounds.y }
+        : {}),
     minWidth: MIN_WIDTH,
     minHeight: MIN_HEIGHT,
     title: opts?.title ?? 'Orca',
@@ -158,7 +186,7 @@ export function createMainWindow(
   const state = installMainWindowStateLifecycle({
     mainWindow,
     revealOnDidFinishLoad: opts?.revealOnDidFinishLoad === true,
-    savedMaximized,
+    savedMaximized: savedMaximized && !offsetBounds,
     store
   })
   installMainWindowWebviewSecurity(mainWindow)
@@ -180,13 +208,18 @@ export function createMainWindow(
   })
 
   mainWindow.on('closed', () => {
-    closeDashboardPopout()
+    // Why: the pop-out belongs to the app, not to this window; only tear it down
+    // once the last main window is gone.
+    if (!hasLiveMainWindows()) {
+      closeDashboardPopout()
+    }
     state.clearInitialRevealFallbackTimer()
     closeLifecycle.dispose()
     focus.dispose()
     browserManager.setDictationShortcutForwardingPredicate(null)
     powerMonitor.removeListener('resume', onSystemResume)
     clearTrustedUIRendererWebContentsId(rendererWebContentsId)
+    clearTrustedClipboardRendererWebContentsId(rendererWebContentsId)
     state.dispose()
   })
 

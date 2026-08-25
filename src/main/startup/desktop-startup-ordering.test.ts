@@ -261,7 +261,9 @@ describe('startup ordering', () => {
     const serveReturn = source.indexOf('return', serveReady)
     const runtimeRpcStart = source.indexOf('await runtimeRpc.start()', serveStart)
     const automationStart = source.indexOf('automations.start()', serveStart)
-    const desktopSetWebContents = source.indexOf('automations.setWebContents(window.webContents)')
+    // Why: the desktop binds automations to a window through updateAutomationWindow now,
+    // because the target is resolved from the live window registry.
+    const desktopSetWebContents = source.indexOf('updateAutomationWindow(window)')
     const desktopAutomationStart = source.indexOf('automations.start()', desktopSetWebContents + 1)
 
     expect(serveStart).toBeGreaterThanOrEqual(0)

@@ -62,6 +62,20 @@ import { requestTerminalTabCloseFromRenderer } from './terminal-tab-close-reques
 import type { ClaudeAccountSelectionTarget } from '../claude-accounts/runtime-selection'
 import { runWorktreeChangeInvalidators } from '../ipc/worktree-change-invalidators'
 import {
+  getFocusedOrLastActiveMainWindow,
+  getMainWindowById,
+  getMainWindowForWebContents
+} from './main-window-registry'
+import {
+  broadcastRuntimeWindowNotification,
+  getPreferredRuntimeWindowNotifier,
+  getRuntimeWindowNotifierById,
+  hasRuntimeWindowNotifiers,
+  registerRuntimeWindowNotifier,
+  resolveRuntimeWindowNotifier,
+  unregisterRuntimeWindowNotifier
+} from './runtime-window-notifier-registry'
+import {
   scheduleWorktreeBaseDirectoryWatcherSync,
   setWorktreeBaseDirectoryWatcherSyncContext
 } from '../ipc/worktree-base-directory-watcher'
@@ -79,12 +93,11 @@ export function ensureAutoUpdaterConfigured(): void {
   pendingAutoUpdaterSetup?.()
 }
 
-let appReloadHandlerTokenCounter = 0
-let activeAppReloadHandlerToken: number | null = null
+let onBeforeAppRendererReload:
+  | ((args: { webContentsId: number; ignoreCache: boolean }) => void)
+  | undefined
 let tccPromptHandlerTokenCounter = 0
 let activeTccPromptHandlerToken: number | null = null
-let runtimeNotifierTokenCounter = 0
-let activeRuntimeNotifierToken: number | null = null
 
 export function attachMainWindowServices(
   mainWindow: BrowserWindow,
@@ -157,8 +170,8 @@ export function attachMainWindowServices(
         )
       })
   }
-  registerSshHandlers(store, () => mainWindow, runtime)
-  registerRemoteWorkspaceHandlers(store, () => mainWindow)
+  registerSshHandlers(store, getFocusedOrLastActiveMainWindow, runtime)
+  registerRemoteWorkspaceHandlers(store, getFocusedOrLastActiveMainWindow)
   registerFileDropRelay(mainWindow)
   registerTccPromptNoticeHandlers(mainWindow)
   // Why: setupAutoUpdater sync-require()s electron-updater (slow on cold Windows w/ Defender, #7225), so defer past first paint; timer fallback covers crash-looping renderers.
@@ -226,9 +239,13 @@ export function attachMainWindowServices(
     }
   )
 
+  // Why: capture the id while the window is live; Electron can destroy webContents
+  // before BrowserWindow emits `closed`.
+  const rendererWebContentsId = mainWindow.webContents.id
   mainWindow.on('closed', () => {
-    // Why: clear main-owned guest registrations on close so stale tab→webContents ids don't leak across relaunch/hot-reload.
-    browserManager.unregisterAll()
+    // Why: clear only this renderer's guest registrations so a closing window does
+    // not tear down browser tabs that still belong to another window.
+    browserManager.unregisterGuestsForRenderer(rendererWebContentsId)
   })
 }
 
@@ -290,32 +307,20 @@ function registerTccPromptNoticeHandlers(mainWindow: BrowserWindow): void {
 }
 
 function registerAppReloadHandler(
-  mainWindow: BrowserWindow,
+  _mainWindow: BrowserWindow,
   onBeforeRendererReload?: (args: { webContentsId: number; ignoreCache: boolean }) => void
 ): void {
-  // Why: the process-global IPC handler can outlive the window, so guard both lifetimes before using the WebContents.
-  const handlerToken = ++appReloadHandlerTokenCounter
-  activeAppReloadHandlerToken = handlerToken
-  const mainWebContents = mainWindow.webContents
+  // Why: the process-global handler is shared by every window, so resolve the
+  // target from the sender instead of closing over whichever window attached last.
+  onBeforeAppRendererReload = onBeforeRendererReload
   ipcMain.removeHandler('app:reload')
   ipcMain.handle('app:reload', (event) => {
-    if (
-      mainWindow.isDestroyed() ||
-      mainWebContents.isDestroyed() ||
-      event.sender !== mainWebContents
-    ) {
+    const window = getMainWindowForWebContents(event.sender)
+    if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
       return
     }
-    onBeforeRendererReload?.({ webContentsId: mainWebContents.id, ignoreCache: false })
-    mainWebContents.reload()
-  })
-  mainWindow.on('closed', () => {
-    if (activeAppReloadHandlerToken !== handlerToken) {
-      return
-    }
-    // Why: macOS keeps the process alive with no window; this handler would otherwise retain the closed window until reopen.
-    ipcMain.removeHandler('app:reload')
-    activeAppReloadHandlerToken = null
+    onBeforeAppRendererReload?.({ webContentsId: window.webContents.id, ignoreCache: false })
+    window.webContents.reload()
   })
 }
 
@@ -323,8 +328,6 @@ function registerRuntimeWindowLifecycle(
   mainWindow: BrowserWindow,
   runtime: OrcaRuntimeService
 ): void {
-  const notifierToken = ++runtimeNotifierTokenCounter
-  activeRuntimeNotifierToken = notifierToken
   runtime.attachWindow(mainWindow.id)
   const mainWebContents = mainWindow.webContents
   const rendererNotifications = createRuntimeRendererNotificationSender({
@@ -332,16 +335,35 @@ function registerRuntimeWindowLifecycle(
     webContents: mainWebContents,
     onFailure: (reason) => runtime.markGraphReloadFailed(mainWindow.id, reason)
   })
-  const send = rendererNotifications.send
+  registerRuntimeWindowNotifier({ window: mainWindow, send: rendererNotifications.send })
+  // Why: the notifier is app-global while windows come and go, so every relay picks
+  // its target now: the window that owns the pane, the one in front, or all of them.
+  const sendToOwner = (
+    ownerWindowId: number | null,
+    channel: string,
+    ...values: unknown[]
+  ): boolean => getRuntimeWindowNotifierById(ownerWindowId)?.send(channel, ...values) ?? false
+  const sendToOwnerOrTarget = (
+    ownerWindowId: number | null,
+    channel: string,
+    ...values: unknown[]
+  ): boolean => resolveRuntimeWindowNotifier(ownerWindowId)?.send(channel, ...values) ?? false
+  const send = (channel: string, ...values: unknown[]): boolean =>
+    getPreferredRuntimeWindowNotifier()?.send(channel, ...values) ?? false
+  const broadcast = (channel: string, ...values: unknown[]): void =>
+    broadcastRuntimeWindowNotification(channel, ...values)
+  const ownerWindowOrPreferred = (ownerWindowId: number | null): BrowserWindow | null =>
+    (ownerWindowId === null ? null : getMainWindowById(ownerWindowId)) ??
+    getFocusedOrLastActiveMainWindow()
   runtime.setNotifier({
     worktreesChanged: (repoId, renamed) => {
       // Why: clear scan caches before the renderer handles this event, so it can't read stale TTL entries after a mutation.
       runWorktreeChangeInvalidators(repoId)
-      send('worktrees:changed', renamed ? { repoId, renamed } : { repoId })
+      broadcast('worktrees:changed', renamed ? { repoId, renamed } : { repoId })
     },
-    worktreeBaseStatus: (event) => send('worktree:baseStatus', event),
-    worktreeRemoteBranchConflict: (event) => send('worktree:remoteBranchConflict', event),
-    reposChanged: () => send('repos:changed'),
+    worktreeBaseStatus: (event) => broadcast('worktree:baseStatus', event),
+    worktreeRemoteBranchConflict: (event) => broadcast('worktree:remoteBranchConflict', event),
+    reposChanged: () => broadcast('repos:changed'),
     activateWorktree: (
       repoId,
       worktreeId,
@@ -378,17 +400,38 @@ function registerRuntimeWindowLifecycle(
           reject(new Error('terminal_reveal_identity_required'))
           return
         }
+        // Why: a reveal belongs to whichever window already owns that tab/leaf/PTY;
+        // only a genuinely new session may land in the window the user is using.
+        const ownerWindowId =
+          opts.tabId && opts.splitFromLeafId
+            ? runtime.resolveOwnerWindowIdForLeaf(opts.tabId, opts.splitFromLeafId)
+            : opts.tabId
+              ? (runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, opts.tabId) ??
+                runtime.resolveOwnerWindowIdForTabId(opts.tabId))
+              : runtime.resolveOwnerWindowIdForPtyId(opts.ptyId)
+        const target = ownerWindowOrPreferred(ownerWindowId)
+        if (!target) {
+          reject(new Error('runtime_unavailable'))
+          return
+        }
         const timer = setTimeout(() => {
           ipcMain.removeListener('terminal:tabCreateReply', handler)
+          target.removeListener('closed', onTargetClosed)
           reject(new Error('Terminal reveal timed out'))
         }, 10_000)
+        const onTargetClosed = (): void => {
+          clearTimeout(timer)
+          ipcMain.removeListener('terminal:tabCreateReply', handler)
+          reject(new Error('runtime_unavailable'))
+        }
         const handler = (event: Electron.IpcMainEvent, reply: TerminalTabCreateReply): void => {
           // Why: requestId is renderer-supplied, so only the targeted main window may satisfy the reveal.
-          if (event.sender !== mainWindow.webContents || reply.requestId !== requestId) {
+          if (event.sender !== target.webContents || reply.requestId !== requestId) {
             return
           }
           clearTimeout(timer)
           ipcMain.removeListener('terminal:tabCreateReply', handler)
+          target.removeListener('closed', onTargetClosed)
           if (reply.error) {
             reject(new Error(reply.error))
             return
@@ -411,7 +454,11 @@ function registerRuntimeWindowLifecycle(
           })
         }
         ipcMain.on('terminal:tabCreateReply', handler)
-        const sent = send('ui:createTerminal', {
+        target.once('closed', onTargetClosed)
+        // Why: a runtime-created PTY can emit daemon output before the renderer
+        // publishes its graph, so stamp the chosen window before adoption.
+        runtime.registerPtyOwnerWindow(opts.ptyId, target.id)
+        const sent = sendToOwner(target.id, 'ui:createTerminal', {
           requestId,
           worktreeId,
           ptyId: opts.ptyId,
@@ -437,6 +484,7 @@ function registerRuntimeWindowLifecycle(
         if (!sent) {
           clearTimeout(timer)
           ipcMain.removeListener('terminal:tabCreateReply', handler)
+          target.removeListener('closed', onTargetClosed)
           reject(new Error('runtime_unavailable'))
         }
       }),
@@ -447,7 +495,7 @@ function registerRuntimeWindowLifecycle(
         ...(ptyId ? { ptyId } : {})
       }),
     splitTerminal: (tabId, paneRuntimeId, opts) => {
-      send('ui:splitTerminal', {
+      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:splitTerminal', {
         tabId,
         paneRuntimeId,
         direction: opts.direction,
@@ -455,14 +503,37 @@ function registerRuntimeWindowLifecycle(
         telemetrySource: opts.telemetrySource
       })
     },
-    renameTerminal: (tabId, title) => send('ui:renameTerminal', { tabId, title }),
+    renameTerminal: (tabId, title) =>
+      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:renameTerminal', {
+        tabId,
+        title
+      }),
     focusTerminal: (tabId, worktreeId, leafId) =>
-      send('ui:focusTerminal', { tabId, worktreeId, leafId }),
-    focusEditorTab: (tabId, worktreeId) => send('ui:focusEditorTab', { tabId, worktreeId }),
+      sendToOwner(
+        leafId
+          ? runtime.resolveOwnerWindowIdForLeaf(tabId, leafId)
+          : runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId),
+        'ui:focusTerminal',
+        { tabId, worktreeId, leafId }
+      ),
+    focusEditorTab: (tabId, worktreeId) =>
+      sendToOwner(
+        runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId),
+        'ui:focusEditorTab',
+        { tabId, worktreeId }
+      ),
     closeSessionTab: (tabId, worktreeId) =>
-      requestSessionTabCloseFromRenderer(mainWindow, tabId, worktreeId),
+      requestSessionTabCloseFromRenderer(
+        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
+        tabId,
+        worktreeId
+      ),
     moveSessionTab: (worktreeId: string, move: RuntimeMobileSessionTabMove) =>
-      send('ui:moveSessionTab', { worktreeId, ...move }),
+      sendToOwner(
+        runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, move.tabId),
+        'ui:moveSessionTab',
+        { worktreeId, ...move }
+      ),
     openFile: (worktreeId, filePath, relativePath, runtimeEnvironmentId?) =>
       send('ui:openFileFromMobile', {
         worktreeId,
@@ -479,32 +550,62 @@ function registerRuntimeWindowLifecycle(
         runtimeEnvironmentId
       }),
     readMobileMarkdownTab: (worktreeId, tabId) =>
-      requestMobileMarkdownFromRenderer(mainWindow, {
-        operation: 'read',
-        worktreeId,
-        tabId
-      }) as Promise<RuntimeMarkdownReadTabResult>,
+      requestMobileMarkdownFromRenderer(
+        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
+        {
+          operation: 'read',
+          worktreeId,
+          tabId
+        }
+      ) as Promise<RuntimeMarkdownReadTabResult>,
     saveMobileMarkdownTab: (worktreeId, tabId, baseVersion, content) =>
-      requestMobileMarkdownFromRenderer(mainWindow, {
-        operation: 'save',
-        worktreeId,
+      requestMobileMarkdownFromRenderer(
+        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
+        {
+          operation: 'save',
+          worktreeId,
+          tabId,
+          baseVersion,
+          content
+        }
+      ) as Promise<RuntimeMarkdownSaveTabResult>,
+    closeTerminal: (tabId, paneRuntimeId) =>
+      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:closeTerminal', {
         tabId,
-        baseVersion,
-        content
-      }) as Promise<RuntimeMarkdownSaveTabResult>,
-    closeTerminal: (tabId, paneRuntimeId) => send('ui:closeTerminal', { tabId, paneRuntimeId }),
+        paneRuntimeId
+      }),
     closeTerminalTab: (tabId, options) =>
-      requestTerminalTabCloseFromRenderer(mainWindow, tabId, options),
+      requestTerminalTabCloseFromRenderer(
+        requireOwnerWindow(runtime.resolveOwnerWindowIdForTabId(tabId)),
+        tabId,
+        options
+      ),
     sleepWorktree: (worktreeId) => send('ui:sleepWorktree', { worktreeId }),
     resumeSleepingAgents: (worktreeId) => send('ui:resumeSleepingAgents', { worktreeId }),
     terminalFitOverrideChanged: (ptyId, mode, cols, rows) =>
-      send('runtime:terminalFitOverrideChanged', { ptyId, mode, cols, rows }),
+      sendToOwnerOrTarget(
+        runtime.resolveOwnerWindowIdForPtyId(ptyId),
+        'runtime:terminalFitOverrideChanged',
+        { ptyId, mode, cols, rows }
+      ),
     terminalDriverChanged: (ptyId, driver) =>
-      send('runtime:terminalDriverChanged', { ptyId, driver }),
+      sendToOwnerOrTarget(
+        runtime.resolveOwnerWindowIdForPtyId(ptyId),
+        'runtime:terminalDriverChanged',
+        { ptyId, driver }
+      ),
     nativeChatLaunchDraftResolved: (tabId, resolution) =>
-      send('runtime:nativeChatLaunchDraftResolved', { tabId, ...resolution }),
+      sendToOwnerOrTarget(
+        runtime.resolveOwnerWindowIdForTabId(tabId),
+        'runtime:nativeChatLaunchDraftResolved',
+        { tabId, ...resolution }
+      ),
     browserDriverChanged: (browserPageId, driver) =>
-      send('runtime:browserDriverChanged', { browserPageId, driver })
+      sendToOwnerOrTarget(
+        runtime.resolveOwnerWindowIdForBrowserPageId(browserPageId),
+        'runtime:browserDriverChanged',
+        { browserPageId, driver }
+      )
   })
   registerRendererDocumentNavigation(mainWebContents, () => {
     rendererNotifications.onMainFrameReloadStarted()
@@ -523,38 +624,43 @@ function registerRuntimeWindowLifecycle(
   })
   mainWindow.on('closed', () => {
     rendererNotifications.close()
+    unregisterRuntimeWindowNotifier(mainWindow.id)
     runtime.markGraphUnavailable(mainWindow.id)
-    if (activeRuntimeNotifierToken === notifierToken) {
-      // Why: the notifier closes over the window; clear it in the no-window gap so the runtime can't retain destroyed graphs.
+    if (!hasRuntimeWindowNotifiers()) {
+      // Why: the notifier routes through the live window registry; keep it installed
+      // while any window remains and clear it only during no-window gaps.
       runtime.setNotifier(null)
-      activeRuntimeNotifierToken = null
     }
   })
 }
 
-function registerFileDropRelay(mainWindow: BrowserWindow): void {
+// Why: a relay that must target one window has no meaningful fallback — reporting
+// the runtime as unavailable is better than acting on a different window's tab.
+function requireOwnerWindow(ownerWindowId: number | null): BrowserWindow {
+  const window = ownerWindowId === null ? null : getMainWindowById(ownerWindowId)
+  if (!window) {
+    throw new Error('runtime_unavailable')
+  }
+  return window
+}
+
+function registerFileDropRelay(_mainWindow: BrowserWindow): void {
   const channel = 'terminal:file-dropped-from-preload'
-  const mainWebContents = mainWindow.webContents
   ipcMain.removeAllListeners(channel)
-  const relayFileDrop = (event: Electron.IpcMainEvent, args: NativeFileDropPayload): void => {
+  ipcMain.on(channel, (event: Electron.IpcMainEvent, args: NativeFileDropPayload) => {
+    const window = getMainWindowForWebContents(event.sender)
     if (
-      mainWindow.isDestroyed() ||
-      mainWebContents.isDestroyed() ||
-      event.sender !== mainWebContents
+      !window ||
+      window.isDestroyed() ||
+      window.webContents.isDestroyed() ||
+      !isNativeFileDropPayload(args)
     ) {
       return
     }
-    if (!isNativeFileDropPayload(args)) {
-      return
-    }
 
-    // Why: one IPC event per drop gesture so the renderer gets the full path batch without timer-based reconstruction.
-    mainWindow.webContents.send('terminal:file-drop', args)
-  }
-  ipcMain.on(channel, relayFileDrop)
-  mainWindow.on('closed', () => {
-    // Why: macOS keeps the process alive after window close; drop the closure so the destroyed window isn't retained.
-    ipcMain.removeListener(channel, relayFileDrop)
+    // Why: relay one IPC event per drop gesture back to the sender's own window so
+    // concurrent windows never receive each other's dropped paths.
+    window.webContents.send('terminal:file-drop', args)
   })
 }
 

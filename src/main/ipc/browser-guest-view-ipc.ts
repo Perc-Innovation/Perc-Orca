@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { browserManager } from '../browser/browser-manager'
+import { ownsBrowserPage } from './browser-page-ownership'
 import { isTrustedBrowserRenderer } from './browser-renderer-trust'
 import type { BrowserViewportOverride } from '../../shared/browser-workspace-types'
 import {
@@ -19,6 +20,9 @@ export function registerBrowserGuestViewHandlers(): void {
     if (!isTrustedBrowserRenderer(event.sender)) {
       return false
     }
+    if (!ownsBrowserPage(event.sender, args.browserPageId)) {
+      return false
+    }
     return browserManager.openDevTools(args.browserPageId)
   })
 
@@ -32,6 +36,9 @@ export function registerBrowserGuestViewHandlers(): void {
       }
     ) => {
       if (!isTrustedBrowserRenderer(event.sender)) {
+        return false
+      }
+      if (!ownsBrowserPage(event.sender, args.browserPageId)) {
         return false
       }
       // Why: CDP misbehaves on non-finite/negative metrics (NaN/Infinity can
@@ -76,6 +83,9 @@ export function registerBrowserGuestViewHandlers(): void {
         !isValidBrowserAnnotationViewportBridgeMarkers(args.markers) ||
         !isValidBrowserAnnotationViewportBridgeToken(args.token)
       ) {
+        return false
+      }
+      if (!ownsBrowserPage(event.sender, args.browserPageId)) {
         return false
       }
       return browserManager.setAnnotationViewportBridge(args.browserPageId, {

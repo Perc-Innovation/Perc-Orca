@@ -3055,6 +3055,28 @@ function getSetupRunnerCommandPlatformForLaunch(
   return getSetupRunnerCommandPlatformForPath(setup?.runnerScriptPath ?? '', fallbackPlatform)
 }
 
+/** What one window's renderer last published, so its contribution can be dropped
+ *  when that window closes without disturbing the other windows' graphs. */
+type WindowGraphPublication = {
+  tabIds: Set<string>
+  leafKeys: Set<string>
+  browserPageIds: Set<string>
+}
+
+function collectBrowserPageIds(
+  snapshots: readonly RuntimeMobileSessionTabsSnapshot[]
+): Set<string> {
+  const browserPageIds = new Set<string>()
+  for (const snapshot of snapshots) {
+    for (const tab of snapshot.tabs) {
+      if (tab.type === 'browser' && tab.browserPageId) {
+        browserPageIds.add(tab.browserPageId)
+      }
+    }
+  }
+  return browserPageIds
+}
+
 export type RuntimeRendererReloadFence = Readonly<{
   revision: number
   recovery: 'renderer' | 'headless' | 'reloading'
@@ -3090,6 +3112,16 @@ export class OrcaRuntimeService {
   private rendererGraphEpoch = 0
   private graphStatus: RuntimeGraphStatus = 'unavailable'
   private authoritativeWindowId: number | null = null
+  // Why: every main window publishes its own renderer graph. The service still
+  // keeps one aggregate tab/leaf view; these maps remember which window owns
+  // what so UI relays reach the window the user is actually looking at.
+  private windowGraphPublications = new Map<number, WindowGraphPublication>()
+  private tabOwnerWindowById = new Map<string, number>()
+  private tabOwnerWindowByWorktreeAndTabId = new Map<string, number>()
+  private leafOwnerWindowByKey = new Map<string, number>()
+  private ptyOwnerWindowById = new Map<string, number>()
+  private transientPtyOwnerWindowById = new Map<string, number>()
+  private browserPageOwnerWindowById = new Map<string, number>()
   private headlessGraphFallbackAvailable = false
   private pendingHeadlessPromotionWindowId: number | null = null
   private rendererGeneration: string | null = null
@@ -6753,6 +6785,13 @@ export class OrcaRuntimeService {
       this.persistWindowlessPtyBindingsForDesktopAttach()
       this.pendingHeadlessPromotionWindowId = windowId
       this.authoritativeWindowId = windowId
+      if (!this.windowGraphPublications.has(windowId)) {
+        this.windowGraphPublications.set(windowId, {
+          tabIds: new Set(),
+          leafKeys: new Set(),
+          browserPageIds: new Set()
+        })
+      }
       this.beginGraphReload(windowId)
       return
     }
@@ -6761,6 +6800,13 @@ export class OrcaRuntimeService {
       // background PTYs keep arriving; every windowless gap needs this handoff.
       this.persistWindowlessPtyBindingsForDesktopAttach()
       this.authoritativeWindowId = windowId
+    }
+    if (!this.windowGraphPublications.has(windowId)) {
+      this.windowGraphPublications.set(windowId, {
+        tabIds: new Set(),
+        leafKeys: new Set(),
+        browserPageIds: new Set()
+      })
     }
   }
 
@@ -6849,11 +6895,15 @@ export class OrcaRuntimeService {
     if (this.authoritativeWindowId === null) {
       this.authoritativeWindowId = windowId
     }
-    if (windowId !== this.authoritativeWindowId) {
+    // Why: with experimental multi-window on, every attached window publishes its
+    // own graph. Only an unknown publisher is refused; the authoritative window
+    // still owns the reload/headless lifecycle below.
+    const isAuthoritativePublisher = windowId === this.authoritativeWindowId
+    if (!isAuthoritativePublisher && !this.windowGraphPublications.has(windowId)) {
       throw new Error('Runtime graph publisher does not match the authoritative window')
     }
     const rendererGeneration =
-      windowId === HEADLESS_RUNTIME_WINDOW_ID
+      windowId === HEADLESS_RUNTIME_WINDOW_ID || !isAuthoritativePublisher
         ? null
         : 'rendererGeneration' in graph && typeof graph.rendererGeneration === 'string'
           ? graph.rendererGeneration
@@ -6873,8 +6923,37 @@ export class OrcaRuntimeService {
     const graphWasReady = this.graphStatus === 'ready'
     const previousTabs = this.tabs
     const previousLeaves = this.leaves
+    const publication: WindowGraphPublication = {
+      tabIds: new Set(graph.tabs.map((tab) => tab.tabId)),
+      leafKeys: new Set(graph.leaves.map((leaf) => this.getLeafKey(leaf.tabId, leaf.leafId))),
+      browserPageIds:
+        graph.mobileSessionTabs === undefined
+          ? (this.windowGraphPublications.get(windowId)?.browserPageIds ?? new Set())
+          : collectBrowserPageIds(graph.mobileSessionTabs)
+    }
+    this.windowGraphPublications.set(windowId, publication)
+    // Why: the runtime keeps ONE tab/leaf view for CLI and paired clients, so a
+    // publish from one window must not erase the tabs another window owns.
     this.tabs = new Map(graph.tabs.map((tab) => [tab.tabId, tab]))
-    const lifecycleLeaves = this.reconcileMobileSessionRetirementFences(graph.leaves)
+    for (const [tabId, tab] of previousTabs) {
+      if (
+        !this.tabs.has(tabId) &&
+        this.isOwnedByAnotherWindow(this.tabOwnerWindowById, tabId, windowId)
+      ) {
+        this.tabs.set(tabId, tab)
+      }
+    }
+    const foreignLeaves = [...previousLeaves.entries()]
+      .filter(
+        ([leafKey]) =>
+          !publication.leafKeys.has(leafKey) &&
+          this.isOwnedByAnotherWindow(this.leafOwnerWindowByKey, leafKey, windowId)
+      )
+      .map(([, leaf]) => leaf)
+    const lifecycleLeaves = [
+      ...this.reconcileMobileSessionRetirementFences(graph.leaves),
+      ...foreignLeaves
+    ]
     const mobileSessionResyncWorktrees = new Set<string>()
     const changedMobileWorktrees = this.syncMobileSessionTabs(
       graph.mobileSessionTabs,
@@ -7012,6 +7091,7 @@ export class OrcaRuntimeService {
 
     this.leaves = nextLeaves
     this.rebuildLeafPtyIndex()
+    this.rebuildOwnerWindowIndexes()
     this.reconcilePtyIncarnationHandles()
     // Why: the emitted client payload is a function of the stored snapshot AND
     // the tab/leaf graph (handles/titles/connected resolve from leaf state), so
@@ -15427,6 +15507,7 @@ export class OrcaRuntimeService {
     this.providerVisibleRetryAtByPtyId.delete(ptyId)
     this.agentPromptExplicitStatusFloorByPtyId.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
+    this.clearOwnerWindowForPty(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
     this.oscTitleScanTailByPtyId.delete(ptyId)
@@ -30589,6 +30670,8 @@ export class OrcaRuntimeService {
       resolvedWorktreeId?: string
       resolvedConnectionId?: string
       resolvedRuntimeEnvironmentId?: string
+      /** Set for desktop IPC so one window can only stop the PTYs it owns. */
+      senderWindowId?: number
     } = {}
   ): Promise<{ stopped: number }> {
     // Why: this mutates live PTYs, so reject while the graph is reloading rather than act on cached leaf ownership.
@@ -30615,18 +30698,27 @@ export class OrcaRuntimeService {
         options.resolvedConnectionId === undefined || connectionId === options.resolvedConnectionId
       )
     }
+    const ownsWindow = (ptyId: string): boolean =>
+      options.senderWindowId === undefined ||
+      this.resolveOwnerWindowIdForPtyId(ptyId) === options.senderWindowId
     const ptyIds = new Set<string>()
     for (const leaf of this.leaves.values()) {
       if (
         ownsWorktree(leaf.worktreeId) &&
         leaf.ptyId &&
+        ownsWindow(leaf.ptyId) &&
         ownsHost(leaf.ptyId, this.ptysById.get(leaf.ptyId)?.connectionId)
       ) {
         ptyIds.add(leaf.ptyId)
       }
     }
     for (const pty of this.ptysById.values()) {
-      if (ownsWorktree(pty.worktreeId) && pty.connected && ownsHost(pty.ptyId, pty.connectionId)) {
+      if (
+        ownsWorktree(pty.worktreeId) &&
+        pty.connected &&
+        ownsWindow(pty.ptyId) &&
+        ownsHost(pty.ptyId, pty.connectionId)
+      ) {
         ptyIds.add(pty.ptyId)
       }
     }
@@ -31027,7 +31119,7 @@ export class OrcaRuntimeService {
   async stopExactTerminalsForWorktree(
     worktreeSelector: string,
     expectedPtyIds: readonly string[],
-    opts: { keepHistory?: boolean; targetOnly?: boolean } = {}
+    opts: { keepHistory?: boolean; senderWindowId?: number; targetOnly?: boolean } = {}
   ): Promise<{
     stopped: number
     stoppedPtyIds: string[]
@@ -31051,11 +31143,14 @@ export class OrcaRuntimeService {
       throw new Error('terminal_liveness_unavailable')
     }
     const livePtyIds = this.getLivePtyIdsForWorktree(worktree.id, refreshedPtyLiveness)
+    // Why: the exact-stop set must be judged against the PTYs the calling window
+    // owns, or another window's live pane makes every stop look like a mismatch.
+    const ownedLivePtyIds = this.filterPtyIdsForOwnerWindow(livePtyIds, opts.senderWindowId)
     const targetOnly = opts.targetOnly === true
-    const expectedIsLive = [...expected].every((ptyId) => livePtyIds.has(ptyId))
-    if (targetOnly ? !expectedIsLive : !setsEqual(livePtyIds, expected)) {
+    const expectedIsLive = [...expected].every((ptyId) => ownedLivePtyIds.has(ptyId))
+    if (targetOnly ? !expectedIsLive : !setsEqual(ownedLivePtyIds, expected)) {
       const error = Object.assign(new Error('terminal_stop_pty_set_mismatch'), {
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         expectedPtyIds: [...expected].sort()
       })
       throw error
@@ -31087,18 +31182,21 @@ export class OrcaRuntimeService {
       return {
         stopped: stoppedPtyIds.length,
         stoppedPtyIds,
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         postStopVerified: false,
         postStopFailure: 'terminal_liveness_unavailable'
       }
     }
-    const remainingLivePtyIds = this.getLivePtyIdsForWorktree(worktree.id, postStopLiveness)
+    const remainingLivePtyIds = this.filterPtyIdsForOwnerWindow(
+      this.getLivePtyIdsForWorktree(worktree.id, postStopLiveness),
+      opts.senderWindowId
+    )
     const stoppedTargetsStillLive = [...expected].filter((ptyId) => remainingLivePtyIds.has(ptyId))
     if (targetOnly ? stoppedTargetsStillLive.length > 0 : remainingLivePtyIds.size > 0) {
       return {
         stopped: stoppedPtyIds.length,
         stoppedPtyIds,
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         postStopVerified: false,
         postStopFailure: 'terminal_exact_stop_still_live',
         remainingLivePtyIds: [...remainingLivePtyIds].sort()
@@ -31107,12 +31205,24 @@ export class OrcaRuntimeService {
     return {
       stopped: stoppedPtyIds.length,
       stoppedPtyIds,
-      livePtyIds: [...livePtyIds].sort(),
+      livePtyIds: [...ownedLivePtyIds].sort(),
       postStopVerified: true,
       ...(targetOnly && remainingLivePtyIds.size > 0
         ? { remainingLivePtyIds: [...remainingLivePtyIds].sort() }
         : {})
     }
+  }
+
+  private filterPtyIdsForOwnerWindow(
+    ptyIds: ReadonlySet<string>,
+    senderWindowId: number | undefined
+  ): Set<string> {
+    if (senderWindowId === undefined) {
+      return new Set(ptyIds)
+    }
+    return new Set(
+      [...ptyIds].filter((ptyId) => this.resolveOwnerWindowIdForPtyId(ptyId) === senderWindowId)
+    )
   }
 
   private getLivePtyIdsForWorktree(
@@ -31326,15 +31436,30 @@ export class OrcaRuntimeService {
       windowId === this.pendingHeadlessPromotionWindowId
     ) {
       this.pendingHeadlessPromotionWindowId = null
+      this.dropWindowGraphContribution(windowId)
       return
     }
     if (windowId !== this.authoritativeWindowId) {
+      // Why: a secondary window closing only retires what it published; the
+      // authoritative window keeps the graph alive for everyone else.
+      this.dropWindowGraphContribution(windowId)
       return
     }
+    this.dropWindowGraphContribution(windowId)
     this.graphReloadLifecycle.settleActive('cancelled')
     if (this.shouldRestoreHeadlessGraph(windowId)) {
       this.pendingHeadlessPromotionWindowId = null
       this.restoreHeadlessGraphAuthority()
+      return
+    }
+    // Why: hand authority to another live desktop window instead of failing closed, so
+    // closing one monitor's window does not stall CLI work in the others.
+    const successorWindowId = this.nextGraphPublisherWindowId(windowId)
+    if (successorWindowId !== null) {
+      this.authoritativeWindowId = successorWindowId
+      this.rendererGeneration = null
+      this.rendererGraphEpoch += 1
+      this.rejectAllWaiters('terminal_handle_stale')
       return
     }
     // Why: once the authoritative renderer graph disappears, fail closed for live-terminal ops instead of guessing from old state.
@@ -33164,6 +33289,7 @@ export class OrcaRuntimeService {
     this.providerVisibleStateByPtyId.delete(ptyId)
     this.providerVisibleRetryAtByPtyId.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
+    this.clearOwnerWindowForPty(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
     this.invalidatePtyIncarnationHandle(ptyId)
@@ -33188,6 +33314,187 @@ export class OrcaRuntimeService {
 
   private leafExistsForPty(ptyId: string): boolean {
     return (this.leavesByPtyId.get(ptyId)?.length ?? 0) > 0
+  }
+
+  /** Which window's renderer published the tab, so UI relays reach that window. */
+  resolveOwnerWindowIdForTabId(tabId: string): number | null {
+    return this.tabOwnerWindowById.get(tabId) ?? null
+  }
+
+  resolveOwnerWindowIdForWorktreeTab(worktreeId: string, tabId: string): number | null {
+    return (
+      this.tabOwnerWindowByWorktreeAndTabId.get(this.getWorktreeTabOwnerKey(worktreeId, tabId)) ??
+      null
+    )
+  }
+
+  resolveOwnerWindowIdForLeaf(tabId: string, leafId: string): number | null {
+    return this.leafOwnerWindowByKey.get(this.getLeafKey(tabId, leafId)) ?? null
+  }
+
+  resolveOwnerWindowIdForLeafId(leafId: string): number | null {
+    for (const [leafKey, ownerWindowId] of this.leafOwnerWindowByKey) {
+      if (leafKey.endsWith(`::${leafId}`)) {
+        return ownerWindowId
+      }
+    }
+    return null
+  }
+
+  resolveOwnerWindowIdForPtyId(ptyId: string): number | null {
+    return this.ptyOwnerWindowById.get(ptyId) ?? null
+  }
+
+  resolvePtyIdsForOwnerWindow(windowId: number): string[] {
+    const ptyIds: string[] = []
+    for (const [ptyId, ownerWindowId] of this.ptyOwnerWindowById) {
+      if (ownerWindowId === windowId) {
+        ptyIds.push(ptyId)
+      }
+    }
+    return ptyIds
+  }
+
+  resolveOwnerWindowIdForBrowserPageId(browserPageId: string): number | null {
+    return this.browserPageOwnerWindowById.get(browserPageId) ?? null
+  }
+
+  /** True when this window may mutate the terminal behind `handle`. */
+  senderWindowOwnsTerminalHandle(handle: string, senderWindowId: number): boolean {
+    const leaf = this.resolveLeafForHandle(handle)
+    if (!leaf?.ptyId) {
+      return false
+    }
+    return this.resolveOwnerWindowIdForPtyId(leaf.ptyId) === senderWindowId
+  }
+
+  /** Stamps a window on a runtime-created PTY before any graph publish adopts it. */
+  registerPtyOwnerWindow(ptyId: string, windowId: number): void {
+    this.transientPtyOwnerWindowById.set(ptyId, windowId)
+    this.ptyOwnerWindowById.set(ptyId, windowId)
+  }
+
+  private isOwnedByAnotherWindow(
+    ownerIndex: Map<string, number>,
+    key: string,
+    windowId: number
+  ): boolean {
+    const ownerWindowId = ownerIndex.get(key)
+    return ownerWindowId !== undefined && ownerWindowId !== windowId
+  }
+
+  // Why: duplicate ids across windows keep their first live owner so relay
+  // routing stays deterministic across republishes.
+  private rebuildOwnerWindowIndexes(): void {
+    this.tabOwnerWindowById.clear()
+    this.tabOwnerWindowByWorktreeAndTabId.clear()
+    this.leafOwnerWindowByKey.clear()
+    this.ptyOwnerWindowById.clear()
+    this.browserPageOwnerWindowById.clear()
+    for (const [windowId, publication] of this.windowGraphPublications) {
+      for (const tabId of publication.tabIds) {
+        if (!this.tabOwnerWindowById.has(tabId)) {
+          this.tabOwnerWindowById.set(tabId, windowId)
+        }
+        const worktreeId = this.tabs.get(tabId)?.worktreeId
+        if (worktreeId !== undefined) {
+          const worktreeTabKey = this.getWorktreeTabOwnerKey(worktreeId, tabId)
+          if (!this.tabOwnerWindowByWorktreeAndTabId.has(worktreeTabKey)) {
+            this.tabOwnerWindowByWorktreeAndTabId.set(worktreeTabKey, windowId)
+          }
+        }
+      }
+      for (const leafKey of publication.leafKeys) {
+        if (!this.leafOwnerWindowByKey.has(leafKey)) {
+          this.leafOwnerWindowByKey.set(leafKey, windowId)
+        }
+        const ptyId = this.leaves.get(leafKey)?.ptyId
+        if (ptyId && !this.ptyOwnerWindowById.has(ptyId)) {
+          this.ptyOwnerWindowById.set(ptyId, windowId)
+          this.transientPtyOwnerWindowById.delete(ptyId)
+        }
+      }
+      for (const browserPageId of publication.browserPageIds) {
+        if (!this.browserPageOwnerWindowById.has(browserPageId)) {
+          this.browserPageOwnerWindowById.set(browserPageId, windowId)
+        }
+      }
+    }
+    for (const [ptyId, windowId] of this.transientPtyOwnerWindowById) {
+      if (!this.ptyOwnerWindowById.has(ptyId)) {
+        this.ptyOwnerWindowById.set(ptyId, windowId)
+      }
+    }
+  }
+
+  private clearOwnerWindowForPty(ptyId: string): void {
+    this.transientPtyOwnerWindowById.delete(ptyId)
+    this.ptyOwnerWindowById.delete(ptyId)
+  }
+
+  private clearTransientPtyOwnersForWindow(windowId: number): void {
+    for (const [ptyId, ownerWindowId] of this.transientPtyOwnerWindowById) {
+      if (ownerWindowId === windowId) {
+        this.transientPtyOwnerWindowById.delete(ptyId)
+      }
+    }
+  }
+
+  private nextGraphPublisherWindowId(excludedWindowId: number): number | null {
+    for (const windowId of this.windowGraphPublications.keys()) {
+      // Why: the headless sentinel is restored through its own fallback path, never
+      // promoted here as if it were another desktop window.
+      if (windowId !== excludedWindowId && windowId !== HEADLESS_RUNTIME_WINDOW_ID) {
+        return windowId
+      }
+    }
+    return null
+  }
+
+  // Why: closing one window must retire only the tabs and leaves it published;
+  // anything another live window still publishes stays in the aggregate graph.
+  private dropWindowGraphContribution(windowId: number): void {
+    const publication = this.windowGraphPublications.get(windowId)
+    this.windowGraphPublications.delete(windowId)
+    this.clearTransientPtyOwnersForWindow(windowId)
+    if (!publication) {
+      this.rebuildOwnerWindowIndexes()
+      return
+    }
+    const survivingTabIds = new Set<string>()
+    const survivingLeafKeys = new Set<string>()
+    for (const other of this.windowGraphPublications.values()) {
+      for (const tabId of other.tabIds) {
+        survivingTabIds.add(tabId)
+      }
+      for (const leafKey of other.leafKeys) {
+        survivingLeafKeys.add(leafKey)
+      }
+    }
+    const retiredLeaves: RuntimeLeafRecord[] = []
+    for (const leafKey of publication.leafKeys) {
+      if (survivingLeafKeys.has(leafKey)) {
+        continue
+      }
+      const leaf = this.leaves.get(leafKey)
+      if (leaf) {
+        retiredLeaves.push(leaf)
+      }
+    }
+    this.rememberDetachedPreAllocatedLeavesForLeaves(retiredLeaves)
+    for (const leaf of retiredLeaves) {
+      const leafKey = this.getLeafKey(leaf.tabId, leaf.leafId)
+      this.leaves.delete(leafKey)
+      this.invalidateLeafHandle(leafKey)
+    }
+    for (const tabId of publication.tabIds) {
+      if (!survivingTabIds.has(tabId)) {
+        this.tabs.delete(tabId)
+      }
+    }
+    this.rebuildLeafPtyIndex()
+    this.rebuildOwnerWindowIndexes()
+    this.refreshWritableFlags()
   }
 
   private rebuildLeafPtyIndex(): void {
@@ -35563,7 +35870,11 @@ export class OrcaRuntimeService {
   }
 
   private rememberDetachedPreAllocatedLeaves(): void {
-    for (const leaf of this.leaves.values()) {
+    this.rememberDetachedPreAllocatedLeavesForLeaves(this.leaves.values())
+  }
+
+  private rememberDetachedPreAllocatedLeavesForLeaves(leaves: Iterable<RuntimeLeafRecord>): void {
+    for (const leaf of leaves) {
       if (leaf.ptyId && this.handleByPtyId.has(leaf.ptyId)) {
         // Why: ORCA_TERMINAL_HANDLE is an agent identity, so CLI control survives renderer graph loss while the PTY is alive.
         this.detachedPreAllocatedLeaves.set(leaf.ptyId, leaf)
@@ -35998,6 +36309,10 @@ export class OrcaRuntimeService {
     if (waiters.size === 0) {
       this.waitersByHandle.delete(waiter.handle)
     }
+  }
+
+  private getWorktreeTabOwnerKey(worktreeId: string, tabId: string): string {
+    return `${worktreeId}\u0000${tabId}`
   }
 
   private getLeafKey(tabId: string, leafId: string): string {
@@ -38413,6 +38728,13 @@ export class OrcaRuntimeService {
     resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
     getAuthoritativeWindow: () => this.getAuthoritativeWindow(),
     getAvailableAuthoritativeWindow: () => this.getAvailableAuthoritativeWindow(),
+    getPreferredRendererWindow: () => getRuntimeDesktopSurface().findFocusedOrLastActiveWindow(),
+    getBrowserPageOwnerWindow: (browserPageId) => {
+      const ownerWindowId = this.resolveOwnerWindowIdForBrowserPageId(browserPageId)
+      const graphOwner =
+        ownerWindowId === null ? null : getRuntimeDesktopSurface().findWindowById(ownerWindowId)
+      return graphOwner ?? getRuntimeDesktopSurface().findWindowForBrowserPage(browserPageId)
+    },
     getOffscreenBrowserBackend: () => this.offscreenBrowserBackend,
     // Why: bind directly, not a wrapper arrow — a hand-listed wrapper dropped targetGroupId, so a right-split browser landed in the left.
     markHeadlessBrowserSessionTabActive: this.markHeadlessBrowserSessionTabActive.bind(this),
@@ -38874,7 +39196,9 @@ export class OrcaRuntimeService {
     this.emulatorCommands.emulatorUnregisterActive.bind(this.emulatorCommands)
 
   private getAuthoritativeWindow(): BrowserWindow {
-    const win = this.getAvailableAuthoritativeWindow()
+    const win =
+      this.getAvailableAuthoritativeWindow() ??
+      getRuntimeDesktopSurface().findFocusedOrLastActiveWindow()
     if (!win || win.isDestroyed()) {
       throw new Error('No renderer window available')
     }
@@ -38886,7 +39210,14 @@ export class OrcaRuntimeService {
       return null
     }
     const win = getRuntimeDesktopSurface().findWindowById(this.authoritativeWindowId)
-    return win && !win.isDestroyed() ? win : null
+    if (!win || win.isDestroyed()) {
+      return null
+    }
+    // Why: an authoritative window can lose its webContents before `closed`
+    // fires; a destroyed one cannot receive the relays callers are about to send.
+    const webContentsDestroyed =
+      typeof win.webContents?.isDestroyed === 'function' && win.webContents.isDestroyed()
+    return webContentsDestroyed ? null : win
   }
 }
 
