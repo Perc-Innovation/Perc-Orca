@@ -1,4 +1,4 @@
-import { ipcMain, Menu, Notification, type BrowserWindow } from 'electron'
+import { ipcMain, Notification, type BrowserWindow } from 'electron'
 import { translateMain } from '../i18n/main-i18n'
 import type { Store } from '../persistence'
 import { resolveWindowCloseAction } from './window-close-decision'
@@ -6,8 +6,26 @@ import type { CreateMainWindowOptions } from './main-window-contracts'
 import type { MainWindowFocusLifecycle } from './main-window-focus-lifecycle'
 import type { MainWindowStateLifecycle } from './main-window-state-lifecycle'
 import { syncTrafficLightPosition } from './main-window-visual-lifecycle'
+import {
+  clearHideToTrayRequest,
+  registerWindowControlIpcHandlers,
+  setHideToTrayRequest
+} from './window-control-ipc-handlers'
 
 export const WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS = 10_000
+
+const confirmedCloseByWindow = new WeakMap<BrowserWindow, () => void>()
+const quitCloseRequestByWindow = new WeakMap<BrowserWindow, () => boolean>()
+
+/** Closes a window whose renderer already confirmed during a multi-window quit. */
+export function closeWindowAfterConfirmation(window: BrowserWindow): void {
+  confirmedCloseByWindow.get(window)?.()
+}
+
+/** Asks one window's renderer for its quit decision; false when it cannot answer. */
+export function requestWindowCloseForQuit(window: BrowserWindow): boolean {
+  return quitCloseRequestByWindow.get(window)?.() ?? false
+}
 
 export function installMainWindowCloseLifecycle(args: {
   focus: MainWindowFocusLifecycle
@@ -18,9 +36,12 @@ export function installMainWindowCloseLifecycle(args: {
   store: Store | null
 }): { dispose: () => void } {
   const { focus, mainWindow, opts, rendererWebContentsId, state, store } = args
+  registerWindowControlIpcHandlers()
   // Intercept close so the renderer can confirm killing running-process terminals (replies window:confirm-close to proceed).
   let windowCloseConfirmed = false
+  let pendingQuitCloseRequest = false
   const confirmCloseChannel = 'window:confirm-close'
+  const cancelCloseChannel = 'window:cancel-close'
   const closeRequestReceivedChannel = 'window:close-request-received'
   let closeRequestSequence = 0
   let quitRendererAckRequestId: number | null = null
@@ -87,6 +108,29 @@ export function installMainWindowCloseLifecycle(args: {
     }
     return true
   }
+  setHideToTrayRequest(mainWindow, hideToTrayIfEnabled)
+
+  confirmedCloseByWindow.set(mainWindow, () => {
+    windowCloseConfirmed = true
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.close()
+    }
+  })
+  quitCloseRequestByWindow.set(mainWindow, () => {
+    if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed?.() === true) {
+      return false
+    }
+    // Why: a gone/crashed renderer can never answer, so report it as declined and
+    // let the quit transaction count this window as already settled.
+    if (focus.isRendererProcessGone() || (mainWindow.webContents.isCrashed?.() ?? false)) {
+      return false
+    }
+    pendingQuitCloseRequest = true
+    const requestId = ++closeRequestSequence
+    armQuitRendererAckTimer(requestId)
+    mainWindow.webContents.send('window:close-requested', { isQuitting: true, requestId })
+    return true
+  })
 
   mainWindow.on('close', (e) => {
     // Why: Alt+F4/programmatic closes hit the native event; apply the same minimize-to-tray guard the renderer-drawn X uses.
@@ -113,6 +157,7 @@ export function installMainWindowCloseLifecycle(args: {
     }
     e.preventDefault()
     const isQuitting = opts?.getIsQuitting?.() ?? false
+    pendingQuitCloseRequest = isQuitting
     const requestId = ++closeRequestSequence
     if (isQuitting) {
       armQuitRendererAckTimer(requestId)
@@ -131,78 +176,74 @@ export function installMainWindowCloseLifecycle(args: {
     mainWindow.webContents.send('window:unload-prevented')
   })
 
-  const onConfirmClose = (): void => {
+  // Why: every live window listens on the same channels, so each install must
+  // ignore replies that belong to another window's renderer.
+  const isOwnRenderer = (event: Electron.IpcMainEvent): boolean =>
+    event.sender.id === rendererWebContentsId
+  const onConfirmClose = (event: Electron.IpcMainEvent): void => {
+    if (!isOwnRenderer(event)) {
+      return
+    }
     clearQuitRendererAckTimer()
+    if (opts?.getIsQuitting?.() === true && opts?.isQuitConfirmationCollecting?.() === true) {
+      // Why: during a multi-window quit no window may close until every renderer
+      // has accepted, or a later veto would leave the app partially torn down.
+      pendingQuitCloseRequest = false
+      state.freezeBoundsOnQuit()
+      opts?.onQuitWindowCloseConfirmed?.(mainWindow)
+      return
+    }
+    if (pendingQuitCloseRequest && opts?.getIsQuitting?.() === true) {
+      pendingQuitCloseRequest = false
+      windowCloseConfirmed = true
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.close()
+      }
+      return
+    }
+    if (pendingQuitCloseRequest) {
+      // Why: another window can cancel the quit while this renderer is still
+      // confirming; do not reinterpret that stale reply as a normal close.
+      pendingQuitCloseRequest = false
+      return
+    }
     windowCloseConfirmed = true
     if (!mainWindow.isDestroyed()) {
       mainWindow.close()
     }
   }
+  const onCancelClose = (event: Electron.IpcMainEvent): void => {
+    if (!isOwnRenderer(event)) {
+      return
+    }
+    if (opts?.getIsQuitting?.() === true && opts?.isQuitConfirmationCollecting?.() === true) {
+      pendingQuitCloseRequest = false
+      clearQuitRendererAckTimer()
+      opts?.onQuitAborted?.()
+    }
+  }
   const trafficLightChannel = 'ui:sync-traffic-lights'
-  const onSyncTrafficLights = (_event: Electron.IpcMainEvent, zoomFactor: number): void => {
+  const onSyncTrafficLights = (event: Electron.IpcMainEvent, zoomFactor: number): void => {
+    if (!isOwnRenderer(event)) {
+      return
+    }
     syncTrafficLightPosition(mainWindow, zoomFactor)
   }
   ipcMain.on(trafficLightChannel, onSyncTrafficLights)
 
-  // Why: renderer-drawn window controls on Windows/Linux replicate the native title-bar buttons hidden by custom chrome.
-  const minimizeChannel = 'window:minimize'
-  const onMinimize = (): void => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.minimize()
-    }
-  }
-  const maximizeChannel = 'window:maximize'
-  const onMaximize = (): void => {
-    if (mainWindow.isDestroyed()) {
-      return
-    }
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize()
-    } else {
-      mainWindow.maximize()
-    }
-  }
-  // Why: mainWindow.close() from an IPC handler on Windows can make 'close' misfire, so send window:close-requested directly.
-  const requestCloseChannel = 'window:request-close'
-  const onRequestClose = (): void => {
-    if (mainWindow.isDestroyed()) {
-      return
-    }
-    // Why: renderer-drawn X routes here (not the native close event), so the minimize-to-tray guard must also run here.
-    if (hideToTrayIfEnabled()) {
-      return
-    }
-    mainWindow.webContents.send('window:close-requested', { isQuitting: false })
-  }
-  // Why: renderer-drawn title-bar ··· menu button replicates the Alt-key reveal autoHideMenuBar provides (Windows/Linux).
-  const popupMenuChannel = 'menu:popup'
-  const onPopupMenu = (): void => {
-    Menu.getApplicationMenu()?.popup({ window: mainWindow })
-  }
-  // Why: WindowControls mounts after window:maximize-changed already fired, so expose a synchronous getter to init its icon.
-  const isMaximizedChannel = 'window:isMaximized'
-  const onIsMaximized = (): boolean => {
-    return !mainWindow.isDestroyed() && mainWindow.isMaximized()
-  }
-  ipcMain.on(minimizeChannel, onMinimize)
-  ipcMain.on(maximizeChannel, onMaximize)
-  ipcMain.on(requestCloseChannel, onRequestClose)
-  ipcMain.on(popupMenuChannel, onPopupMenu)
-  ipcMain.handle(isMaximizedChannel, onIsMaximized)
-
   ipcMain.on(confirmCloseChannel, onConfirmClose)
+  ipcMain.on(cancelCloseChannel, onCancelClose)
   ipcMain.on(closeRequestReceivedChannel, onCloseRequestReceived)
 
   const dispose = (): void => {
     clearQuitRendererAckTimer()
     ipcMain.removeListener(trafficLightChannel, onSyncTrafficLights)
-    ipcMain.removeListener(minimizeChannel, onMinimize)
-    ipcMain.removeListener(maximizeChannel, onMaximize)
-    ipcMain.removeListener(requestCloseChannel, onRequestClose)
-    ipcMain.removeListener(popupMenuChannel, onPopupMenu)
-    ipcMain.removeHandler(isMaximizedChannel)
     ipcMain.removeListener(confirmCloseChannel, onConfirmClose)
+    ipcMain.removeListener(cancelCloseChannel, onCancelClose)
     ipcMain.removeListener(closeRequestReceivedChannel, onCloseRequestReceived)
+    confirmedCloseByWindow.delete(mainWindow)
+    quitCloseRequestByWindow.delete(mainWindow)
+    clearHideToTrayRequest(mainWindow)
   }
   return { dispose }
 }

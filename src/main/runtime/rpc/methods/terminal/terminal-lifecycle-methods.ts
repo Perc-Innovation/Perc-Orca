@@ -17,6 +17,7 @@ import {
   TerminalWait
 } from './unary-schemas'
 import { TerminalResizeForClient } from './stream-schemas'
+import { assertSenderOwnsTerminal } from './terminal-window-ownership'
 
 export const TERMINAL_LIFECYCLE_METHODS: RpcAnyMethod[] = [
   defineMethod({
@@ -69,19 +70,23 @@ export const TERMINAL_LIFECYCLE_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.split',
     params: TerminalSplit,
-    handler: async (params, { runtime }) => ({
-      split: await runtime.splitTerminal(params.terminal, {
-        direction: params.direction,
-        command: params.command,
-        env: params.env,
-        telemetrySource: params.telemetrySource
-      })
-    })
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return {
+        split: await runtime.splitTerminal(params.terminal, {
+          direction: params.direction,
+          command: params.command,
+          env: params.env,
+          telemetrySource: params.telemetrySource
+        })
+      }
+    }
   }),
   defineMethod({
     name: 'terminal.stop',
     params: TerminalStop,
-    handler: async (params, { runtime }) => runtime.stopTerminalsForWorktree(params.worktree)
+    handler: async (params, { runtime, senderWindowId }) =>
+      runtime.stopTerminalsForWorktree(params.worktree, { senderWindowId })
   }),
   defineMethod({
     name: 'terminal.sleep',
@@ -91,16 +96,18 @@ export const TERMINAL_LIFECYCLE_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.stopExact',
     params: TerminalStopExact,
-    handler: async (params, { runtime }) =>
+    handler: async (params, { runtime, senderWindowId }) =>
       runtime.stopExactTerminalsForWorktree(params.worktree, params.expectedPtyIds, {
         keepHistory: params.keepHistory,
+        senderWindowId,
         targetOnly: params.targetOnly
       })
   }),
   defineMethod({
     name: 'terminal.resizeForClient',
     params: TerminalResizeForClient,
-    handler: async (params, { runtime }) => {
+    handler: async (params, { runtime, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
       // Why: a stale handle must fail with terminal_handle_stale, not resize the wrong PTY (#7718).
       const leaf = runtime.resolveLiveLeafForHandle(params.terminal)
       if (!leaf?.ptyId) {
@@ -124,26 +131,32 @@ export const TERMINAL_LIFECYCLE_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.focus',
     params: TerminalFocus,
-    handler: async (params, { runtime, clientKind }) => ({
-      focus: await runtime.focusTerminal(params.terminal, {
-        navigateHost: navigationTargetsHost(
-          resolveRuntimeNavigationTarget({ navigation: params.navigation, clientKind })
-        )
-      })
-    })
+    handler: async (params, { runtime, clientKind, senderWindowId }) => {
+      assertSenderOwnsTerminal(runtime, params.terminal, senderWindowId)
+      return {
+        focus: await runtime.focusTerminal(params.terminal, {
+          navigateHost: navigationTargetsHost(
+            resolveRuntimeNavigationTarget({ navigation: params.navigation, clientKind })
+          )
+        })
+      }
+    }
   }),
   defineMethod({
     name: 'terminal.close',
     params: TerminalHandle,
-    handler: async (params, context) => ({
-      close: await withTerminalCloseAttribution(
-        'terminal.close',
-        context,
-        'terminal',
-        params.terminal,
-        () => context.runtime.closeTerminal(params.terminal)
-      )
-    })
+    handler: async (params, context) => {
+      assertSenderOwnsTerminal(context.runtime, params.terminal, context.senderWindowId)
+      return {
+        close: await withTerminalCloseAttribution(
+          'terminal.close',
+          context,
+          'terminal',
+          params.terminal,
+          () => context.runtime.closeTerminal(params.terminal)
+        )
+      }
+    }
   }),
   defineMethod({
     name: 'terminal.closeTab',

@@ -147,6 +147,7 @@ export function createSettings(overrides: Partial<GlobalSettings> = {}): GlobalS
     experimentalActivity: true,
     experimentalTerminalAttention: false,
     compactWorktreeCards: false,
+    experimentalMultiWindow: false,
     terminalWindowsShell: 'powershell.exe',
     terminalWindowsPowerShellImplementation: 'powershell.exe',
     ...overrides,

@@ -697,6 +697,9 @@ function resetRuntimeTestMocks(): void {
   setRuntimeDesktopSurface({
     showNotification: () => true,
     findWindowById: (id) => electronMocks.BrowserWindow.fromId(id) as never,
+    findFocusedOrLastActiveWindow: () => null,
+    countLiveWindows: () => 0,
+    findWindowForBrowserPage: () => null,
     onIpc: (channel, listener) => electronMocks.ipcMain.on(channel, listener as never),
     removeIpcListener: (channel, listener) =>
       electronMocks.ipcMain.removeListener(channel, listener as never)
@@ -2709,6 +2712,249 @@ describe('OrcaRuntimeService', () => {
     runtime.attachWindow(2)
 
     expect(runtime.getStatus().authoritativeWindowId).toBe(TEST_WINDOW_ID)
+  })
+
+  it('accepts graph publications from every attached window', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(TEST_WINDOW_ID)
+    runtime.syncWindowGraph(TEST_WINDOW_ID, { tabs: [], leaves: [] })
+    runtime.attachWindow(2)
+
+    expect(() => runtime.syncWindowGraph(2, { tabs: [], leaves: [] })).not.toThrow()
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: TEST_WINDOW_ID,
+      graphStatus: 'ready'
+    })
+  })
+
+  it('indexes independent graph ownership from secondary window syncs', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-a'
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-b'
+        }
+      ]
+    })
+
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: 1,
+      graphStatus: 'ready',
+      liveTabCount: 2,
+      liveLeafCount: 2
+    })
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-a')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-b')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForWorktreeTab('repo-1::/tmp/worktree-b', 'tab-b')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForLeaf('tab-b', 'pane:1')).toBe(2)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-b')).toBe(2)
+  })
+
+  it('keeps the first live owner when two windows publish duplicate graph ids', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-duplicate'
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A Copy',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-duplicate',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 2,
+          ptyId: 'pty-duplicate'
+        }
+      ]
+    })
+
+    expect(runtime.getStatus()).toMatchObject({ liveTabCount: 1, liveLeafCount: 1 })
+    expect(runtime.resolveOwnerWindowIdForTabId('tab-duplicate')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForLeaf('tab-duplicate', 'pane:1')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-duplicate')).toBe(1)
+  })
+
+  it('preserves spawn-time PTY ownership until the renderer graph adopts it', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    runtime.registerPtyOwnerWindow('pty-spawned', 1)
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-other',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: []
+    })
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-owned',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-owned',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-spawned'
+        }
+      ]
+    })
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+  })
+
+  it('clears transient PTY ownership when the owning window graph disappears', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    runtime.registerPtyOwnerWindow('pty-spawned', 1)
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBe(1)
+
+    runtime.markGraphUnavailable(1)
+
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-spawned')).toBeNull()
+  })
+
+  it('keeps another window graph ready when a secondary window closes', () => {
+    const runtime = createRuntime()
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          title: 'A',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-a',
+          worktreeId: 'repo-1::/tmp/worktree-a',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-a'
+        }
+      ]
+    })
+    runtime.attachWindow(2)
+    runtime.syncWindowGraph(2, {
+      tabs: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          title: 'B',
+          activeLeafId: 'pane:1',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-b',
+          worktreeId: 'repo-1::/tmp/worktree-b',
+          leafId: 'pane:1',
+          paneRuntimeId: 1,
+          ptyId: 'pty-b'
+        }
+      ]
+    })
+
+    runtime.markGraphUnavailable(2)
+
+    expect(runtime.getStatus()).toMatchObject({
+      authoritativeWindowId: 1,
+      graphStatus: 'ready',
+      liveTabCount: 1,
+      liveLeafCount: 1
+    })
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-a')).toBe(1)
+    expect(runtime.resolveOwnerWindowIdForPtyId('pty-b')).toBeNull()
   })
 
   it('transfers authority from the headless sentinel to the first real window', () => {

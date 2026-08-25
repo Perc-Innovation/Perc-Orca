@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Store } from '../persistence'
+import { _resetRuntimeWindowNotifiersForTests } from './runtime-window-notifier-registry'
+import { resetStubMainWindows, stubMainWindows } from './main-window-registry-test-stub'
+import {
+  createRuntime,
+  createStore,
+  getClosedHandlers,
+  type MockFn
+} from './attach-main-window-services-test-fixtures'
 
 const {
   onMock,
@@ -17,7 +24,7 @@ const {
   registerPtyHandlersMock,
   hydrateLocalPtyRegistryAtBootMock,
   setupAutoUpdaterMock,
-  browserManagerUnregisterAllMock,
+  browserManagerUnregisterGuestsForRendererMock,
   runWorktreeChangeInvalidatorsMock,
   acknowledgePendingTccPromptNoticeMock,
   consumePendingTccPromptNoticeMock,
@@ -39,13 +46,19 @@ const {
   registerPtyHandlersMock: vi.fn(),
   hydrateLocalPtyRegistryAtBootMock: vi.fn(),
   setupAutoUpdaterMock: vi.fn(),
-  browserManagerUnregisterAllMock: vi.fn(),
+  browserManagerUnregisterGuestsForRendererMock: vi.fn(),
   runWorktreeChangeInvalidatorsMock: vi.fn(),
   acknowledgePendingTccPromptNoticeMock: vi.fn(),
   consumePendingTccPromptNoticeMock: vi.fn(),
   dismissTccPromptNoticeMock: vi.fn(),
   releasePendingTccPromptNoticeMock: vi.fn()
 }))
+
+// Why: renderer relays resolve their target through the main-window registry now, so the
+// suite drives a stub registry seeded by createMainWindow() instead of real BrowserWindows.
+vi.mock('./main-window-registry', async () =>
+  (await import('./main-window-registry-test-stub')).mainWindowRegistryStub()
+)
 
 vi.mock('electron', () => ({
   app: {},
@@ -94,7 +107,7 @@ vi.mock('../memory/hydrate-local-pty-registry', () => ({
 
 vi.mock('../browser/browser-manager', () => ({
   browserManager: {
-    unregisterAll: browserManagerUnregisterAllMock
+    unregisterGuestsForRenderer: browserManagerUnregisterGuestsForRendererMock
   }
 }))
 
@@ -115,11 +128,9 @@ vi.mock('../macos-tcc-prompt-notice', () => ({
 
 import { attachMainWindowServices } from './attach-main-window-services'
 
-type MockFn = ReturnType<typeof vi.fn>
-
 type MainWindowStub = {
-  id?: number
-  isDestroyed?: MockFn
+  id: number
+  isDestroyed: MockFn
   on: MockFn
   once: MockFn
   webContents: {
@@ -137,23 +148,17 @@ type MainWindowStub = {
   }
 }
 
-type RuntimeStub = {
-  attachWindow: MockFn
-  setNotifier: MockFn
-  markRendererReloading: MockFn
-  markRendererReloadCancelled: MockFn
-  markGraphReloadFailed: MockFn
-  markGraphUnavailable: MockFn
-}
+let nextTestWindowId = 1
 
 function createMainWindow(
   extraWebContents: { isLoadingMainFrame?: MockFn; on?: MockFn; send?: MockFn } = {}
 ): MainWindowStub {
-  return {
-    id: 1,
+  const window = {
+    id: nextTestWindowId++,
     isDestroyed: vi.fn(() => false),
     on: vi.fn(),
     once: vi.fn(),
+    removeListener: vi.fn(),
     webContents: {
       id: 1,
       getURL: vi.fn(() => 'file:///opt/orca/renderer/index.html'),
@@ -168,24 +173,8 @@ function createMainWindow(
       ...extraWebContents
     }
   }
-}
-
-function createStore(): Store & { flushPendingAsync: MockFn } {
-  return {
-    getProfileStorageDirectory: vi.fn(() => '/profile-a'),
-    flushPendingAsync: vi.fn(() => Promise.resolve())
-  } as unknown as Store & { flushPendingAsync: MockFn }
-}
-
-function createRuntime(): RuntimeStub {
-  return {
-    attachWindow: vi.fn(),
-    setNotifier: vi.fn(),
-    markRendererReloading: vi.fn(),
-    markRendererReloadCancelled: vi.fn(),
-    markGraphReloadFailed: vi.fn(),
-    markGraphUnavailable: vi.fn()
-  }
+  stubMainWindows.push(window as unknown as (typeof stubMainWindows)[number])
+  return window
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -194,12 +183,6 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
     resolve = next
   })
   return { promise, resolve }
-}
-
-function getClosedHandlers(mainWindowOnMock: MockFn): (() => void)[] {
-  return mainWindowOnMock.mock.calls
-    .filter(([event]) => event === 'closed')
-    .map(([, handler]) => handler as () => void)
 }
 
 // Updater setup is deferred to first paint; fire the captured ready-to-show
@@ -231,13 +214,15 @@ describe('attachMainWindowServices', () => {
     registerPtyHandlersMock.mockReset()
     hydrateLocalPtyRegistryAtBootMock.mockReset()
     setupAutoUpdaterMock.mockReset()
-    browserManagerUnregisterAllMock.mockReset()
+    browserManagerUnregisterGuestsForRendererMock.mockReset()
     acknowledgePendingTccPromptNoticeMock.mockReset()
     consumePendingTccPromptNoticeMock.mockReset()
     dismissTccPromptNoticeMock.mockReset()
     releasePendingTccPromptNoticeMock.mockReset()
     systemPreferencesAskForMediaAccessMock.mockResolvedValue(true)
     systemPreferencesGetMediaAccessStatusMock.mockReturnValue('granted')
+    resetStubMainWindows()
+    _resetRuntimeWindowNotifiersForTests()
   })
 
   // #11994: without this wiring, host-local repo IPC mutations never reach paired clients.
@@ -540,46 +525,34 @@ describe('attachMainWindowServices', () => {
     expect(mainWindow.webContents.reload).not.toHaveBeenCalled()
   })
 
-  it('removes the app reload IPC handler when the owning window closes', () => {
-    const mainWindowOnMock = vi.fn()
-    const mainWindow = createMainWindow()
-    mainWindow.on = mainWindowOnMock
-
-    attachMainWindowServices(mainWindow as never, createStore(), createRuntime() as never)
-
-    removeHandlerMock.mockClear()
-    const closedHandlers = getClosedHandlers(mainWindowOnMock)
-    expect(closedHandlers.length).toBeGreaterThan(0)
-    for (const handler of closedHandlers) {
-      handler()
-    }
-
-    expect(removeHandlerMock).toHaveBeenCalledWith('app:reload')
-  })
-
-  it('keeps a newer app reload handler when an older window closes late', () => {
+  // Why: app:reload is one shared handler routed by sender now, so closing a window
+  // must leave it registered for the windows that are still open.
+  it('keeps the shared app reload handler registered when one window closes', () => {
     const oldWindowOnMock = vi.fn()
     const oldWindow = createMainWindow()
     oldWindow.on = oldWindowOnMock
     attachMainWindowServices(oldWindow as never, createStore(), createRuntime() as never)
     const oldClosedHandlers = getClosedHandlers(oldWindowOnMock)
 
-    const newWindowOnMock = vi.fn()
     const newWindow = createMainWindow()
-    newWindow.on = newWindowOnMock
     attachMainWindowServices(newWindow as never, createStore(), createRuntime() as never)
 
     removeHandlerMock.mockClear()
+    oldWindow.isDestroyed.mockReturnValue(true)
     for (const handler of oldClosedHandlers) {
       handler()
     }
 
     expect(removeHandlerMock).not.toHaveBeenCalledWith('app:reload')
 
-    for (const handler of getClosedHandlers(newWindowOnMock)) {
-      handler()
-    }
-    expect(removeHandlerMock).toHaveBeenCalledWith('app:reload')
+    const reloadHandler = handleMock.mock.calls.findLast(
+      ([channel]) => channel === 'app:reload'
+    )?.[1]
+    reloadHandler?.({ sender: oldWindow.webContents })
+    expect(oldWindow.webContents.reload).not.toHaveBeenCalled()
+
+    reloadHandler?.({ sender: newWindow.webContents })
+    expect(newWindow.webContents.reload).toHaveBeenCalledTimes(1)
   })
 
   it('only allows the explicit permission allowlist', async () => {
@@ -620,7 +593,7 @@ describe('attachMainWindowServices', () => {
     }
   })
 
-  it('clears browser guest registrations when the main window closes', () => {
+  it("clears only the closing renderer's browser guest registrations", () => {
     const mainWindowOnMock = vi.fn()
     const mainWindow = createMainWindow()
     mainWindow.on = mainWindowOnMock
@@ -630,12 +603,18 @@ describe('attachMainWindowServices', () => {
     const closedHandler = getClosedHandlers(mainWindowOnMock).at(-1)
     expect(closedHandler).toBeTypeOf('function')
     closedHandler?.()
-    expect(browserManagerUnregisterAllMock).toHaveBeenCalledTimes(1)
+    expect(browserManagerUnregisterGuestsForRendererMock).toHaveBeenCalledTimes(1)
+    expect(browserManagerUnregisterGuestsForRendererMock).toHaveBeenCalledWith(
+      mainWindow.webContents.id
+    )
   })
 
-  it('removes the native file-drop relay when the main window closes', () => {
+  // Why: the file-drop relay is shared across windows and routed by sender, so a
+  // closed window stops receiving drops without the relay being torn down.
+  it('stops relaying native file drops from a closed window renderer', () => {
+    const sendMock = vi.fn()
     const mainWindowOnMock = vi.fn()
-    const mainWindow = createMainWindow({ send: vi.fn() })
+    const mainWindow = createMainWindow({ send: sendMock })
     mainWindow.on = mainWindowOnMock
 
     attachMainWindowServices(mainWindow as never, createStore(), createRuntime() as never)
@@ -645,12 +624,13 @@ describe('attachMainWindowServices', () => {
     expect(relayHandler).toBeTypeOf('function')
     expect(removeAllListenersMock).toHaveBeenCalledWith(channel)
 
-    const closedHandlers = getClosedHandlers(mainWindowOnMock)
-    for (const handler of closedHandlers) {
+    mainWindow.isDestroyed.mockReturnValue(true)
+    for (const handler of getClosedHandlers(mainWindowOnMock)) {
       handler()
     }
 
-    expect(removeListenerMock).toHaveBeenCalledWith(channel, relayHandler)
+    relayHandler?.({ sender: mainWindow.webContents }, { paths: ['/tmp/a'], target: 'editor' })
+    expect(sendMock).not.toHaveBeenCalled()
   })
 
   it('relays native file drops only from the owning renderer webContents', () => {
@@ -717,11 +697,12 @@ describe('attachMainWindowServices', () => {
     attachMainWindowServices(mainWindow as never, createStore(), runtime as never)
 
     runtime.setNotifier.mockClear()
+    mainWindow.isDestroyed.mockReturnValue(true)
     for (const handler of getClosedHandlers(mainWindowOnMock)) {
       handler()
     }
 
-    expect(runtime.markGraphUnavailable).toHaveBeenCalledWith(1)
+    expect(runtime.markGraphUnavailable).toHaveBeenCalledWith(mainWindow.id)
     expect(runtime.setNotifier).toHaveBeenCalledWith(null)
   })
 
@@ -739,12 +720,14 @@ describe('attachMainWindowServices', () => {
     attachMainWindowServices(newWindow as never, createStore(), runtime as never)
 
     runtime.setNotifier.mockClear()
+    oldWindow.isDestroyed.mockReturnValue(true)
     for (const handler of oldClosedHandlers) {
       handler()
     }
 
     expect(runtime.setNotifier).not.toHaveBeenCalledWith(null)
 
+    newWindow.isDestroyed.mockReturnValue(true)
     for (const handler of getClosedHandlers(newWindowOnMock)) {
       handler()
     }
@@ -819,7 +802,10 @@ describe('attachMainWindowServices', () => {
       handler()
     }
 
-    expect(runtime.markGraphReloadFailed).toHaveBeenCalledWith(1, 'renderer-process-gone')
+    expect(runtime.markGraphReloadFailed).toHaveBeenCalledWith(
+      mainWindow.id,
+      'renderer-process-gone'
+    )
   })
 
   it('accepts terminal reveal replies only from the main window renderer', async () => {

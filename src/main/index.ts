@@ -23,6 +23,7 @@ import {
 import { setAppEnvironment } from '../shared/app-environment'
 import { ElectronAppEnvironment } from './host/electron-app-environment'
 import { setPtyHostBindings } from './ipc/pty-host-bindings'
+import { setMainWindowElectronBindings } from './window/main-window-electron-bindings'
 import { electronRuntimeDesktopSurface } from './host/electron-runtime-desktop-surface'
 import { setRuntimeDesktopSurface } from './runtime/runtime-desktop-surface'
 import { electronRuntimeBrowserCommandsFactory } from './host/electron-browser-commands'
@@ -233,7 +234,27 @@ import {
   attachMainWindowServices,
   ensureAutoUpdaterConfigured
 } from './window/attach-main-window-services'
-import { createMainWindow, loadMainWindow } from './window/createMainWindow'
+import {
+  closeWindowAfterConfirmation,
+  createMainWindow,
+  loadMainWindow,
+  requestWindowCloseForQuit
+} from './window/createMainWindow'
+import {
+  broadcastToMainWindows,
+  getFocusedOrLastActiveMainWindow,
+  getMainWindows,
+  getRegisteredMainWindow,
+  hasLiveMainWindows,
+  hasVisibleMainWindow,
+  registerMainWindow,
+  sendToWindow
+} from './window/main-window-registry'
+import {
+  revealExistingMainWindow,
+  shouldReuseExistingMainWindow
+} from './window/main-window-open-policy'
+import { removeTrustedBrowserRendererWebContentsId } from './ipc/browser-renderer-trust'
 import {
   getDashboardPopoutWindow,
   zoomDashboardPopoutIfFocused
@@ -383,7 +404,19 @@ import { CliInstaller } from './cli/cli-installer'
 import { installLinuxBareOrcaDispatcher } from './cli/linux-bare-orca-dispatcher'
 import { reconcileManagedWslCliRegistrations } from './cli/wsl-cli-registration-reconciliation'
 
-let mainWindow: BrowserWindow | null = null
+let experimentalMultiWindowEnabledAtStartup = false
+const QUIT_CONFIRMATION_TIMEOUT_MS = 30_000
+
+type QuitConfirmationTransaction = {
+  participants: BrowserWindow[]
+  pendingWindowIds: Set<number>
+  cleanupByWindowId: Map<number, () => void>
+  timeout: ReturnType<typeof setTimeout>
+  phase: 'confirming' | 'closing'
+}
+
+let quitConfirmedForAllWindows = false
+let activeQuitConfirmationTransaction: QuitConfirmationTransaction | null = null
 /** Whether a manual app.quit() (Cmd+Q) is in progress; lets the close handler skip the running-process confirmation and go straight to close. */
 let isQuitting = false
 let store: Store | null = null
@@ -732,10 +765,51 @@ if (startupDiagnosticsEnabled) {
 // Self-gated on ORCA_MAIN_THREAD_DIAGNOSTICS; runs the whole session to catch steady-state churn (issue #7576).
 startMainThreadChurnProbe()
 
+// Why: every relay resolves its window now: the one the caller named when it is
+// still registered, otherwise the window the user is actually looking at.
+function resolveTargetMainWindow(targetWindow?: BrowserWindow | null): BrowserWindow | null {
+  const registeredTarget =
+    targetWindow && !targetWindow.isDestroyed() ? getRegisteredMainWindow(targetWindow) : null
+  return registeredTarget ?? getFocusedOrLastActiveMainWindow()
+}
+
+function resolveMenuTargetMainWindow(
+  targetWindow?: Electron.BaseWindow | null
+): BrowserWindow | null {
+  return resolveTargetMainWindow(targetWindow instanceof BrowserWindow ? targetWindow : null)
+}
+
+function sendToTargetMainWindow(
+  targetWindow: Electron.BaseWindow | null | undefined,
+  channel: string,
+  ...args: unknown[]
+): void {
+  const target = resolveMenuTargetMainWindow(targetWindow)
+  if (target) {
+    sendToWindow(target, channel, ...args)
+  }
+}
+
+function updateAutomationWindow(preferredWindow?: BrowserWindow | null): void {
+  const targetWindow = resolveTargetMainWindow(preferredWindow)
+  const webContentsDestroyed =
+    targetWindow &&
+    typeof targetWindow.webContents.isDestroyed === 'function' &&
+    targetWindow.webContents.isDestroyed()
+  if (!targetWindow || webContentsDestroyed) {
+    automations?.setWebContents(null)
+    return
+  }
+  automations?.setWebContents(targetWindow.webContents)
+}
+
 function focusExistingWindow(): void {
+  if (isQuitting) {
+    return
+  }
   focusExistingMainWindow({
     app,
-    getWindow: () => mainWindow,
+    getWindow: getFocusedOrLastActiveMainWindow,
     openWindow: openMainWindow,
     warn: console.warn
   })
@@ -743,7 +817,7 @@ function focusExistingWindow(): void {
 
 function requestDesktopActivation(argv: readonly string[] = []): void {
   skillShareDeepLinks.capture(argv, (shareId) => {
-    mainWindow?.webContents.send('ui:openSkillShare', shareId)
+    broadcastToMainWindows('ui:openSkillShare', shareId)
   })
   // Why: a duplicate `orca serve` must not drag a headless server into opening a desktop window (#11935).
   if (!shouldActivateDesktopForSecondInstance(argv)) {
@@ -763,7 +837,7 @@ app.on('open-url', (event, url) => {
 skillShareDeepLinks.capture(process.argv)
 
 const handleMacAppActivation = createMacAppActivationHandler({
-  getWindow: () => mainWindow,
+  getWindow: getFocusedOrLastActiveMainWindow,
   requestActivation: requestDesktopActivation
 })
 
@@ -898,6 +972,11 @@ if (hasSingleInstanceLock) {
   // meant `orca serve` registered its PTY handlers against no-ops before any window
   // attached, so a paired desktop owner never received them.
   setPtyHostBindings({ ipc: ipcMain, power: powerMonitor })
+  setMainWindowElectronBindings({
+    getFocusedWindow: () => BrowserWindow.getFocusedWindow(),
+    fromWebContents: (webContents) => BrowserWindow.fromWebContents(webContents),
+    isBrowserWindow: (window): window is BrowserWindow => window instanceof BrowserWindow
+  })
   // Why also at process level: the runtime's notification, window-lookup and
   // tab-create-reply channel are desktop-only. A Node host installs none and the
   // runtime routes notifications to paired clients instead.
@@ -1327,24 +1406,146 @@ async function prepareCodexSessionResumeForLaunch(args: {
     : preparation
 }
 
-// Why: restore the window the close handler may have hidden to tray, or reopen it (dock-reactivation style) if fully torn down.
-function showMainWindowFromTray(): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    mainWindow.show()
-    mainWindow.focus()
+function cleanupQuitConfirmationTransaction(transaction: QuitConfirmationTransaction): void {
+  clearTimeout(transaction.timeout)
+  for (const cleanup of transaction.cleanupByWindowId.values()) {
+    cleanup()
+  }
+  transaction.cleanupByWindowId.clear()
+}
+
+function finishQuitConfirmationTransaction(transaction: QuitConfirmationTransaction): void {
+  cleanupQuitConfirmationTransaction(transaction)
+  if (activeQuitConfirmationTransaction === transaction) {
+    activeQuitConfirmationTransaction = null
+  }
+  app.quit()
+}
+
+function abortQuitConfirmationTransaction(): void {
+  const transaction = activeQuitConfirmationTransaction
+  if (transaction) {
+    cleanupQuitConfirmationTransaction(transaction)
+  }
+  activeQuitConfirmationTransaction = null
+  quitConfirmedForAllWindows = false
+  isQuitting = false
+  clearExpectedRendererReload()
+}
+
+function completeQuitConfirmationTransaction(transaction: QuitConfirmationTransaction): void {
+  if (activeQuitConfirmationTransaction !== transaction) {
     return
   }
-  if (!isQuittingForUpdate()) {
+  quitConfirmedForAllWindows = true
+  transaction.phase = 'closing'
+  clearTimeout(transaction.timeout)
+  // Why: confirmations are collected first so a late veto from one window cannot
+  // leave other windows already destroyed. Keep the participant close listeners
+  // until every confirmed window is gone, then re-enter app.quit() for will-quit.
+  const liveParticipants = transaction.participants.filter((window) => !window.isDestroyed())
+  transaction.pendingWindowIds = new Set(liveParticipants.map((window) => window.id))
+  if (transaction.pendingWindowIds.size === 0) {
+    finishQuitConfirmationTransaction(transaction)
+    return
+  }
+  for (const window of liveParticipants) {
+    if (!window.isDestroyed()) {
+      closeWindowAfterConfirmation(window)
+    }
+  }
+}
+
+function isQuitConfirmationCollecting(): boolean {
+  return activeQuitConfirmationTransaction !== null
+}
+
+function onQuitWindowCloseConfirmed(window: BrowserWindow): void {
+  const transaction = activeQuitConfirmationTransaction
+  if (!transaction) {
+    return
+  }
+  transaction.pendingWindowIds.delete(window.id)
+  if (transaction.pendingWindowIds.size === 0) {
+    completeQuitConfirmationTransaction(transaction)
+  }
+}
+
+function beginQuitConfirmationTransaction(event: Electron.Event): void {
+  if (!experimentalMultiWindowEnabledAtStartup) {
+    isQuitting = true
+    return
+  }
+  if (quitConfirmedForAllWindows) {
+    isQuitting = true
+    return
+  }
+  event.preventDefault()
+  if (activeQuitConfirmationTransaction) {
+    return
+  }
+
+  const participants = getMainWindows()
+  if (participants.length === 0) {
+    quitConfirmedForAllWindows = true
+    isQuitting = true
+    app.quit()
+    return
+  }
+
+  isQuitting = true
+  const transaction: QuitConfirmationTransaction = {
+    participants,
+    pendingWindowIds: new Set(participants.map((window) => window.id)),
+    cleanupByWindowId: new Map(),
+    phase: 'confirming',
+    timeout: setTimeout(() => {
+      if (activeQuitConfirmationTransaction === transaction) {
+        abortQuitConfirmationTransaction()
+      }
+    }, QUIT_CONFIRMATION_TIMEOUT_MS)
+  }
+  activeQuitConfirmationTransaction = transaction
+
+  for (const window of participants) {
+    const onClosed = (): void => {
+      transaction.pendingWindowIds.delete(window.id)
+      transaction.cleanupByWindowId.delete(window.id)
+      if (transaction.pendingWindowIds.size === 0) {
+        if (transaction.phase === 'closing') {
+          finishQuitConfirmationTransaction(transaction)
+        } else {
+          completeQuitConfirmationTransaction(transaction)
+        }
+      }
+    }
+    window.once('closed', onClosed)
+    transaction.cleanupByWindowId.set(window.id, () => window.removeListener('closed', onClosed))
+    if (!requestWindowCloseForQuit(window)) {
+      onQuitWindowCloseConfirmed(window)
+    }
+  }
+}
+
+// Why: restore the window the close handler may have hidden to tray, or reopen it (dock-reactivation style) if fully torn down.
+function showMainWindowFromTray(): void {
+  const targetWindow = getFocusedOrLastActiveMainWindow()
+  if (targetWindow && !targetWindow.isDestroyed()) {
+    if (targetWindow.isMinimized()) {
+      targetWindow.restore()
+    }
+    targetWindow.show()
+    targetWindow.focus()
+    return
+  }
+  if (!isQuitting && !isQuittingForUpdate()) {
     openMainWindow()
   }
 }
 
-function openSettingsFromSystemMenu(): void {
+function openSettingsFromSystemMenu(targetBaseWindow?: Electron.BaseWindow | null): void {
   showMainWindowFromTray()
-  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  const targetWindow = resolveMenuTargetMainWindow(targetBaseWindow)
   if (!targetWindow) {
     return
   }
@@ -1357,7 +1558,7 @@ function openSettingsFromSystemMenu(): void {
 }
 
 function quitFromSystemTray(): void {
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  if (hasLiveMainWindows()) {
     // Why: a hidden session may veto shutdown with a save/discard prompt, so make the window visible.
     showMainWindowFromTray()
   }
@@ -1399,8 +1600,26 @@ function syncMacMenuBarIcon(showMenuBarIcon: boolean): Tray | null {
   return options ? setMacMenuBarIconVisible(showMenuBarIcon, options) : null
 }
 
-function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): BrowserWindow {
+function openMainWindow(
+  options: { revealOnDidFinishLoad?: boolean; forceNewWindow?: boolean } = {}
+): BrowserWindow {
   logStartupMilestone('open-main-window-start')
+  if (isQuitting) {
+    throw new Error('Cannot open a main window while Orca is quitting')
+  }
+  const existingWindow = getFocusedOrLastActiveMainWindow()
+  if (
+    existingWindow &&
+    shouldReuseExistingMainWindow({
+      experimentalMultiWindowEnabledAtStartup,
+      forceNewWindow: options.forceNewWindow,
+      existingWindow
+    })
+  ) {
+    // Why: with the flag off, every open path must preserve Orca's singleton-window
+    // behavior even if a caller reaches this function after startup.
+    return revealExistingMainWindow(existingWindow)
+  }
   if (!store) {
     throw new Error('Store must be initialized before opening the main window')
   }
@@ -1461,10 +1680,9 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
 
   const window = createMainWindow(store, {
     getIsQuitting: () => isQuitting,
-    onQuitAborted: () => {
-      isQuitting = false
-      clearExpectedRendererReload()
-    },
+    onQuitAborted: abortQuitConfirmationTransaction,
+    isQuitConfirmationCollecting,
+    onQuitWindowCloseConfirmed,
     onRendererProcessGone: (details, webContentsId) => {
       recordProcessGoneCrash(
         'renderer',
@@ -1495,9 +1713,7 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
     title: devInstanceIdentity.name,
     getKeybindings: () => keybindings?.getOverrides(),
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
-      if (mainWindow?.webContents.id === webContentsId) {
-        markExpectedRendererReload(webContentsId)
-      }
+      markExpectedRendererReload(webContentsId)
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
     },
     // Why: the recovery reload re-fires did-finish-load; flag it so the local-PTY orphan sweep skips that reload (#5787).
@@ -1506,6 +1722,7 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
       recordDurableCrashBreadcrumb('renderer_recovery_reload')
     }
   })
+  registerMainWindow(window)
   recordCrashBreadcrumb('main_window_created')
   logStartupMilestone('window-created')
   // Why: Windows Tray construction can block synchronously on Shell_NotifyIcon, so both platforms defer creation to after first paint.
@@ -1594,7 +1811,7 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
       ? { marketplace: pluginMarketplaceService, installer: pluginMarketplaceInstaller }
       : undefined
   )
-  automations.setWebContents(window.webContents)
+  updateAutomationWindow(window)
   automations.start()
   attachMainWindowServices(
     window,
@@ -1627,20 +1844,24 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
   rateLimits.attach(window)
   // Why: quota probes spawn CLIs and hit network, so don't fetch immediately and compete with first paint; show/focus listeners refresh later.
   rateLimits.start({ fetchImmediately: false })
-  window.on('closed', () => {
-    if (mainWindow === window) {
-      mainWindow = null
-    }
-    clearExpectedRendererReload(rendererWebContentsId)
-    automations?.setWebContents(null)
-    // Why: detach the hook listener on close so the server never fires into destroyed webContents before reopen, and replay runs only on deliberate recreations.
-    agentHookServer.setListener(null)
-    agentHookServer.setPaneStatusClearListener(null)
-    setMigrationUnsupportedPtyListener(null)
-    // Why: stop the spinner timer here — it would fire into destroyed webContents, and per-pane teardown may never run for restored-but-untorn panes.
-    stopAllSyntheticTitleSpinners()
+  window.on('focus', () => {
+    updateAutomationWindow(window)
+    resumeSyntheticTitleSpinnerTimer()
   })
-  mainWindow = window
+  window.on('closed', () => {
+    clearExpectedRendererReload(rendererWebContentsId)
+    removeTrustedBrowserRendererWebContentsId(rendererWebContentsId)
+    updateAutomationWindow()
+    if (!hasLiveMainWindows()) {
+      // Why: app-global hook services outlive macOS no-window gaps, but their
+      // renderer endpoints must clear when no window can receive status frames.
+      agentHookServer.setListener(null)
+      agentHookServer.setPaneStatusClearListener(null)
+      setMigrationUnsupportedPtyListener(null)
+      // Why: a running spinner timer would fire into destroyed webContents, and per-pane teardown may never run for restored-but-untorn panes.
+      stopAllSyntheticTitleSpinners()
+    }
+  })
   window.on('show', resumeSyntheticTitleSpinnerTimer)
   window.on('restore', resumeSyntheticTitleSpinnerTimer)
   window.on('hide', stopSyntheticTitleSpinnerTimer)
@@ -1668,12 +1889,12 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
       observation,
       isReplay
     }) => {
-      if (mainWindow?.isDestroyed()) {
+      if (!hasLiveMainWindows()) {
         return
       }
       if (providerSessionOnly) {
         // Why: session_start just refreshes durable resume identity while Pi is idle; forward it without titles, telemetry, or status UI.
-        mainWindow?.webContents.send('agentStatus:set', {
+        broadcastToMainWindows('agentStatus:set', {
           ...payload,
           paneKey,
           ...(launchToken ? { launchToken } : {}),
@@ -1718,7 +1939,7 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
         ...(observation ? { observation } : {}),
         ...(orchestration ? { orchestration } : {})
       }
-      mainWindow?.webContents.send('agentStatus:set', statusEvent)
+      broadcastToMainWindows('agentStatus:set', statusEvent)
       if (!suppressSyntheticCodexAutoApprovalTitle || isAskUserQuestionTool(payload.toolName)) {
         getDashboardPopoutWindow()?.webContents.send('agentStatus:set', statusEvent)
       }
@@ -1735,20 +1956,20 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
     }
   )
   agentHookServer.setPaneStatusClearListener((clear) => {
-    if (mainWindow?.isDestroyed()) {
+    if (!hasLiveMainWindows()) {
       return
     }
-    mainWindow?.webContents.send('agentStatus:clear', clear)
+    broadcastToMainWindows('agentStatus:clear', clear)
     getDashboardPopoutWindow()?.webContents.send('agentStatus:clear', clear)
   })
   setMigrationUnsupportedPtyListener((event) => {
-    if (mainWindow?.isDestroyed()) {
+    if (!hasLiveMainWindows()) {
       return
     }
     if (event.type === 'set') {
-      mainWindow?.webContents.send('agentStatus:migrationUnsupported', event.entry)
+      broadcastToMainWindows('agentStatus:migrationUnsupported', event.entry)
     } else {
-      mainWindow?.webContents.send('agentStatus:migrationUnsupportedClear', {
+      broadcastToMainWindows('agentStatus:migrationUnsupportedClear', {
         ptyId: event.ptyId
       })
     }
@@ -1759,21 +1980,24 @@ function openMainWindow(options: { revealOnDidFinishLoad?: boolean } = {}): Brow
 }
 
 function sendOpenFeatureTour(targetWindow?: BrowserWindow | null): void {
-  const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
-  webContents?.send('ui:openFeatureTour')
+  const window = resolveTargetMainWindow(targetWindow)
+  if (window) {
+    sendToWindow(window, 'ui:openFeatureTour')
+  }
 }
 
 function sendOpenSetupGuide(targetWindow?: BrowserWindow | null): void {
-  const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
-  webContents?.send('ui:openSetupGuide')
+  const window = resolveTargetMainWindow(targetWindow)
+  if (window) {
+    sendToWindow(window, 'ui:openSetupGuide')
+  }
 }
 
 function sendOpenCrashReport(targetWindow?: BrowserWindow | null): void {
-  const webContents =
-    targetWindow && !targetWindow.isDestroyed() ? targetWindow.webContents : mainWindow?.webContents
-  webContents?.send('ui:openCrashReport')
+  const window = resolveTargetMainWindow(targetWindow)
+  if (window) {
+    sendToWindow(window, 'ui:openCrashReport')
+  }
 }
 
 // Why: on renderer crash-loop the breaker stops auto-reloading and the window goes blank, so a main-process dialog is the only retry/quit surface.
@@ -1781,7 +2005,7 @@ async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promi
   if (isQuitting) {
     return
   }
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const window = getFocusedOrLastActiveMainWindow() ?? undefined
   const options = {
     type: 'error' as const,
     buttons: ['Reload', 'Quit'],
@@ -1794,9 +2018,10 @@ async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promi
   const { response } = window
     ? await dialog.showMessageBox(window, options)
     : await dialog.showMessageBox(options)
-  if (response === 0 && mainWindow && !mainWindow.isDestroyed()) {
+  const reloadTarget = getFocusedOrLastActiveMainWindow()
+  if (response === 0 && reloadTarget) {
     recordDurableCrashBreadcrumb('renderer_recovery_manual_retry')
-    loadMainWindow(mainWindow)
+    loadMainWindow(reloadTarget)
   } else if (response === 1) {
     isQuitting = true
     app.quit()
@@ -1855,7 +2080,7 @@ async function handleGpuChildCrash(reason: string, exitCode: number | null): Pro
     crashesInWindow: result.crashesInWindow
   })
   const engagedAt = Date.now()
-  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+  const window = getFocusedOrLastActiveMainWindow() ?? undefined
   let restartDecision: GpuFallbackRestartDecision
   try {
     restartDecision = await promptForGpuFallbackRestart(window)
@@ -2094,7 +2319,7 @@ registerPaneKeyTeardownListener((paneKey) => {
 })
 
 function sendSyntheticTitle(ptyId: string, data: string, options: { force?: boolean } = {}): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+  if (!hasLiveMainWindows()) {
     return
   }
   // Why: throttle decorative spinner frames (up to 80ms/agent); final/permission frames are forced because they drive BEL.
@@ -2110,17 +2335,12 @@ function sendSyntheticTitle(ptyId: string, data: string, options: { force?: bool
   runtime?.ingestSyntheticTitleFrame(ptyId, data)
   // Why: only the kill-switch-off renderer byte-parses synthetic frames; under main authority the copy mints phantom ACKs (see synthetic-title-frame-routing.ts).
   if (shouldCopySyntheticTitleFrameToPtyData(store?.getSettings())) {
-    mainWindow.webContents.send('pty:data', { id: ptyId, data })
+    broadcastToMainWindows('pty:data', { id: ptyId, data })
   }
 }
 
 function isSyntheticTitleWindowVisible(): boolean {
-  return (
-    mainWindow !== null &&
-    !mainWindow.isDestroyed() &&
-    mainWindow.isVisible() &&
-    !mainWindow.isMinimized()
-  )
+  return hasVisibleMainWindow()
 }
 
 function canSendDecorativeSyntheticTitle(): boolean {
@@ -2710,9 +2930,7 @@ void app.whenReady().then(async () => {
     },
     // Why: serve can be promoted in place, so wire the listener from startup; runtime enables desktop-only scanners only for a ready renderer.
     onTerminalSideEffects: (batch: TerminalSideEffectBatch) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('pty:sideEffect', batch)
-      }
+      broadcastToMainWindows('pty:sideEffect', batch)
     },
     getDesktopWindowStatus: getDesktopWindowStatus,
     // Why: worktree.ps pulls hook-reported agent status (same source as the desktop sidebar) at query time so mobile shows the same agents.
@@ -3062,17 +3280,23 @@ void app.whenReady().then(async () => {
   await ensureMainI18n()
   await setMainUiLanguage(store.getSettings().uiLanguage)
   logStartupMilestone('i18n-ready')
+  experimentalMultiWindowEnabledAtStartup = store.getSettings().experimentalMultiWindow === true
 
   registerAppMenu({
     appMenuLabel: devInstanceIdentity.name,
+    multiWindowEnabled: experimentalMultiWindowEnabledAtStartup,
+    onNewWindow: () => {
+      if (isQuitting) {
+        return
+      }
+      openMainWindow(experimentalMultiWindowEnabledAtStartup ? { forceNewWindow: true } : {})
+    },
     onCheckForUpdates: (options) => runUserInitiatedUpdateCheck(options),
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
-      if (mainWindow?.webContents.id === webContentsId) {
-        markExpectedRendererReload(webContentsId)
-      }
+      markExpectedRendererReload(webContentsId)
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
     },
-    onOpenSettings: openSettingsFromSystemMenu,
+    onOpenSettings: (targetWindow) => openSettingsFromSystemMenu(targetWindow),
     onOpenSetupGuide: (targetWindow) => {
       recordCrashBreadcrumb('setup_guide_opened')
       const targetBrowserWindow = targetWindow instanceof BrowserWindow ? targetWindow : null
@@ -3091,34 +3315,34 @@ void app.whenReady().then(async () => {
     },
     // Why: menu zoom must act on the window the user is looking at — routing to
     // the main window while the dashboard pop-out is focused zooms behind it.
-    onZoomIn: () => {
+    onZoomIn: (targetWindow) => {
       if (!zoomDashboardPopoutIfFocused('in')) {
-        mainWindow?.webContents.send('terminal:zoom', 'in')
+        sendToTargetMainWindow(targetWindow, 'terminal:zoom', 'in')
       }
     },
-    onZoomOut: () => {
+    onZoomOut: (targetWindow) => {
       if (!zoomDashboardPopoutIfFocused('out')) {
-        mainWindow?.webContents.send('terminal:zoom', 'out')
+        sendToTargetMainWindow(targetWindow, 'terminal:zoom', 'out')
       }
     },
-    onZoomReset: () => {
+    onZoomReset: (targetWindow) => {
       if (!zoomDashboardPopoutIfFocused('reset')) {
-        mainWindow?.webContents.send('terminal:zoom', 'reset')
+        sendToTargetMainWindow(targetWindow, 'terminal:zoom', 'reset')
       }
     },
-    onToggleLeftSidebar: () => {
-      mainWindow?.webContents.send('ui:toggleLeftSidebar')
+    onToggleLeftSidebar: (targetWindow) => {
+      sendToTargetMainWindow(targetWindow, 'ui:toggleLeftSidebar')
     },
-    onToggleRightSidebar: () => {
-      mainWindow?.webContents.send('ui:toggleRightSidebar')
+    onToggleRightSidebar: (targetWindow) => {
+      sendToTargetMainWindow(targetWindow, 'ui:toggleRightSidebar')
     },
-    onToggleAppearance: (key) => {
+    onToggleAppearance: (key, targetWindow) => {
       if (!store) {
         return
       }
       if (key === 'statusBarVisible') {
         // Why: status bar visibility lives in persisted UI state (not settings) and the renderer owns the toggle — forward the event, let it flip + store.
-        mainWindow?.webContents.send('ui:toggleStatusBar')
+        sendToTargetMainWindow(targetWindow, 'ui:toggleStatusBar')
         return
       }
       const current = store.getSettings()
@@ -3181,12 +3405,10 @@ void app.whenReady().then(async () => {
   registerMobileHandlers(runtimeRpc, {
     getRelayStatus: () => desktopRelayStatus,
     consumePendingUnpairedDeviceAuthFailure: (webContentsId) => {
-      if (
-        !mainWindow ||
-        mainWindow.isDestroyed() ||
-        mainWindow.webContents.id !== webContentsId ||
-        !pendingUnpairedDeviceAuthFailure
-      ) {
+      const isLiveMainWindowRenderer = getMainWindows().some(
+        (window) => window.webContents.id === webContentsId
+      )
+      if (!isLiveMainWindowRenderer || !pendingUnpairedDeviceAuthFailure) {
         return false
       }
       pendingUnpairedDeviceAuthFailure = false
@@ -3197,9 +3419,7 @@ void app.whenReady().then(async () => {
   runtimeRpc.setOnUnpairedDeviceAuthFailure(() => {
     // Why: runtime startup races renderer mount; retain the one-shot until the listener consumes it.
     pendingUnpairedDeviceAuthFailure = true
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('mobile:unpairedDeviceAuthFailure')
-    }
+    broadcastToMainWindows('mobile:unpairedDeviceAuthFailure')
   })
 
   const shellPathReady = windowsShellPathHydration.whenReady()
@@ -3329,7 +3549,7 @@ void app.whenReady().then(async () => {
         runtimeRpc,
         onStatus: (status) => {
           desktopRelayStatus = status
-          mainWindow?.webContents.send('mobile:relayStatusChanged', status)
+          broadcastToMainWindows('mobile:relayStatusChanged', status)
         }
       })
       desktopRelayService = relayService
@@ -3368,13 +3588,18 @@ void app.whenReady().then(async () => {
 // Why: app.exit() skips Electron quit events, so keep its log child from surviving forced exits.
 process.once('exit', stopTccPromptNotice)
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   if (isQuittingForUpdate()) {
     recordUpdaterLifecycle('before_quit_allowed', undefined, {
       message: 'before-quit allowed for update install'
     })
   }
-  isQuitting = true
+  // Why: with several windows open, `before-quit` first collects every renderer's
+  // close decision; it sets isQuitting and can defer the quit until they all accept.
+  beginQuitConfirmationTransaction(event)
+  if (!isQuitting || isQuitConfirmationCollecting()) {
+    return
+  }
   desktopRelayService?.fenceAndCloseNow()
   runtimeRpc?.setMobileRelayPairingProvider(null)
   unsubscribeAgentAwakeStatusChanges?.()

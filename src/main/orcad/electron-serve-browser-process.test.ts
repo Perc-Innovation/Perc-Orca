@@ -47,6 +47,8 @@ const host: RuntimeBrowserCommandHost = {
     throw new Error('No renderer')
   },
   getAvailableAuthoritativeWindow: () => null,
+  getPreferredRendererWindow: () => null,
+  getBrowserPageOwnerWindow: () => null,
   getOffscreenBrowserBackend: () => null
 }
 

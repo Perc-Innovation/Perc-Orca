@@ -2,6 +2,7 @@ import { ipcMain, webContents } from 'electron'
 import { browserCertificateTrustController, browserManager } from '../browser/browser-manager'
 import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
+import { ownsBrowserPage } from './browser-page-ownership'
 import { isTrustedBrowserRenderer } from './browser-renderer-trust'
 import {
   isLiveBrowserWebContentsId,
@@ -74,6 +75,18 @@ export function registerBrowserHandlers(): void {
       }
       browserManager.attachGuestPolicies(guest)
     }
+    // Why: a second window must not steal a page another window's renderer still
+    // owns; only take over once the previous owner's guest is gone.
+    const existingRendererWebContentsId = browserManager.getRendererWebContentsId(
+      args.browserPageId
+    )
+    if (
+      existingRendererWebContentsId !== null &&
+      existingRendererWebContentsId !== event.sender.id &&
+      isLiveBrowserWebContentsId(browserManager.getGuestWebContentsId(args.browserPageId))
+    ) {
+      return false
+    }
     // Why: when Chromium swaps a guest's renderer process (navigation,
     // crash recovery), the renderer re-registers the same browserPageId
     // with a new webContentsId. The bridge must destroy the old session's
@@ -124,6 +137,9 @@ export function registerBrowserHandlers(): void {
     if (!isTrustedBrowserRenderer(event.sender)) {
       return false
     }
+    if (!ownsBrowserPage(event.sender, args.browserPageId)) {
+      return false
+    }
     // Why: notify bridge before unregistering so it can destroy the session
     // process and proxy. Must happen before unregisterGuest clears the mapping.
     const wcId = browserManager.getGuestWebContentsId(args.browserPageId)
@@ -168,6 +184,9 @@ export function registerBrowserHandlers(): void {
   // on the previous tab, which is confusing.
   ipcMain.handle('browser:activeTabChanged', (event, args: { browserPageId: string }) => {
     if (!isTrustedBrowserRenderer(event.sender)) {
+      return false
+    }
+    if (!ownsBrowserPage(event.sender, args.browserPageId)) {
       return false
     }
     if (!agentBrowserBridgeRef) {
