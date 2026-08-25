@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Repo, Worktree, WorktreeCardProperty } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
+import type { WorktreeCardProperty } from '../../../../shared/ui-chrome-types'
+import type { Worktree } from '../../../../shared/worktree/types'
 
 const fetchHostedReviewForBranch = vi.fn()
 const fetchIssue = vi.fn()
@@ -24,6 +26,7 @@ vi.mock('@/store', () => ({
       issueCache: {},
       linearIssueCache: {},
       openModal,
+      projectGroups: [],
       remoteBranchConflictByWorktreeId: {},
       settings: null,
       sshConnectionStates: new Map(),
@@ -50,10 +53,6 @@ vi.mock('./CacheTimer', () => ({
 
 vi.mock('./WorktreeCardAgents', () => ({
   default: () => null
-}))
-
-vi.mock('./SshDisconnectedDialog', () => ({
-  SshDisconnectedDialog: () => null
 }))
 
 vi.mock('./WorktreeContextMenu', () => ({

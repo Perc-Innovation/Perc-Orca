@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { getTerminalPaneSearchEntries } from './terminal-search'
 import { getAppearancePaneSearchEntries, getSidebarEntries } from './appearance-search'
-import { getWorkspaceCardLayoutEntry } from './appearance-sidebar-search'
+import {
+  getShowPinnedWorktreesInGroupsEntry,
+  getWorkspaceCardLayoutEntry
+} from './appearance-sidebar-search'
 import { matchesSettingsSearch } from './settings-search'
 
 describe('getTerminalPaneSearchEntries', () => {
@@ -24,7 +27,7 @@ describe('getTerminalPaneSearchEntries', () => {
 
     expect(entries.some((entry) => entry.title === 'Default Shell')).toBe(true)
     expect(entries.some((entry) => entry.title === 'PowerShell Version')).toBe(true)
-    expect(entries.some((entry) => entry.title === 'Right-click to paste')).toBe(false)
+    expect(entries.some((entry) => entry.title === 'Right-click to paste')).toBe(true)
   })
 
   it('omits legacy WSL distribution terminal settings on Windows', () => {
@@ -33,9 +36,11 @@ describe('getTerminalPaneSearchEntries', () => {
     expect(matchesSettingsSearch('ubuntu distro', entries)).toBe(false)
   })
 
-  it('omits the Windows right-click setting elsewhere', () => {
+  it('includes the right-click setting on macOS and Linux', () => {
     const entries = getTerminalPaneSearchEntries({ isWindows: false, isMac: false })
-    expect(entries.some((entry) => entry.title === 'Right-click to paste')).toBe(false)
+    const macEntries = getTerminalPaneSearchEntries({ isWindows: false, isMac: true })
+    expect(entries.some((entry) => entry.title === 'Right-click to paste')).toBe(true)
+    expect(macEntries.some((entry) => entry.title === 'Right-click to paste')).toBe(true)
   })
 
   it('omits the PowerShell version setting elsewhere', () => {
@@ -70,6 +75,15 @@ describe('getTerminalPaneSearchEntries', () => {
     expect(entriesWindows.some((entry) => entry.title === 'Manage Sessions')).toBe(true)
     expect(entriesMac.some((entry) => entry.title === 'Manage Sessions')).toBe(true)
     expect(entriesLinux.some((entry) => entry.title === 'Manage Sessions')).toBe(true)
+  })
+
+  it('indexes terminal scrollback as rows rather than MB size', () => {
+    const entries = getTerminalPaneSearchEntries({ isWindows: false, isMac: false })
+    const scrollbackEntry = entries.find((entry) => entry.title === 'Scrollback Rows')
+
+    expect(scrollbackEntry).toBeDefined()
+    expect(matchesSettingsSearch('rows', [scrollbackEntry!])).toBe(true)
+    expect(entries.some((entry) => entry.title === 'Scrollback Size')).toBe(false)
   })
 
   it('includes the OSC 52 clipboard setting on all platforms', () => {
@@ -122,12 +136,32 @@ describe('getTerminalPaneSearchEntries', () => {
     )
   })
 
+  it.each([
+    'dark',
+    'light',
+    'divider',
+    'preview',
+    'theme',
+    'dark terminal theme',
+    'target',
+    'editing',
+    'Match dark mode',
+    'Customize Light Mode',
+    'Match dark mode terminal theme',
+    'Use Separate Theme In Light Mode',
+    'import',
+    'Warp',
+    'YAML'
+  ])('matches terminal appearance search for %s', (query) => {
+    expect(matchesSettingsSearch(query, getAppearancePaneSearchEntries())).toBe(true)
+  })
+
   it('omits the Warp import appearance entry when desktop-only controls are hidden', () => {
     const desktopEntries = getAppearancePaneSearchEntries({ showWarpImport: true })
     const webEntries = getAppearancePaneSearchEntries({ showWarpImport: false })
 
-    expect(desktopEntries.some((entry) => entry.title === 'Import themes from Warp')).toBe(true)
-    expect(webEntries.some((entry) => entry.title === 'Import themes from Warp')).toBe(false)
+    expect(desktopEntries.some((entry) => entry.title === 'Import from Warp')).toBe(true)
+    expect(webEntries.some((entry) => entry.title === 'Import from Warp')).toBe(false)
     expect(webEntries.some((entry) => entry.title === 'Import from Ghostty')).toBe(true)
   })
 
@@ -139,6 +173,15 @@ describe('getTerminalPaneSearchEntries', () => {
     expect(webEntries.some((entry) => entry.title === 'Minimize to Tray on Close')).toBe(false)
     expect(matchesSettingsSearch('tray', desktopEntries)).toBe(true)
     expect(matchesSettingsSearch('tray', webEntries)).toBe(false)
+  })
+
+  it('includes the macOS menu bar entry only when its desktop control is shown', () => {
+    const macEntries = getAppearancePaneSearchEntries({ showMenuBarIcon: true })
+    const otherEntries = getAppearancePaneSearchEntries({ showMenuBarIcon: false })
+
+    expect(macEntries.some((entry) => entry.title === 'Show Menu Bar Icon')).toBe(true)
+    expect(otherEntries.some((entry) => entry.title === 'Show Menu Bar Icon')).toBe(false)
+    expect(matchesSettingsSearch('status item', macEntries)).toBe(true)
   })
 
   it('keeps sidebar shortcut restore settings in the Appearance search index', () => {
@@ -160,6 +203,8 @@ describe('getTerminalPaneSearchEntries', () => {
 
     expect(getSidebarEntries()).toContainEqual(entry)
     expect(getAppearancePaneSearchEntries()).toContainEqual(entry)
+    expect(entry.description).toBe('Workspace cards can use compact or detailed layouts.')
+    expect(entry.description).not.toContain('options menu')
   })
 
   it.each(['compact', 'compact display', 'workspace cards', 'sidebar', 'card layout'])(
@@ -171,5 +216,28 @@ describe('getTerminalPaneSearchEntries', () => {
 
   it('matches the Appearance catalog for compact workspace card searches', () => {
     expect(matchesSettingsSearch('compact', getAppearancePaneSearchEntries())).toBe(true)
+  })
+
+  // The notice tells users to "turn it off in Terminal settings", so the product names in
+  // the copy have to be the ones that find it.
+  it.each(['zellij', 'grok', 'tmux', 'osc 52'])(
+    'finds the OSC 52 clipboard setting by searching %s',
+    (query) => {
+      const entries = getTerminalPaneSearchEntries({ isWindows: false, isMac: true })
+      const osc52 = entries.filter((entry) =>
+        entry.title.includes('Allow TUI Clipboard Writes (OSC 52)')
+      )
+
+      expect(osc52).toHaveLength(1)
+      expect(matchesSettingsSearch(query, osc52)).toBe(true)
+    }
+  )
+
+  it('includes pinned worktree duplicate display in sidebar and Appearance search', () => {
+    const entry = getShowPinnedWorktreesInGroupsEntry()
+
+    expect(getSidebarEntries()).toContainEqual(entry)
+    expect(getAppearancePaneSearchEntries()).toContainEqual(entry)
+    expect(matchesSettingsSearch('duplicate', entry)).toBe(true)
   })
 })

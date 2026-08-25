@@ -6,6 +6,9 @@
 // untouched. Appending table headers is always valid TOML, so the block can live
 // at the end of any existing file.
 
+import { MANAGED_HOOK_TIMEOUT_SECONDS } from '../agent-hooks/installer-utils'
+import { escapeRegex } from '../../shared/string-utils'
+
 // Why: mirror the Claude-compatible events Orca normalizes for status. Kimi uses
 // these exact event names (see normalizeKimiEvent), so each maps to a
 // working/waiting/done transition.
@@ -22,10 +25,6 @@ export const KIMI_HOOK_EVENTS = [
 const BLOCK_START = '# >>> orca-managed-kimi-hooks (managed by Orca; do not edit) >>>'
 const BLOCK_END = '# <<< orca-managed-kimi-hooks <<<'
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
 // Matches the managed block plus any blank lines immediately preceding it so
 // repeated install/remove cycles do not accumulate whitespace. The `|$`
 // fallback also matches from BLOCK_START to end-of-file when the trailing
@@ -33,7 +32,7 @@ function escapeRegExp(value: string): string {
 // is always written last, so this recovers orphaned hook tables and lets
 // install re-converge in one step instead of appending a duplicate block.
 const MANAGED_BLOCK_RE = new RegExp(
-  `\\n*${escapeRegExp(BLOCK_START)}[\\s\\S]*?(?:${escapeRegExp(BLOCK_END)}[^\\n]*|$)`,
+  `\\n*${escapeRegex(BLOCK_START)}[\\s\\S]*?(?:${escapeRegex(BLOCK_END)}[^\\n]*|$)`,
   'g'
 )
 
@@ -55,8 +54,15 @@ export function buildManagedKimiHooksBlock(command: string): string {
   const commandLiteral = tomlBasicString(command)
   // Omit `matcher`: Kimi treats it as a regex (so Claude's literal "*" is
   // invalid) and an absent matcher already matches every tool.
+  // `timeout` is the host-level backstop; the shell wrapper's curl budget is
+  // the normal dead-endpoint bound.
   const entries = KIMI_HOOK_EVENTS.map((event) =>
-    [`[[hooks]]`, `event = "${event}"`, `command = ${commandLiteral}`].join('\n')
+    [
+      `[[hooks]]`,
+      `event = "${event}"`,
+      `command = ${commandLiteral}`,
+      `timeout = ${MANAGED_HOOK_TIMEOUT_SECONDS}`
+    ].join('\n')
   )
   return [BLOCK_START, ...entries, BLOCK_END].join('\n')
 }

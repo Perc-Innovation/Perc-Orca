@@ -1,6 +1,7 @@
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { BrowserWindow } from 'electron'
 import { ORCA_BROWSER_PARTITION } from '../../shared/constants'
+import { ORCA_BROWSER_GUEST_WEB_PREFERENCES } from '../../shared/browser-guest-web-preferences'
 import type { BrowserBackend, BrowserBackendCreateTab } from './browser-backend'
 import type { BrowserManager } from './browser-manager'
 import { browserSessionRegistry } from './browser-session-registry'
@@ -22,7 +23,10 @@ export class OffscreenBrowserBackend implements BrowserBackend {
   constructor(private readonly browserManager: BrowserManager) {}
 
   async createTab(params: BrowserBackendCreateTab): Promise<{ browserPageId: string }> {
-    const browserPageId = randomUUID()
+    const browserPageId = params.browserPageId ?? randomUUID()
+    if (this.windowsByPageId.has(browserPageId)) {
+      throw new Error(`Browser page ${browserPageId} already exists`)
+    }
     // Why: profiles map to Electron partitions; using the profile's partition
     // makes cookies/storage persist in the same SQLite DB the desktop path uses.
     const profile = params.profileId
@@ -35,6 +39,9 @@ export class OffscreenBrowserBackend implements BrowserBackend {
       width: DEFAULT_VIEWPORT_WIDTH,
       height: DEFAULT_VIEWPORT_HEIGHT,
       webPreferences: {
+        // Why: offscreen pages are the SSH/headless browser backend; keep their
+        // HTML fullscreen behavior aligned with desktop <webview> guests.
+        ...ORCA_BROWSER_GUEST_WEB_PREFERENCES,
         partition,
         sandbox: true,
         contextIsolation: true,
@@ -62,6 +69,7 @@ export class OffscreenBrowserBackend implements BrowserBackend {
       browserPageId,
       worktreeId: params.worktreeId,
       sessionProfileId: profile?.id ?? null,
+      userAgentMode: profile?.userAgentMode,
       webContentsId: win.webContents.id
     })
 

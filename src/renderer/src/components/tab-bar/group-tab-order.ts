@@ -1,4 +1,4 @@
-import type { Tab, TabGroup } from '../../../../shared/types'
+import type { Tab, TabGroup } from '../../../../shared/tab-types'
 import type { AppState } from '../../store/types'
 import { reconcileTabOrder } from './reconcile-order'
 
@@ -18,8 +18,8 @@ export type ActiveTabNavOrderIds = {
 /**
  * Compute the visible tab-strip order for a single group.
  *
- * Why: keyboard navigation (Cmd/Ctrl+Shift+[ / ]) and the IPC switch-tab
- * shortcut must walk tabs in the same order the TabBar renders them. The
+ * Why: keyboard tab-cycle actions and the IPC switch-tab shortcut must walk
+ * tabs in the same order the TabBar renders them. The
  * TabBar derives its order from `group.tabOrder` (the canonical split-group
  * state, updated by drag/drop via `reorderUnifiedTabs`). Reading from the
  * legacy `tabBarOrderByWorktree` drifts out of sync because that store is

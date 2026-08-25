@@ -1,8 +1,11 @@
 import type { LinkedWorkItemContext } from '@/lib/linked-work-item-context'
-import type { TuiAgent, WorkspaceCreateTelemetrySource } from '../../../shared/types'
+import type { TaskProvider } from '../../../shared/task-providers'
+import type { TuiAgent } from '../../../shared/tui-agent'
+import type { WorkspaceSource as WorkspaceCreateTelemetrySource } from '../../../shared/workspace-source'
 import type { LaunchSource } from '../../../shared/telemetry-events'
 
 export type LaunchableWorkItem = {
+  provider?: TaskProvider
   title: string
   url: string
   type: 'issue' | 'pr' | 'mr'

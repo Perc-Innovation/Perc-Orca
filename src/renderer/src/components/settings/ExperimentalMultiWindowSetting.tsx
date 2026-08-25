@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Loader2, RotateCw } from 'lucide-react'
-import type { GlobalSettings } from '../../../../shared/types'
+import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { useMountedRef } from '../../hooks/useMountedRef'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSwitchRow } from './SettingsFormControls'

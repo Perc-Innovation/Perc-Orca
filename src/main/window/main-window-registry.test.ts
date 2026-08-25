@@ -1,19 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getFocusedWindowMock, fromWebContentsMock, BrowserWindowMock } = vi.hoisted(() => {
-  const getFocusedWindowMock = vi.fn()
-  const fromWebContentsMock = vi.fn()
-  class BrowserWindowMock {
-    static getFocusedWindow = getFocusedWindowMock
-    static fromWebContents = fromWebContentsMock
-  }
-  return { getFocusedWindowMock, fromWebContentsMock, BrowserWindowMock }
-})
-
-vi.mock('electron', () => ({
-  BrowserWindow: BrowserWindowMock
+const { getFocusedWindowMock, fromWebContentsMock } = vi.hoisted(() => ({
+  getFocusedWindowMock: vi.fn(),
+  fromWebContentsMock: vi.fn()
 }))
 
+vi.mock('electron', () => ({}))
+
+import { setMainWindowElectronBindings } from './main-window-electron-bindings'
 import {
   broadcastToMainWindows,
   focusOrOpenMainWindow,
@@ -79,6 +73,13 @@ describe('main-window-registry', () => {
   beforeEach(() => {
     getFocusedWindowMock.mockReset()
     fromWebContentsMock.mockReset()
+    // Why: the registry reaches Electron through injected bindings so the runtime graph
+    // stays electron-free; install the stubs the way the desktop entry installs the real ones.
+    setMainWindowElectronBindings({
+      getFocusedWindow: () => getFocusedWindowMock(),
+      fromWebContents: (webContents) => fromWebContentsMock(webContents),
+      isBrowserWindow: (window): window is never => window !== null && window !== undefined
+    })
     for (const window of getMainWindows()) {
       emit(window as never, 'closed')
     }

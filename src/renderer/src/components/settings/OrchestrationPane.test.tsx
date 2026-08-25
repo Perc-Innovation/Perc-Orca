@@ -3,13 +3,15 @@
 import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getOrchestrationUsageExamples } from '@/lib/orchestration-usage-examples'
 import { OrchestrationPane } from './OrchestrationPane'
 
 const INSTALL_COMMAND =
   'npx skills add https://github.com/stablyai/orca --skill orchestration --global'
-const UPDATE_COMMAND = 'npx skills update orchestration --global'
+const UPDATE_COMMAND = INSTALL_COMMAND
+const WINDOWS_INSTALL_COMMAND =
+  'cmd.exe /d /s /c "where.exe npx >nul 2>nul & if errorlevel 1 (echo ERROR: npx was not found. Install Node.js LTS from https://nodejs.org/ to get npx. & echo Then close this terminal and start skill setup again - a new terminal picks up the updated PATH. & exit /b 1) else (npx skills add https://github.com/stablyai/orca --skill orchestration --global)"'
 
 const mocks = vi.hoisted(() => ({
   dialogProps: [] as Record<string, unknown>[],
@@ -66,8 +68,18 @@ vi.mock('@/hooks/useInstalledAgentSkills', () => ({
         directoryPath: '/Users/test/.claude/skills/orchestration',
         skillFilePath: '/Users/test/.claude/skills/orchestration/SKILL.md',
         installed: true,
-        fileCount: 1,
         updatedAt: null
+      }
+    ],
+    sources: [
+      {
+        id: 'home-claude',
+        label: 'Claude home',
+        path: '/Users/test/.claude/skills',
+        sourceKind: 'home',
+        providers: ['claude'],
+        owner: 'claude',
+        exists: true
       }
     ],
     refresh: vi.fn()
@@ -97,6 +109,31 @@ async function renderPane(): Promise<HTMLDivElement> {
 }
 
 describe('OrchestrationPane', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'api', {
+      configurable: true,
+      value: {
+        ...window.api,
+        platform: {
+          get: () => ({ platform: 'win32', osRelease: 'test' })
+        },
+        wsl: {
+          isAvailable: vi.fn().mockResolvedValue(false),
+          listDistros: vi.fn().mockResolvedValue([])
+        },
+        pwsh: {
+          isAvailable: vi.fn().mockResolvedValue(false)
+        },
+        gitBash: {
+          isAvailable: vi.fn().mockResolvedValue(false)
+        },
+        runtime: {
+          getStatus: vi.fn().mockResolvedValue({ hostPlatform: 'win32' })
+        }
+      }
+    })
+  })
+
   afterEach(async () => {
     if (root) {
       await act(async () => {
@@ -138,8 +175,8 @@ describe('OrchestrationPane', () => {
 
     expect(mocks.panelProps.at(-1)).toEqual(
       expect.objectContaining({
-        command: INSTALL_COMMAND,
-        installedCommand: UPDATE_COMMAND
+        command: WINDOWS_INSTALL_COMMAND,
+        installedCommand: WINDOWS_INSTALL_COMMAND
       })
     )
 
@@ -174,10 +211,10 @@ describe('OrchestrationPane', () => {
 
     expect(mocks.dialogProps.at(-1)).toEqual(
       expect.objectContaining({
-        command: INSTALL_COMMAND,
+        command: WINDOWS_INSTALL_COMMAND,
         open: true
       })
     )
-    expect(rendered.textContent).toContain(INSTALL_COMMAND)
+    expect(rendered.textContent).toContain(WINDOWS_INSTALL_COMMAND)
   })
 })

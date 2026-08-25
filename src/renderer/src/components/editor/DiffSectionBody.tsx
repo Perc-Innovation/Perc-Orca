@@ -1,4 +1,4 @@
-import { type RefObject } from 'react'
+import type { RefObject } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { DiffEditor, type DiffOnMount } from '@monaco-editor/react'
@@ -9,6 +9,8 @@ import { combinedDiffSectionScrollbarOptions } from './diff-editor-scrollbar-opt
 import type { DiffSection } from './diff-section-types'
 import { translate } from '@/i18n/i18n'
 import { LargeDiffFallback } from './LargeDiffFallback'
+import { buildDiffEditorWordWrapOptions } from './diff-editor-word-wrap-options'
+import { monacoFindOptions } from './monaco-find-options'
 
 const ImageDiffViewer = lazy(() => import('./ImageDiffViewer'))
 
@@ -34,7 +36,8 @@ type DiffSectionBodyProps = {
   modelPathBase: string
   isEditable: boolean
   diffEditorFontSize: number
-  terminalFontFamily?: string
+  diffWordWrap?: boolean
+  editorFontFamily?: string
   onCancelComment: () => void
   onSubmitComment: (body: string) => Promise<void>
   onRetrySection: (index: number) => void
@@ -58,7 +61,8 @@ export function DiffSectionBody({
   modelPathBase,
   isEditable,
   diffEditorFontSize,
-  terminalFontFamily,
+  diffWordWrap,
+  editorFontFamily,
   onCancelComment,
   onSubmitComment,
   onRetrySection,
@@ -188,17 +192,14 @@ export function DiffSectionBody({
             minimap: { enabled: false },
             scrollBeyondLastLine: false,
             fontSize: diffEditorFontSize,
-            fontFamily: terminalFontFamily || 'monospace',
+            fontFamily: editorFontFamily || 'monospace',
             lineNumbers: 'on',
+            ...buildDiffEditorWordWrapOptions(diffWordWrap),
             automaticLayout: true,
             renderOverviewRuler: false,
             scrollbar: combinedDiffSectionScrollbarOptions,
             hideUnchangedRegions: { enabled: true },
-            find: {
-              addExtraSpaceOnTop: false,
-              autoFindInSelection: 'never',
-              seedSearchStringFromSelection: 'never'
-            }
+            find: monacoFindOptions
           }}
         />
       )}

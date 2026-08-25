@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { setPtyHostBindings } from '../ipc/pty-host-bindings'
 
-const {
-  browserWindowFromWebContentsMock,
-  handleMock,
-  onMock,
-  removeHandlerMock,
-  removeAllListenersMock
-} = vi.hoisted(() => ({
-  browserWindowFromWebContentsMock: vi.fn(),
+const { handleMock, onMock, removeHandlerMock, removeAllListenersMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   onMock: vi.fn(),
   removeHandlerMock: vi.fn(),
@@ -19,14 +13,14 @@ vi.mock('electron', () => ({
     isPackaged: true,
     getPath: vi.fn().mockReturnValue('/tmp/orca-test-userdata')
   },
-  BrowserWindow: {
-    fromWebContents: browserWindowFromWebContentsMock
-  },
   ipcMain: {
     handle: handleMock,
     on: onMock,
     removeHandler: removeHandlerMock,
     removeAllListeners: removeAllListenersMock
+  },
+  powerMonitor: {
+    on: vi.fn()
   }
 }))
 
@@ -68,11 +62,13 @@ import {
   setPtyOwnership,
   unregisterSshPtyProvider
 } from '../ipc/pty'
-import { registerMainWindow } from '../window/main-window-registry'
 import type { IPtyProvider } from './types'
+import { LEGACY_TERMINAL_SHIM_REMOTE_ENV_KEYS } from '../pty/legacy-terminal-shim-dir'
 
 describe('PTY provider dispatch', () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  // Why: registerPtyHandlers now resolves the owning window through the registry and
+  // installs a per-window close listener, so the stub needs a window identity.
   const mainWindow = {
     id: 1,
     isDestroyed: () => false,
@@ -93,11 +89,16 @@ describe('PTY provider dispatch', () => {
     onMock.mockImplementation((channel: string, handler: (...a: unknown[]) => unknown) => {
       handlers.set(channel, handler)
     })
-    browserWindowFromWebContentsMock.mockReset()
-    browserWindowFromWebContentsMock.mockImplementation((webContents: unknown) =>
-      webContents === mainWindow.webContents ? mainWindow : null
-    )
-    registerMainWindow(mainWindow as never)
+    // Why: pty.ts registers against an injected surface now, so the mocked ipcMain must
+    // be installed for this suite's own `handlers` map to capture registrations.
+    setPtyHostBindings({
+      ipc: {
+        handle: handleMock,
+        on: onMock,
+        removeHandler: removeHandlerMock,
+        removeAllListeners: removeAllListenersMock
+      }
+    })
     registerPtyHandlers(mainWindow as never)
   }
 
@@ -158,12 +159,21 @@ describe('PTY provider dispatch', () => {
     })) as { id: string }
 
     expect(result.id).toBe('ssh-pty-1')
-    expect(mockSshProvider.spawn).toHaveBeenCalledWith({
-      cols: 80,
-      rows: 24,
-      cwd: undefined,
-      env: undefined
-    })
+    // Why: the relay host can be launched from a Claude session too, so the stamps are
+    // stripped on the SSH path as well. Compared as a set — envToDelete is consumed by
+    // membership only, so a reordering of the merge sources must not fail this.
+    const sshSpawnArgs = vi.mocked(mockSshProvider.spawn).mock.calls.at(-1)![0]
+    expect([...(sshSpawnArgs.envToDelete ?? [])].sort()).toEqual(
+      [
+        ...LEGACY_TERMINAL_SHIM_REMOTE_ENV_KEYS,
+        'CLAUDE_CODE_CHILD_SESSION',
+        'CLAUDE_CODE_SESSION_ID',
+        'CLAUDE_CODE_BRIDGE_SESSION_ID'
+      ].sort()
+    )
+    expect(mockSshProvider.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({ cols: 80, rows: 24, cwd: undefined, env: undefined })
+    )
 
     unregisterSshPtyProvider('conn-123')
   })

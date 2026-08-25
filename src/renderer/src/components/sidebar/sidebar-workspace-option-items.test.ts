@@ -31,9 +31,37 @@ describe('worktree card property options', () => {
     expect(options.find((option) => option.id === 'linear-issue')?.properties).toEqual([
       'linear-issue'
     ])
+    expect(options.find((option) => option.id === 'jira-issue')?.properties).toEqual(['jira-issue'])
     expect(options.find((option) => option.id === 'automation')?.properties).toEqual(['automation'])
     expect(options.map((option) => option.label)).toContain('GitHub issues')
     expect(options.map((option) => option.label)).toContain('Linear issues')
+    expect(options.map((option) => option.label)).toContain('Jira issues')
     expect(options.map((option) => option.label)).toContain('Automation')
+  })
+
+  it('uses branch-only copy by default and without project groups', () => {
+    const defaultOptions = getWorktreeCardPropertyOptions()
+    const newCardOptions = getWorktreeCardPropertyOptions({
+      newCardStyle: true,
+      hasProjectGroups: false
+    })
+
+    expect(defaultOptions.find((option) => option.id === 'branch')?.label).toBe('Branch name')
+    expect(newCardOptions.find((option) => option.id === 'branch')?.label).toBe('Branch name')
+  })
+
+  it('keeps branch-only copy for legacy cards even with project groups', () => {
+    const options = getWorktreeCardPropertyOptions({ hasProjectGroups: true })
+
+    expect(options.find((option) => option.id === 'branch')?.label).toBe('Branch name')
+  })
+
+  it('mentions folder paths only for new card style with project groups', () => {
+    const options = getWorktreeCardPropertyOptions({
+      newCardStyle: true,
+      hasProjectGroups: true
+    })
+
+    expect(options.find((option) => option.id === 'branch')?.label).toBe('Branch / folder path')
   })
 })

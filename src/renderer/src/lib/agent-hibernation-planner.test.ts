@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
-import type { TerminalLayoutSnapshot, TerminalTab } from '../../../shared/types'
+import type { TerminalLayoutSnapshot, TerminalTab } from '../../../shared/terminal-tab-types'
 import {
   DEFAULT_AGENT_HIBERNATION_IDLE_MS,
   MAX_AGENT_HIBERNATION_IDLE_MS,
   MIN_AGENT_HIBERNATION_IDLE_MS,
-  confirmAgentHibernationCandidates,
   getEffectiveAgentHibernationIdleMs,
   planAgentHibernationCandidates,
   type AgentHibernationPlannerSnapshot
@@ -65,7 +64,7 @@ function snapshot(
       agentHibernationIdleMs: DEFAULT_AGENT_HIBERNATION_IDLE_MS
     },
     activeWorktreeId: 'wt-active',
-    foregroundWorktreeIds: ['wt-active'],
+    foregroundTerminalTabIds: [],
     tabsByWorktree: { 'wt-bg': [tab()] },
     terminalLayoutsByTabId: { 'tab-1': layout() },
     ptyIdsByTabId: { 'tab-1': ['pty-1'] },
@@ -73,6 +72,7 @@ function snapshot(
     agentStatusByPaneKey: { [agentEntry.paneKey]: agentEntry },
     sleepingAgentSessionsByPaneKey: {},
     lastTerminalInputAtByPaneKey: {},
+    foregroundTerminalLastSeenAtByTabId: {},
     now: NOW,
     ...overrides
   }
@@ -99,9 +99,7 @@ describe('agent sleep planner', () => {
       )
     ).toEqual([])
     expect(plannedWorktrees(snapshot({ activeWorktreeId: 'wt-bg' }))).toEqual([])
-    expect(plannedWorktrees(snapshot({ foregroundWorktreeIds: ['wt-active', 'wt-bg'] }))).toEqual(
-      []
-    )
+    expect(plannedWorktrees(snapshot({ foregroundTerminalTabIds: ['tab-1'] }))).toEqual([])
   })
 
   it('requires done resumable provider-session entries', () => {
@@ -117,11 +115,95 @@ describe('agent sleep planner', () => {
     expect(
       plannedWorktrees(snapshot({ agentStatusByPaneKey: { [noSession.paneKey]: noSession } }))
     ).toEqual([])
+    const ephemeralPi = entry({ agentType: 'pi', providerSession: undefined })
+    expect(
+      plannedWorktrees(snapshot({ agentStatusByPaneKey: { [ephemeralPi.paneKey]: ephemeralPi } }))
+    ).toEqual([])
+    const piWithoutTranscript = entry({
+      agentType: 'pi',
+      providerSession: { key: 'session_id', id: 'pi-session-1' }
+    })
+    expect(
+      plannedWorktrees(
+        snapshot({ agentStatusByPaneKey: { [piWithoutTranscript.paneKey]: piWithoutTranscript } })
+      )
+    ).toEqual([])
     const unsupported = entry({ agentType: 'amp' })
     expect(
       plannedWorktrees(snapshot({ agentStatusByPaneKey: { [unsupported.paneKey]: unsupported } }))
     ).toEqual([])
   })
+
+  it('treats an idle done copilot pane as a hibernation candidate', () => {
+    const copilot = entry({
+      agentType: 'copilot',
+      providerSession: { key: 'session_id', id: '940237d9-c712-48e8-bca1-fd75fc4a8d4b' }
+    })
+    expect(
+      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [copilot.paneKey]: copilot } }))
+    ).toEqual([copilot.paneKey])
+  })
+
+  it('blocks done panes until their live subagent roster clears', () => {
+    const withIdleTeammate = entry({
+      subagents: [
+        {
+          id: 'reviewer-1',
+          agentType: 'reviewer',
+          state: 'idle',
+          startedAt: OLD
+        }
+      ]
+    })
+    expect(
+      plannedPaneKeys(
+        snapshot({ agentStatusByPaneKey: { [withIdleTeammate.paneKey]: withIdleTeammate } })
+      )
+    ).toEqual([])
+
+    const cleared = { ...withIdleTeammate, subagents: undefined }
+    expect(
+      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [cleared.paneKey]: cleared } }))
+    ).toEqual([cleared.paneKey])
+  })
+
+  it.each([undefined, 'pending', 'dispatched'] as const)(
+    'blocks orchestration panes while dispatch status is %s',
+    (dispatchStatus) => {
+      const orchestrated = entry({
+        orchestration: {
+          taskId: 'task-1',
+          dispatchId: 'ctx-1',
+          ...(dispatchStatus ? { dispatchStatus } : {})
+        }
+      })
+
+      expect(
+        plannedPaneKeys(
+          snapshot({ agentStatusByPaneKey: { [orchestrated.paneKey]: orchestrated } })
+        )
+      ).toEqual([])
+    }
+  )
+
+  it.each(['completed', 'failed', 'circuit_broken'] as const)(
+    'allows orchestration panes after authoritative %s settlement',
+    (dispatchStatus) => {
+      const orchestrated = entry({
+        orchestration: {
+          taskId: 'task-1',
+          dispatchId: 'ctx-1',
+          dispatchStatus
+        }
+      })
+
+      expect(
+        plannedPaneKeys(
+          snapshot({ agentStatusByPaneKey: { [orchestrated.paneKey]: orchestrated } })
+        )
+      ).toEqual([orchestrated.paneKey])
+    }
+  )
 
   it('requires the idle threshold and blocks input after done', () => {
     const fresh = entry({ updatedAt: NOW - 1_000 })
@@ -132,8 +214,201 @@ describe('agent sleep planner', () => {
       plannedWorktrees(snapshot({ lastTerminalInputAtByPaneKey: { [`tab-1:${LEAF}`]: OLD + 1 } }))
     ).toEqual([])
     expect(
-      plannedWorktrees(snapshot({ lastTerminalInputAtByPaneKey: { [`tab-1:${LEAF}`]: OLD } }))
+      plannedWorktrees(snapshot({ lastTerminalInputAtByPaneKey: { [`tab-1:${LEAF}`]: OLD - 1 } }))
     ).toEqual(['wt-bg'])
+    // A millisecond tie between the input stamp and the done transition
+    // resolves toward blocking — the keystroke may be a draft character.
+    expect(
+      plannedWorktrees(snapshot({ lastTerminalInputAtByPaneKey: { [`tab-1:${LEAF}`]: OLD } }))
+    ).toEqual([])
+  })
+
+  it('blocks hibernation when real input arrived after the turn started', () => {
+    // Regression: a draft typed while the agent was still working lands before
+    // the done timestamp, so the old input-after-done compare was blind to it
+    // and the hibernation kill discarded the TUI composer's contents.
+    const turnStartedAt = OLD - 60_000
+    const withTurn = entry({
+      stateHistory: [{ state: 'working', prompt: 'make it so', startedAt: turnStartedAt }]
+    })
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [withTurn.paneKey]: withTurn },
+          lastTerminalInputAtByPaneKey: { [withTurn.paneKey]: turnStartedAt + 30_000 }
+        })
+      )
+    ).toEqual([])
+    // The submission that started the turn precedes the working transition
+    // and must not block hibernation.
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [withTurn.paneKey]: withTurn },
+          lastTerminalInputAtByPaneKey: { [withTurn.paneKey]: turnStartedAt - 1_000 }
+        })
+      )
+    ).toEqual(['wt-bg'])
+    // Input after done still blocks, with or without turn history.
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [withTurn.paneKey]: withTurn },
+          lastTerminalInputAtByPaneKey: { [withTurn.paneKey]: OLD + 1 }
+        })
+      )
+    ).toEqual([])
+  })
+
+  it('attributes input to its state segment across working/waiting cycles', () => {
+    // A turn can pause for permission (working → waiting → working → done). A
+    // draft typed during the FIRST working segment is older than the last
+    // working start, so a last-working-start guard misses it; and a permission
+    // answer typed during the waiting segment must NOT block, or every session
+    // with a mid-turn permission prompt would never hibernate.
+    const multiSegment = entry({
+      stateHistory: [
+        { state: 'working', prompt: 'make it so', startedAt: OLD - 90_000 },
+        { state: 'waiting', prompt: 'make it so', startedAt: OLD - 60_000 },
+        { state: 'working', prompt: 'make it so', startedAt: OLD - 30_000 }
+      ]
+    })
+    // Draft typed during the first working segment: blocked.
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [multiSegment.paneKey]: multiSegment },
+          lastTerminalInputAtByPaneKey: { [multiSegment.paneKey]: OLD - 75_000 }
+        })
+      )
+    ).toEqual([])
+    // Permission answer typed during the waiting segment: consumed, eligible.
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [multiSegment.paneKey]: multiSegment },
+          lastTerminalInputAtByPaneKey: { [multiSegment.paneKey]: OLD - 45_000 }
+        })
+      )
+    ).toEqual(['wt-bg'])
+    // A submission typed in a PREVIOUS done segment that already transitioned
+    // onward was consumed and must not block the next completion.
+    const resubmitted = entry({
+      stateHistory: [
+        { state: 'done', prompt: 'earlier turn', startedAt: OLD - 90_000 },
+        { state: 'working', prompt: 'make it so', startedAt: OLD - 30_000 }
+      ]
+    })
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [resubmitted.paneKey]: resubmitted },
+          lastTerminalInputAtByPaneKey: { [resubmitted.paneKey]: OLD - 45_000 }
+        })
+      )
+    ).toEqual(['wt-bg'])
+    // Boundary ties resolve toward blocking: input stamped exactly at a
+    // working-segment start blocks, and a tie at a waiting-segment start also
+    // blocks because it could belong to the preceding working segment.
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [multiSegment.paneKey]: multiSegment },
+          lastTerminalInputAtByPaneKey: { [multiSegment.paneKey]: OLD - 30_000 }
+        })
+      )
+    ).toEqual([])
+    expect(
+      plannedWorktrees(
+        snapshot({
+          agentStatusByPaneKey: { [multiSegment.paneKey]: multiSegment },
+          lastTerminalInputAtByPaneKey: { [multiSegment.paneKey]: OLD - 60_000 }
+        })
+      )
+    ).toEqual([])
+  })
+
+  it('uses foreground terminal tab last-seen as the idle baseline when it is newer', () => {
+    expect(
+      plannedWorktrees(
+        snapshot({
+          foregroundTerminalLastSeenAtByTabId: {
+            'tab-1': NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS + 1
+          }
+        })
+      )
+    ).toEqual([])
+    expect(
+      plannedWorktrees(
+        snapshot({
+          foregroundTerminalLastSeenAtByTabId: {
+            'tab-1': NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS - 1
+          }
+        })
+      )
+    ).toEqual(['wt-bg'])
+    expect(
+      plannedWorktrees(
+        snapshot({
+          foregroundTerminalLastSeenAtByTabId: {
+            'tab-1': NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS - 1
+          },
+          lastTerminalInputAtByPaneKey: { [`tab-1:${LEAF}`]: OLD + 1 }
+        })
+      )
+    ).toEqual([])
+  })
+
+  it('does not let one foreground terminal tab reset a sibling tab in the same worktree', () => {
+    const siblingEntry = entry({
+      paneKey: `tab-2:${OTHER_LEAF}`,
+      tabId: 'tab-2',
+      providerSession: { key: 'session_id', id: 'session-2' }
+    })
+
+    expect(
+      plannedPaneKeys(
+        snapshot({
+          foregroundTerminalTabIds: ['tab-1'],
+          foregroundTerminalLastSeenAtByTabId: {
+            'tab-1': NOW
+          },
+          tabsByWorktree: { 'wt-bg': [tab('tab-1'), tab('tab-2')] },
+          terminalLayoutsByTabId: {
+            'tab-1': layout(),
+            'tab-2': layout(OTHER_LEAF, 'pty-2')
+          },
+          ptyIdsByTabId: {
+            'tab-1': ['pty-1'],
+            'tab-2': ['pty-2']
+          },
+          agentStatusByPaneKey: {
+            [`tab-1:${LEAF}`]: entry(),
+            [siblingEntry.paneKey]: siblingEntry
+          }
+        })
+      )
+    ).toEqual([`tab-2:${OTHER_LEAF}`])
+  })
+
+  it('includes the effective idle start in the candidate signature', () => {
+    const oldEntry = entry({
+      updatedAt: NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS - 10_000,
+      stateStartedAt: NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS - 10_000
+    })
+    const [withoutVisit] = planAgentHibernationCandidates(
+      snapshot({ agentStatusByPaneKey: { [oldEntry.paneKey]: oldEntry } })
+    )
+    const [withVisit] = planAgentHibernationCandidates(
+      snapshot({
+        agentStatusByPaneKey: { [oldEntry.paneKey]: oldEntry },
+        foregroundTerminalLastSeenAtByTabId: {
+          'tab-1': NOW - DEFAULT_AGENT_HIBERNATION_IDLE_MS - 1
+        }
+      })
+    )
+
+    expect(withoutVisit.signature).not.toEqual(withVisit.signature)
   })
 
   it('emits a pane candidate when a sibling shell PTY is live', () => {
@@ -163,6 +438,47 @@ describe('agent sleep planner', () => {
       )
     ).toEqual([])
   })
+
+  it.each([
+    {
+      agent: 'pi' as const,
+      providerSession: {
+        key: 'session_id' as const,
+        id: 'pi-session-1',
+        transcriptPath: '/tmp/pi-session-1.jsonl'
+      }
+    },
+    {
+      agent: 'omp' as const,
+      providerSession: { key: 'session_id' as const, id: 'omp-session-1' }
+    }
+  ])(
+    'still hibernates completed $agent panes that only retain live resume identity',
+    ({ agent, providerSession }) => {
+      const agentEntry = entry({ agentType: agent, providerSession })
+      expect(
+        plannedPaneKeys(
+          snapshot({
+            agentStatusByPaneKey: { [agentEntry.paneKey]: agentEntry },
+            sleepingAgentSessionsByPaneKey: {
+              [agentEntry.paneKey]: {
+                paneKey: agentEntry.paneKey,
+                tabId: 'tab-1',
+                worktreeId: 'wt-bg',
+                agent,
+                providerSession,
+                prompt: '',
+                state: 'working',
+                capturedAt: OLD,
+                updatedAt: OLD,
+                origin: 'live'
+              }
+            }
+          })
+        )
+      ).toEqual([agentEntry.paneKey])
+    }
+  )
 
   it('rejects mobile-driven panes because paired clients can send input outside desktop xterm', () => {
     expect(plannedWorktrees(snapshot({ mobileLockedPtyIds: ['pty-1'] }))).toEqual([])
@@ -309,16 +625,38 @@ describe('agent sleep planner', () => {
     ).toEqual([`tab-1:${LEAF}`, `tab-1:${OTHER_LEAF}`])
   })
 
-  it('requires two stable ticks and resets on signature changes', () => {
-    const [candidate] = planAgentHibernationCandidates(snapshot())
-    const first = confirmAgentHibernationCandidates({}, [candidate])
-    expect(first.candidates).toEqual([])
+  it('restarts the idle window once a phantom subagent stops gating the pane working', () => {
+    // Why: a restored subagent row holds a finished lead at 'working', which is
+    // the one state hibernation never accepts — reaping it is what unlocks it.
+    const gated = entry({
+      state: 'working',
+      subagents: [{ id: 'areview-loop-c237a4c577493352', state: 'working', startedAt: 1 }]
+    })
+    expect(plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [gated.paneKey]: gated } }))).toEqual(
+      []
+    )
+
+    const reaped = entry({ state: 'done', updatedAt: NOW, stateStartedAt: NOW })
     expect(
-      confirmAgentHibernationCandidates(first.confirmationState, [candidate]).candidates
-    ).toEqual([candidate])
-    const changed = { ...candidate, signature: `${candidate.signature}:changed` }
+      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [reaped.paneKey]: reaped } }))
+    ).toEqual([])
+
+    const idleReaped = entry({ state: 'done' })
     expect(
-      confirmAgentHibernationCandidates(first.confirmationState, [changed]).candidates
+      plannedPaneKeys(snapshot({ agentStatusByPaneKey: { [idleReaped.paneKey]: idleReaped } }))
+    ).toEqual([`tab-1:${LEAF}`])
+
+    // Why: reaping only clears the child gate — a draft typed into the composer
+    // while that segment was open still dies with the PTY, so it keeps blocking.
+    expect(
+      plannedPaneKeys(
+        snapshot({
+          agentStatusByPaneKey: { [idleReaped.paneKey]: idleReaped },
+          lastTerminalInputAtByPaneKey: {
+            [idleReaped.paneKey]: idleReaped.stateStartedAt + 1
+          }
+        })
+      )
     ).toEqual([])
   })
 

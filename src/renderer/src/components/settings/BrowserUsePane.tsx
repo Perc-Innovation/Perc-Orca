@@ -56,14 +56,12 @@ export function BrowserUseSetup({
   const [cliBusy, setCliBusy] = useState(false)
   const mountedRef = useMountedRef()
   const activeSkillRuntime = useActiveProjectSkillRuntime()
-  const browserUseInstallCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_INSTALL_COMMAND, activeSkillRuntime.agentRuntime)
-      : ORCA_CLI_SKILL_INSTALL_COMMAND
-  const browserUseUpdateCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_UPDATE_COMMAND, activeSkillRuntime.agentRuntime)
-      : ORCA_CLI_SKILL_UPDATE_COMMAND
+  const browserUseInstallCommand = !activeSkillRuntime.installDisabledReason
+    ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_INSTALL_COMMAND, activeSkillRuntime.agentRuntime)
+    : ORCA_CLI_SKILL_INSTALL_COMMAND
+  const browserUseUpdateCommand = !activeSkillRuntime.installDisabledReason
+    ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_UPDATE_COMMAND, activeSkillRuntime.agentRuntime)
+    : ORCA_CLI_SKILL_UPDATE_COMMAND
 
   const handleCliStatusChange = useCallback(
     (nextStatus: CliInstallStatus | null): void => {
@@ -130,7 +128,8 @@ export function BrowserUseSetup({
   const cookiesImported = !!defaultProfile?.source
 
   const cliEnabled = isOrcaCliAvailableOnPath(cliStatus)
-  const cliPathNeedsAttention = cliStatus?.state === 'installed' && !cliStatus.pathConfigured
+  const cliPathNeedsAttention =
+    cliStatus?.state === 'installed' && cliStatus.pathConfigured === false
   const cliSupported = cliStatus?.supported ?? false
 
   const {
@@ -283,6 +282,7 @@ export function BrowserUseSetup({
             skillError={activeSkillRuntime.installDisabledReason ?? skillError}
             disabled={step2Blocked}
             terminalShellOverride={activeSkillRuntime.terminalShellOverride}
+            terminalRuntime={activeSkillRuntime.agentRuntime}
             preInstallNotice={AGENT_SKILL_CLI_PREREQUISITE_NOTICE}
             getPrerequisiteStatus={() =>
               activeSkillRuntime.agentRuntime?.runtime === 'wsl'

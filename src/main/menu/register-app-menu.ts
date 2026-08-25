@@ -1,29 +1,33 @@
-import { Menu, app } from 'electron'
+import { BrowserWindow, Menu, app } from 'electron'
 import {
   formatKeybindingList,
   getEffectiveKeybindingsForAction,
   type KeybindingActionId,
   type KeybindingOverrides
 } from '../../shared/keybindings'
+import type { UpdateCheckOptions } from '../../shared/update-status-types'
 import { translateMain } from '../i18n/main-i18n'
+import { createAppMenuSelectionItem } from './app-menu-selection-item'
+import { reloadMenuTarget } from './menu-target-web-contents'
 import {
   buildAppearanceSubmenu,
   getNextDefaultOnAppearanceSettingValue,
   type AppearanceMenuKey,
   type AppearanceMenuState
 } from './register-app-menu-appearance'
-import { reloadMenuTarget } from './menu-target-web-contents'
 
+export type { AppearanceMenuKey, AppearanceMenuState }
 export { getNextDefaultOnAppearanceSettingValue }
 
 type RegisterAppMenuOptions = {
+  /** Read once at startup; gates the experimental File > New Window entry. */
   multiWindowEnabled: boolean
   onNewWindow: () => void
   onOpenSettings: (window?: Electron.BaseWindow | null) => void
   onOpenSetupGuide: (window?: Electron.BaseWindow | null) => void
   onOpenFeatureTour: (window?: Electron.BaseWindow | null) => void
   onOpenCrashReport: (window?: Electron.BaseWindow | null) => void
-  onCheckForUpdates: (options: { includePrerelease: boolean }) => void
+  onCheckForUpdates: (options: UpdateCheckOptions) => void
   onBeforeReload?: (options: { ignoreCache: boolean; webContentsId: number }) => void
   onZoomIn: (window?: Electron.BaseWindow | null) => void
   onZoomOut: (window?: Electron.BaseWindow | null) => void
@@ -33,13 +37,16 @@ type RegisterAppMenuOptions = {
   onToggleAppearance: (key: AppearanceMenuKey, window?: Electron.BaseWindow | null) => void
   getAppearanceState: () => AppearanceMenuState
   getKeybindings?: () => KeybindingOverrides | undefined
+  // Why: the macOS app-menu title. Passed the per-branch dev label since
+  // app.name is now pinned to a stable value for Keychain-key stability.
+  appMenuLabel?: string
 }
 
 function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
   const {
-    onOpenSettings,
-    onNewWindow,
     multiWindowEnabled,
+    onNewWindow,
+    onOpenSettings,
     onOpenSetupGuide,
     onOpenFeatureTour,
     onOpenCrashReport,
@@ -66,16 +73,24 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
     return formatKeybindingList(bindings, process.platform)
   }
 
-  // Why: holding Shift while clicking Check for Updates opts this check into
-  // the release-candidate channel. Extracted so both the macOS app-menu entry
-  // and the Windows/Linux Help-menu entry share the exact same behavior.
+  // Why: modifier-click update checks are hidden power-user affordances.
+  // Extracted so the macOS app-menu entry and Windows/Linux Help entry share
+  // identical RC/perf channel routing.
   const checkForUpdatesClick: Electron.MenuItemConstructorOptions['click'] = (
     _menuItem,
     _window,
     event
   ) => {
-    const includePrerelease = !event.triggeredByAccelerator && event.shiftKey === true
-    onCheckForUpdates({ includePrerelease })
+    const modifierClick = !event.triggeredByAccelerator
+    const localBuild = isMac && modifierClick && event.altKey === true
+    const includePerfPrerelease =
+      !localBuild && modifierClick && (isMac ? event.metaKey === true : event.ctrlKey === true)
+    const includePrerelease = !localBuild && modifierClick && event.shiftKey === true
+    onCheckForUpdates({
+      includePrerelease,
+      includePerfPrerelease,
+      ...(localBuild ? { localBuild: true } : {})
+    })
   }
 
   const checkForUpdatesItem: Electron.MenuItemConstructorOptions = {
@@ -114,7 +129,7 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
   // redundant "Orca" entry with roles that don't apply, so we omit it there
   // and distribute its items across File / Help instead.
   const macAppMenu: Electron.MenuItemConstructorOptions = {
-    label: app.name,
+    label: options.appMenuLabel ?? app.name,
     submenu: [
       { role: 'about' },
       checkForUpdatesItem,
@@ -132,15 +147,11 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
 
   const fileMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.file', 'File'),
-    // Why: on Windows/Linux there is no app-named menu, so Settings and
-    // Quit live under File — matching the common platform convention and
-    // keeping all user-facing actions reachable from the in-window menu bar.
     submenu: [
-      // Why: the multi-window code path is still experimental and is read at
-      // startup. Hiding the entry keeps normal users on the single-window path
-      // until they opt in and restart.
+      // Why: the multi-window path is experimental and read at startup, so the
+      // entry stays hidden until the user opts in and restarts.
       ...(multiWindowEnabled
-        ? ([newWindowItem, { type: 'separator' }] satisfies Electron.MenuItemConstructorOptions[])
+        ? ([newWindowItem] satisfies Electron.MenuItemConstructorOptions[])
         : []),
       // Why: on Windows/Linux there is no app-named menu, so Settings and
       // Quit live under File — matching the common platform convention and
@@ -158,19 +169,56 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
   const shouldIncludeFileMenu =
     Array.isArray(fileMenu.submenu) && fileMenu.submenu.some((item) => item.type !== 'separator')
 
+  // Why: keep native menu hints while letting non-macOS Ctrl+Z/Ctrl+Y reach the focused terminal or DOM control.
+  const undoRedoOptions: Electron.MenuItemConstructorOptions = isMac
+    ? {}
+    : { registerAccelerator: false }
   const editMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.edit', 'Edit'),
     submenu: [
-      { role: 'undo' },
-      { role: 'redo' },
+      { role: 'undo', ...undoRedoOptions },
+      { role: 'redo', ...undoRedoOptions },
       { type: 'separator' },
       { role: 'cut' },
-      { role: 'copy' },
-      { role: 'paste' },
-      { role: 'selectAll' }
+      createAppMenuSelectionItem({
+        action: 'copy',
+        label: translateMain('menu.copy', 'Copy'),
+        isMac
+      }),
+      {
+        label: translateMain('menu.paste', 'Paste'),
+        accelerator: 'CmdOrCtrl+V',
+        click: () => {
+          // Why: a focused terminal/native-chat pane is not a native editable
+          // control, so raw Electron paste cannot know which Orca surface owns it.
+          const focusedWindow = BrowserWindow.getFocusedWindow()
+          if (focusedWindow) {
+            focusedWindow.webContents.send('ui:appMenuPaste')
+            return
+          }
+
+          // Why: a macOS native panel (open/save, Go to Folder) leaves no focused
+          // BrowserWindow, so overriding the paste role would strand Cmd+V as a no-op.
+          if (isMac) {
+            Menu.sendActionToFirstResponder('paste:')
+          }
+        }
+      },
+      createAppMenuSelectionItem({
+        action: 'select-all',
+        label: translateMain('menu.selectAll', 'Select All'),
+        isMac
+      })
     ]
   }
 
+  // Why: mirror VS Code's View > Appearance submenu so users can toggle
+  // sidebar/status-bar/tasks-button/titlebar-activity from the menu bar as
+  // well as from the settings pane. Electron doesn't reactively update
+  // menu items when the backing state changes, so rebuildAppMenu() must be
+  // called after every settings update — each build reads current
+  // appearance state through getAppearanceState() and produces a fresh
+  // template with accurate `checked` values.
   const appearanceSubmenu = buildAppearanceSubmenu({
     appearance,
     shortcutLabel,

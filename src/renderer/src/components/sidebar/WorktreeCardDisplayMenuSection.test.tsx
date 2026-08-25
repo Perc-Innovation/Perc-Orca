@@ -11,11 +11,13 @@ const setWorktreeCardProperties = vi.fn()
 const setAgentActivityDisplayMode = vi.fn()
 
 let settings = { compactWorktreeCards: false, experimentalNewWorktreeCardStyle: false }
+let projectGroups: unknown[] = []
 let worktreeCardProperties = [
   'status',
   'unread',
   'issue',
   'linear-issue',
+  'jira-issue',
   'pr',
   'automation',
   'comment',
@@ -27,6 +29,7 @@ vi.mock('@/store', () => ({
   useAppStore: (selector: (state: unknown) => unknown) =>
     selector({
       agentActivityDisplayMode: 'compact',
+      projectGroups,
       setAgentActivityDisplayMode,
       setWorktreeCardMode,
       setWorktreeCardProperties,
@@ -112,11 +115,13 @@ function renderMenu(): void {
 
 beforeEach(() => {
   settings = { compactWorktreeCards: false, experimentalNewWorktreeCardStyle: false }
+  projectGroups = []
   worktreeCardProperties = [
     'status',
     'unread',
     'issue',
     'linear-issue',
+    'jira-issue',
     'pr',
     'automation',
     'comment',
@@ -152,5 +157,24 @@ describe('WorktreeCardDisplayMenuSection', () => {
     })
 
     expect(setWorktreeCardMode).toHaveBeenCalledWith('Compact')
+  })
+
+  it('keeps branch-only copy when project groups are unavailable', () => {
+    settings = { compactWorktreeCards: false, experimentalNewWorktreeCardStyle: true }
+
+    renderMenu()
+
+    expect(container?.textContent).toContain('Branch name')
+    expect(container?.textContent).not.toContain('Branch / folder path')
+  })
+
+  it('mentions folder paths when project groups can create folder workspaces', () => {
+    settings = { compactWorktreeCards: false, experimentalNewWorktreeCardStyle: true }
+    projectGroups = [{ id: 'group-1' }]
+
+    renderMenu()
+
+    expect(container?.textContent).toContain('Branch / folder path')
+    expect(container?.textContent).not.toContain('Branch name')
   })
 })

@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import {
   ORCA_CLI_SKILL_INSTALL_COMMAND,
+  ORCA_CLI_SKILL_NAME,
   ORCA_CLI_SKILL_UPDATE_COMMAND
 } from '@/lib/agent-feature-install-commands'
 import {
@@ -26,14 +27,12 @@ export function BrowserUseSkillSetupCard(props: {
 }): JSX.Element {
   const { compact, terminalHeightPx, skill } = props
   const activeSkillRuntime = useActiveProjectSkillRuntime()
-  const installCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_INSTALL_COMMAND, activeSkillRuntime.agentRuntime)
-      : ORCA_CLI_SKILL_INSTALL_COMMAND
-  const updateCommand =
-    activeSkillRuntime.agentRuntime && !activeSkillRuntime.installDisabledReason
-      ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_UPDATE_COMMAND, activeSkillRuntime.agentRuntime)
-      : ORCA_CLI_SKILL_UPDATE_COMMAND
+  const installCommand = !activeSkillRuntime.installDisabledReason
+    ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_INSTALL_COMMAND, activeSkillRuntime.agentRuntime)
+    : ORCA_CLI_SKILL_INSTALL_COMMAND
+  const updateCommand = !activeSkillRuntime.installDisabledReason
+    ? buildSkillCommandForRuntime(ORCA_CLI_SKILL_UPDATE_COMMAND, activeSkillRuntime.agentRuntime)
+    : ORCA_CLI_SKILL_UPDATE_COMMAND
 
   const handleBeforeOpenTerminal = async (): Promise<void> => {
     useAppStore.getState().recordFeatureInteraction('agent-browser-setup')
@@ -60,6 +59,7 @@ export function BrowserUseSkillSetupCard(props: {
       terminalAriaLabel="Browser Use skill install terminal"
       terminalWorktreeId="feature-wall-browser-use-skill-terminal"
       terminalShellOverride={activeSkillRuntime.terminalShellOverride}
+      terminalRuntime={activeSkillRuntime.agentRuntime}
       installed={skill.installed}
       loading={skill.loading}
       error={activeSkillRuntime.installDisabledReason ?? skill.error}
@@ -76,6 +76,9 @@ export function BrowserUseSkillSetupCard(props: {
       onBeforeOpenTerminal={handleBeforeOpenTerminal}
       showRecheckWhenInstalled={false}
       onRecheck={skill.refresh}
+      freshnessSkillName={
+        activeSkillRuntime.canUseLocalSkillFreshness ? ORCA_CLI_SKILL_NAME : undefined
+      }
     />
   )
 

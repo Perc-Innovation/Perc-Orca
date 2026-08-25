@@ -4,11 +4,13 @@ import type { StateCreator } from 'zustand'
 import type {
   CreateHostedReviewInput,
   CreateHostedReviewResult,
+  CreateStackedHostedReviewInput,
+  CreateStackedHostedReviewResult,
   HostedReviewCreationEligibility,
   HostedReviewCreationEligibilityArgs,
   HostedReviewInfo
 } from '../../../../shared/hosted-review'
-import type { Repo } from '../../../../shared/types'
+import type { Repo } from '../../../../shared/repo-types'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import type { AppState } from '../types'
 import {
@@ -21,12 +23,64 @@ import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared
 
 export { getHostedReviewCacheKey, linkedReviewHintKey } from './hosted-review-cache-identity'
 
-type CacheEntry<T> = { data: T | null; fetchedAt: number; linkedReviewHintKey?: string }
-type FetchOptions = { force?: boolean; repoId?: string; staleWhileRevalidate?: boolean }
+type CacheEntry<T> = {
+  data: T | null
+  fetchedAt: number
+  linkedReviewHintKey?: string
+  branchLookupGitHubPRNumber?: number
+}
+type FetchOptions = {
+  force?: boolean
+  repoId?: string
+  staleWhileRevalidate?: boolean
+  currentHeadOid?: string | null
+  /**
+   * Pass from surfaces that only render the selected worktree. The host re-checks
+   * that branch per minute and paces the O(N) card list far slower (#11532).
+   */
+  active?: boolean
+}
 type CreateHostedReviewStoreInput = CreateHostedReviewInput & { repoId?: string | null }
+type CreateStackedHostedReviewStoreInput = CreateStackedHostedReviewInput & {
+  repoId?: string | null
+}
 
 const CACHE_TTL_MS = 60_000
 const HOSTED_REVIEW_CACHE_MAX = 500
+// Why: the runtime path is bounded by callRuntimeRpc's own timeout; the local
+// Electron path had none, so a hung git/gh subprocess (e.g. a stalled Windows
+// credential probe) could leave the Create PR header stuck in its "Checking…"
+// loading state forever. Mirror the runtime bound so a never-settling probe
+// rejects and the UI can fall back to an actionable/retryable state.
+const CREATION_ELIGIBILITY_TIMEOUT_MS = 30_000
+
+export class HostedReviewCreationEligibilityTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Timed out checking pull request creation eligibility after ${timeoutMs}ms`)
+    this.name = 'HostedReviewCreationEligibilityTimeoutError'
+  }
+}
+
+function withCreationEligibilityTimeout(
+  promise: Promise<HostedReviewCreationEligibility>,
+  timeoutMs = CREATION_ELIGIBILITY_TIMEOUT_MS
+): Promise<HostedReviewCreationEligibility> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new HostedReviewCreationEligibilityTimeoutError(timeoutMs))
+    }, timeoutMs)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
 
 const inflightHostedReviewRequests = new Map<
   string,
@@ -91,6 +145,29 @@ function canReuseInflightHint(inflightHintKey: string, nextHintKey: string): boo
   return inflightHintKey === nextHintKey
 }
 
+function isStaleMergedGitHubReviewForHead(
+  cached: CacheEntry<HostedReviewInfo> | undefined,
+  currentHeadOid: string | null | undefined
+): boolean {
+  // Why: a merged GitHub PR is only shown when the worktree sits on its head
+  // or on a commit confirmed to be part of the PR. The cache key is
+  // branch-scoped, so a worktree that advanced off the merged line of work
+  // must not reuse (or, on failure, preserve) the now-stale merged review.
+  const head = typeof currentHeadOid === 'string' ? currentHeadOid.trim() : ''
+  if (head.length === 0) {
+    return false
+  }
+  const data = cached?.data
+  return (
+    data?.provider === 'github' &&
+    data.state === 'merged' &&
+    typeof data.headSha === 'string' &&
+    data.headSha.length > 0 &&
+    data.headSha !== head &&
+    data.confirmedContainedHeadOid !== head
+  )
+}
+
 function hasNewerHostedReviewCacheEntry(
   cache: HostedReviewSlice['hostedReviewCache'],
   cacheKey: string,
@@ -135,7 +212,7 @@ function settingsForHostedReviewRepoOwner(
   settings: AppState['settings'],
   repo: Pick<Repo, 'connectionId' | 'executionHostId'> | undefined
 ): AppState['settings'] {
-  if (!repo?.executionHostId && !repo?.connectionId) {
+  if (!repo) {
     return settings
   }
   const parsed = parseExecutionHostId(getRepoExecutionHostId(repo))
@@ -151,6 +228,16 @@ function settingsForHostedReviewRepoOwner(
     : ({ activeRuntimeEnvironmentId: null } as AppState['settings'])
 }
 
+function settingsForHostedReviewActionOwner(
+  settings: AppState['settings'],
+  repo: Pick<Repo, 'connectionId' | 'executionHostId'> | undefined
+): AppState['settings'] {
+  if (!repo?.executionHostId && !repo?.connectionId) {
+    return settings
+  }
+  return settingsForHostedReviewRepoOwner(settings, repo)
+}
+
 export type HostedReviewSlice = {
   hostedReviewCache: Record<string, CacheEntry<HostedReviewInfo>>
   getHostedReviewCreationEligibility: (
@@ -160,6 +247,10 @@ export type HostedReviewSlice = {
     repoPath: string,
     input: CreateHostedReviewStoreInput
   ) => Promise<CreateHostedReviewResult>
+  createStackedHostedReview: (
+    repoPath: string,
+    input: CreateStackedHostedReviewStoreInput
+  ) => Promise<CreateStackedHostedReviewResult>
   fetchHostedReviewForBranch: (
     repoPath: string,
     branch: string,
@@ -205,7 +296,7 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
   getHostedReviewCreationEligibility: async (args) => {
     const settings = get().settings
     const repo = findHostedReviewRepoByPath(get().repos, args.repoPath, args.repoId)
-    const ownerSettings = settingsForHostedReviewRepoOwner(settings, repo)
+    const ownerSettings = settingsForHostedReviewActionOwner(settings, repo)
     const target = getActiveRuntimeTarget(ownerSettings)
     if (target.kind === 'environment') {
       const { repoPath: _repoPath, worktreePath, ...runtimeArgs } = args
@@ -221,17 +312,19 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
         { timeoutMs: 30_000 }
       )
     }
-    return window.api.hostedReview.getCreationEligibility({
-      ...args,
-      repoId: repo?.id ?? args.repoId,
-      connectionId: repo?.connectionId ?? null
-    })
+    return withCreationEligibilityTimeout(
+      window.api.hostedReview.getCreationEligibility({
+        ...args,
+        repoId: repo?.id ?? args.repoId,
+        connectionId: repo?.connectionId ?? null
+      })
+    )
   },
 
   createHostedReview: async (repoPath, input) => {
     const settings = get().settings
     const repo = findHostedReviewRepoByPath(get().repos, repoPath, input.repoId)
-    const ownerSettings = settingsForHostedReviewRepoOwner(settings, repo)
+    const ownerSettings = settingsForHostedReviewActionOwner(settings, repo)
     const target = getActiveRuntimeTarget(ownerSettings)
     const { repoId: inputRepoId, ...hostedReviewInput } = input
     if (target.kind === 'environment') {
@@ -255,6 +348,33 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
     })
   },
 
+  createStackedHostedReview: async (repoPath, input) => {
+    const settings = get().settings
+    const repo = findHostedReviewRepoByPath(get().repos, repoPath, input.repoId)
+    const ownerSettings = settingsForHostedReviewActionOwner(settings, repo)
+    const target = getActiveRuntimeTarget(ownerSettings)
+    const { repoId: inputRepoId, ...hostedReviewInput } = input
+    if (target.kind === 'environment') {
+      const { worktreePath, ...runtimeInput } = hostedReviewInput
+      return callRuntimeRpc<CreateStackedHostedReviewResult>(
+        target,
+        'hostedReview.createStacked',
+        {
+          repo: repo?.id ?? repoPath,
+          ...(worktreePath ? { worktree: `path:${worktreePath}` } : {}),
+          ...runtimeInput
+        },
+        { timeoutMs: 90_000 }
+      )
+    }
+    return window.api.hostedReview.createStacked({
+      repoPath,
+      repoId: repo?.id ?? inputRepoId ?? undefined,
+      connectionId: repo?.connectionId ?? null,
+      ...hostedReviewInput
+    })
+  },
+
   fetchHostedReviewForBranch: async (
     repoPath,
     branch,
@@ -271,15 +391,23 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
       repoPath,
       branch,
       ownerSettings,
-      options?.repoId,
+      repoId,
       repo?.connectionId,
-      repo?.executionHostId
+      repo?.executionHostId,
+      repo !== undefined
     )
     const cached = get().hostedReviewCache[cacheKey]
     const hintKey = linkedReviewHintKey(options)
     const linkedRefetch = shouldRefetchForLinkedHint(cached, hintKey)
     const scopedResultRefetch = shouldRefetchGitHubScopedResultForNoHint(cached, hintKey)
-    if (!options?.force && !linkedRefetch && !scopedResultRefetch && isFresh(cached)) {
+    const staleMergedHeadRefetch = isStaleMergedGitHubReviewForHead(cached, options?.currentHeadOid)
+    if (
+      !options?.force &&
+      !linkedRefetch &&
+      !scopedResultRefetch &&
+      !staleMergedHeadRefetch &&
+      isFresh(cached)
+    ) {
       return cached.data
     }
 
@@ -299,6 +427,8 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
           const args = {
             branch,
             ...(options?.repoId !== undefined ? { repoId: options.repoId } : {}),
+            currentHeadOid: options?.currentHeadOid ?? null,
+            ...(options?.active === true ? { active: true } : {}),
             linkedGitHubPR: options?.linkedGitHubPR ?? null,
             ...(fallbackGitHubPR !== null ? { fallbackGitHubPR } : {}),
             linkedGitLabMR: options?.linkedGitLabMR ?? null,
@@ -341,7 +471,8 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
                   branch,
                   ownerSettings,
                   repo?.connectionId,
-                  repo?.executionHostId
+                  repo?.executionHostId,
+                  repo !== undefined
                 ),
                 getLegacyGitHubPRCacheKey(repoPath, repoId, branch),
                 getLegacyGitHubPRCacheKey(repoPath, undefined, branch)
@@ -364,36 +495,35 @@ export const createHostedReviewSlice: StateCreator<AppState, [], [], HostedRevie
                 hostedReviewCache: withHostedReviewCacheEntry(state.hostedReviewCache, cacheKey, {
                   data: review,
                   fetchedAt: Date.now(),
-                  linkedReviewHintKey: hintKey
+                  linkedReviewHintKey: hintKey,
+                  // Why: fallback PR hints come from this branch's PR cache; preserve that provenance separately from request identity.
+                  ...(review?.provider === 'github' &&
+                  options?.linkedGitHubPR == null &&
+                  options?.linkedGitLabMR == null &&
+                  options?.linkedBitbucketPR == null &&
+                  options?.linkedAzureDevOpsPR == null &&
+                  options?.linkedGiteaPR == null
+                    ? { branchLookupGitHubPRNumber: review.number }
+                    : {})
                 })
               }
             })
           }
           return review
         } catch (error) {
+          // Why: a transient lookup failure (timeout, rate limit, gh/git error)
+          // must not be cached as a definitive "no review" miss — that blanks
+          // the sidebar card to branch-only and suppresses retry for the full
+          // cache TTL. Preserve the last known review and let the next visible
+          // poll retry instead.
           console.error('Failed to fetch hosted review:', error)
-          if (requestGenerations.get(cacheKey) === generation) {
-            set((state) => {
-              if (
-                hasNewerHostedReviewCacheEntry(
-                  state.hostedReviewCache,
-                  cacheKey,
-                  requestStartedAt,
-                  requestStartedEntry
-                )
-              ) {
-                return {}
-              }
-              return {
-                hostedReviewCache: withHostedReviewCacheEntry(state.hostedReviewCache, cacheKey, {
-                  data: null,
-                  fetchedAt: Date.now(),
-                  linkedReviewHintKey: hintKey
-                })
-              }
-            })
+          const preserved = get().hostedReviewCache[cacheKey]
+          // Why: don't preserve a merged GitHub review the worktree has moved
+          // off of; that PR is only valid while checked out at its head.
+          if (isStaleMergedGitHubReviewForHead(preserved, options?.currentHeadOid)) {
+            return null
           }
-          return null
+          return preserved?.data ?? null
         } finally {
           const activeRequest = inflightHostedReviewRequests.get(cacheKey)
           if (activeRequest?.generation === generation) {

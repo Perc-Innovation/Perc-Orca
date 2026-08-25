@@ -2,15 +2,18 @@ import { ipcMain } from 'electron'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import type {
   RuntimeBrowserDriverState,
+  RuntimeRendererSyncWindowGraph,
   RuntimeStatus,
   RuntimeSyncWindowGraphResult,
-  RuntimeSyncWindowGraph,
   RuntimeTerminalDriverState
 } from '../../shared/runtime-types'
 import type { RuntimeRpcResponse } from '../../shared/runtime-rpc-envelope'
+import { TERMINAL_FIT_RESTORE_DEADLINE_MS } from '../../shared/terminal-fit-restore-deadline'
 import { RpcDispatcher } from '../runtime/rpc/dispatcher'
 import { getMainWindowForWebContents } from '../window/main-window-registry'
 
+// Why: runtime IPC is per-window state, so refuse senders that are not one of the
+// registered main windows instead of trusting any BrowserWindow.
 function getSenderWindowId(sender: Electron.WebContents): number {
   const window = getMainWindowForWebContents(sender)
   if (!window) {
@@ -19,15 +22,34 @@ function getSenderWindowId(sender: Electron.WebContents): number {
   return window.id
 }
 
+function boundTerminalFitRestore(pending: Promise<boolean>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), TERMINAL_FIT_RESTORE_DEADLINE_MS)
+    timer.unref?.()
+  })
+  return Promise.race([pending, deadline]).finally(() => clearTimeout(timer))
+}
+
 export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
+  const pendingTerminalFitRestores = new Map<string, Promise<boolean>>()
   ipcMain.removeHandler('runtime:syncWindowGraph')
   ipcMain.removeHandler('runtime:getStatus')
   ipcMain.removeHandler('runtime:call')
 
   ipcMain.handle(
     'runtime:syncWindowGraph',
-    (event, graph: RuntimeSyncWindowGraph): RuntimeSyncWindowGraphResult => {
-      return runtime.syncWindowGraph(getSenderWindowId(event.sender), graph)
+    (event, graph: RuntimeRendererSyncWindowGraph): RuntimeSyncWindowGraphResult => {
+      const senderWindowId = getSenderWindowId(event.sender)
+      if (event.senderFrame !== event.sender.mainFrame) {
+        // Why: a disposed main frame can leave an invoke queued after its
+        // replacement starts. It must not settle the replacement generation.
+        throw new Error('Runtime graph sync must originate from the current main frame')
+      }
+      if (typeof graph.rendererGeneration !== 'string' || graph.rendererGeneration.length === 0) {
+        throw new Error('Runtime graph sync requires a renderer generation')
+      }
+      return runtime.syncWindowGraph(senderWindowId, graph)
     }
   )
 
@@ -49,9 +71,7 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
           method: args.method,
           params: args.params
         },
-        {
-          senderWindowId
-        }
+        { senderWindowId }
       )) as RuntimeRpcResponse<unknown>
     }
   )
@@ -59,7 +79,14 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
   ipcMain.removeHandler('runtime:getTerminalFitOverrides')
   ipcMain.handle(
     'runtime:getTerminalFitOverrides',
-    (event): { ptyId: string; mode: 'mobile-fit'; cols: number; rows: number }[] => {
+    (
+      event
+    ): {
+      ptyId: string
+      mode: 'mobile-fit' | 'remote-desktop-fit'
+      cols: number
+      rows: number
+    }[] => {
       const senderWindowId = getSenderWindowId(event.sender)
       const overrides = runtime.getAllTerminalFitOverrides()
       return Array.from(overrides.entries())
@@ -107,6 +134,9 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
   // code path as the mobile toggle button (terminal.setDisplayMode RPC).
   ipcMain.removeHandler('runtime:restoreTerminalFit')
   ipcMain.handle('runtime:restoreTerminalFit', async (event, args: { ptyId: string }) => {
+    if (runtime.resolveOwnerWindowIdForPtyId(args.ptyId) !== getSenderWindowId(event.sender)) {
+      return { restored: false }
+    }
     // Why: this IPC powers the desktop "Take back" button. Beyond restoring
     // PTY dims (the original semantic), it now also reclaims the input
     // floor for the desktop via the driver state machine. The lock banner
@@ -119,16 +149,34 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
     // Electron try to structured-clone a Promise — "An object could not
     // be cloned" error — and the renderer's restoreTerminalFit() rejected
     // with no useful info.
-    try {
-      const senderWindowId = getSenderWindowId(event.sender)
-      if (runtime.resolveOwnerWindowIdForPtyId(args.ptyId) !== senderWindowId) {
+    // Why: keep one underlying reclaim per PTY even after callers time out;
+    // layout serialization means a retry cannot bypass the wedged operation.
+    let pending = pendingTerminalFitRestores.get(args.ptyId)
+    if (!pending) {
+      try {
+        let tracked!: Promise<boolean>
+        const clearTrackedRestore = (): void => {
+          if (pendingTerminalFitRestores.get(args.ptyId) === tracked) {
+            pendingTerminalFitRestores.delete(args.ptyId)
+          }
+        }
+        tracked = runtime.reclaimTerminalForDesktop(args.ptyId).then(
+          (restored) => {
+            clearTrackedRestore()
+            return restored
+          },
+          () => {
+            clearTrackedRestore()
+            return false
+          }
+        )
+        pending = tracked
+        pendingTerminalFitRestores.set(args.ptyId, pending)
+      } catch {
         return { restored: false }
       }
-      const reclaimed = await runtime.reclaimTerminalForDesktop(args.ptyId)
-      return { restored: reclaimed }
-    } catch {
-      return { restored: false }
     }
+    return { restored: await boundTerminalFitRestore(pending) }
   })
 
   ipcMain.removeHandler('runtime:reclaimBrowserForDesktop')
@@ -136,8 +184,10 @@ export function registerRuntimeHandlers(runtime: OrcaRuntimeService): void {
     'runtime:reclaimBrowserForDesktop',
     (event, args: { browserPageId: string }): { reclaimed: boolean } => {
       try {
-        const senderWindowId = getSenderWindowId(event.sender)
-        if (runtime.resolveOwnerWindowIdForBrowserPageId(args.browserPageId) !== senderWindowId) {
+        if (
+          runtime.resolveOwnerWindowIdForBrowserPageId(args.browserPageId) !==
+          getSenderWindowId(event.sender)
+        ) {
           return { reclaimed: false }
         }
         return { reclaimed: runtime.reclaimBrowserForDesktop(args.browserPageId) }

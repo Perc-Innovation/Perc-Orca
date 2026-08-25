@@ -1,14 +1,17 @@
 import { toast } from 'sonner'
 import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { buildAgentSessionForkPrompt } from '@/lib/agent-session-fork-context'
+import {
+  buildAgentSessionForkPrompt,
+  buildBoundedSessionTranscript
+} from '@/lib/agent-session-fork-context'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { TUI_AGENT_CONFIG } from '../../../../shared/tui-agent-config'
 import { slugifyForWorkspaceName } from '../../../../shared/workspace-name'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
-import type { TuiAgent } from '../../../../shared/types'
+import type { TuiAgent } from '../../../../shared/tui-agent'
 import { isWslUncPath } from '../../../../shared/wsl-paths'
 import type { ProjectExecutionRuntimeResolution } from '../../../../shared/project-execution-runtime'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
@@ -33,9 +36,7 @@ function buildForkWorkspaceName(sourceName: string): string {
 }
 
 function resolveTuiAgent(value: string | null | undefined): TuiAgent | null {
-  return value && Object.prototype.hasOwnProperty.call(TUI_AGENT_CONFIG, value)
-    ? (value as TuiAgent)
-    : null
+  return value && Object.hasOwn(TUI_AGENT_CONFIG, value) ? (value as TuiAgent) : null
 }
 
 function getUsableForkBase(
@@ -62,7 +63,7 @@ function getUsableForkBase(
 
 async function copyForkContext(prompt: string, pane: ManagedPane): Promise<boolean> {
   try {
-    await window.api.ui.writeClipboardText(prompt)
+    await window.api.ui.writeTerminalClipboardText(prompt)
     toast.message(
       translate(
         'auto.components.terminal.pane.terminal.agent.session.fork.c00421d320',
@@ -166,6 +167,47 @@ export async function copyAgentSessionForkContext(
   fork: PreparedAgentSessionFork
 ): Promise<boolean> {
   return copyForkContext(fork.prompt, fork.pane)
+}
+
+// Why: the standalone "Copy Context" action copies the bounded transcript on its
+// own — for pasting into another tool — so it must not carry the fork prompt's
+// "this is a fork… acknowledge and wait" framing the dialog button uses.
+export async function copyAgentSessionContextFromPane(pane: ManagedPane): Promise<boolean> {
+  const transcript = buildBoundedSessionTranscript(
+    pane.serializeAddon.serialize({ scrollback: 800 })
+  )
+  if (!transcript) {
+    toast.error(
+      translate(
+        'auto.components.terminal.pane.terminal.agent.session.fork.f62b40e2c7',
+        'No terminal context to copy'
+      )
+    )
+    pane.terminal.focus()
+    return false
+  }
+  try {
+    await window.api.ui.writeTerminalClipboardText(transcript)
+    toast.message(
+      translate(
+        'auto.components.terminal.pane.terminal.agent.session.fork.373a3103e7',
+        'Context copied'
+      )
+    )
+    pane.terminal.focus()
+    return true
+  } catch (error) {
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : translate(
+            'auto.components.terminal.pane.terminal.agent.session.fork.3fc568a49d',
+            'Failed to copy context.'
+          )
+    )
+    pane.terminal.focus()
+    return false
+  }
 }
 
 export async function startAgentSessionFork(fork: PreparedAgentSessionFork): Promise<boolean> {

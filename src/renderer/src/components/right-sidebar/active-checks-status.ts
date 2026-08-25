@@ -1,6 +1,6 @@
 import type { AppState } from '../../store/types'
 import { getRepoMapFromState, getWorktreeMapFromState } from '../../store/selectors'
-import type { CheckStatus } from '../../../../shared/types'
+import type { CheckStatus } from '../../../../shared/github/pull-request-types'
 import { getGitHubPRCacheKey } from '../../store/slices/github-cache-key'
 import { getHostedReviewCacheKey } from '../../store/slices/hosted-review-cache-identity'
 
@@ -40,7 +40,8 @@ export function getActiveChecksStatus(state: ActiveChecksStatusState): CheckStat
     branch,
     state.settings,
     activeRepo.connectionId,
-    activeRepo.executionHostId
+    activeRepo.executionHostId,
+    true
   )
   const hostedReviewCacheKey = getHostedReviewCacheKey(
     activeRepo.path,
@@ -48,7 +49,8 @@ export function getActiveChecksStatus(state: ActiveChecksStatusState): CheckStat
     state.settings,
     activeRepo.id,
     activeRepo.connectionId,
-    activeRepo.executionHostId
+    activeRepo.executionHostId,
+    true
   )
   const hostedReview = state.hostedReviewCache?.[hostedReviewCacheKey]?.data ?? null
   if (hostedReview && hostedReview.provider !== 'github') {

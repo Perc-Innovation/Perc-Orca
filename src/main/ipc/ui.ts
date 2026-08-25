@@ -1,6 +1,6 @@
-import { BrowserWindow, ipcMain, type WebContents } from 'electron'
+import { BrowserWindow, ipcMain, webContents, type WebContents } from 'electron'
 import type { Store } from '../persistence'
-import type { PersistedUIState } from '../../shared/types'
+import type { PersistedUIState } from '../../shared/persisted-ui-state-types'
 import { isFeatureInteractionId } from '../../shared/feature-interactions'
 
 const trustedUIRendererWebContentsIds = new Set<number>()
@@ -20,7 +20,50 @@ export function clearTrustedUIRendererWebContentsId(webContentsId: number): void
   trustedUIRendererWebContentsIds.delete(webContentsId)
 }
 
-export function registerUIHandlers(store: Store): void {
+export function sendToTrustedUIRenderer(
+  channel: string,
+  payload: unknown,
+  excludedWebContentsId?: number
+): void {
+  const renderer = getTrustedUIRendererWebContents(excludedWebContentsId)
+  renderer?.send(channel, payload)
+}
+
+export function getTrustedUIRendererWebContents(
+  excludedWebContentsId?: number
+): WebContents | null {
+  // Why: exact targeting avoids waking retained browser/utility windows that cannot
+  // consume app UI events. With several windows trusted, prefer the focused one so
+  // the event lands where the user is looking.
+  if (!explicitUIRendererTrustInitialized) {
+    return null
+  }
+  const focusedId = BrowserWindow.getFocusedWindow?.()?.webContents.id
+  const candidateIds =
+    focusedId !== undefined && trustedUIRendererWebContentsIds.has(focusedId)
+      ? [focusedId, ...trustedUIRendererWebContentsIds]
+      : [...trustedUIRendererWebContentsIds]
+  for (const rendererId of candidateIds) {
+    if (rendererId === excludedWebContentsId) {
+      continue
+    }
+    const renderer = webContents.fromId(rendererId)
+    if (renderer && !renderer.isDestroyed()) {
+      return renderer
+    }
+  }
+  return null
+}
+
+export function getTrustedUIRendererWindow(): BrowserWindow | null {
+  const renderer = getTrustedUIRendererWebContents()
+  return renderer ? BrowserWindow.fromWebContents(renderer) : null
+}
+
+export function registerUIHandlers(
+  store: Store,
+  options: { isDashboardPopoutRenderer?: (sender: WebContents) => boolean } = {}
+): void {
   // Why: UI view-state is shared between the desktop renderer and mobile (ui.set
   // RPC). Broadcast every change so the desktop re-hydrates when mobile (or
   // another window) updates it — bi-directional sync, mirroring settings:changed.
@@ -61,9 +104,25 @@ export function registerUIHandlers(store: Store): void {
     }
     webContents?.paste()
   })
+
+  ipcMain.removeAllListeners('ui:performNativeSelectionAction')
+  ipcMain.on('ui:performNativeSelectionAction', (event, action: unknown) => {
+    if (
+      !isTrustedUIRenderer(event.sender) &&
+      options.isDashboardPopoutRenderer?.(event.sender) !== true
+    ) {
+      return
+    }
+    const target = BrowserWindow.fromWebContents(event.sender)?.webContents
+    if (action === 'copy') {
+      target?.copy()
+    } else if (action === 'select-all') {
+      target?.selectAll()
+    }
+  })
 }
 
-function isTrustedUIRenderer(sender: WebContents): boolean {
+export function isTrustedUIRenderer(sender: WebContents): boolean {
   if (sender.isDestroyed() || sender.getType() !== 'window') {
     return false
   }

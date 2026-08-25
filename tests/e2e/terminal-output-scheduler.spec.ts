@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Scheduler E2E coverage shares one booted Electron app and debug API. */
 /**
  * E2E repro for terminal output bursts from many background tabs.
  *
@@ -27,6 +26,7 @@ type SchedulerDebugSnapshot = {
   flushWriteCount: number
   scheduledDrainCount: number
   drainWrites: number[]
+  drainHighPriority: boolean[]
 }
 
 type SchedulerDebugWindow = Window & {
@@ -66,7 +66,20 @@ async function createTerminalTab(page: Page): Promise<string> {
   const tabsBefore = await countRenderedTabs(page)
   const activeBefore = await getActiveTabId(page)
 
-  await clickNewTerminalMenuItem(page)
+  const createdTabId = await page.evaluate(() => {
+    const store = window.__store
+    if (!store) {
+      throw new Error('window.__store is not available')
+    }
+    const state = store.getState()
+    const worktreeId = state.activeWorktreeId
+    if (!worktreeId) {
+      throw new Error('createTerminalTab: active worktree id was unavailable')
+    }
+    // Why: this scheduler spec cares about mounted PTYs, not the tab menu.
+    // Store creation avoids hiding xterm regressions behind menu hit-testing flakes.
+    return state.createTab(worktreeId).id
+  })
 
   await expect
     .poll(() => countRenderedTabs(page), {
@@ -80,7 +93,7 @@ async function createTerminalTab(page: Page): Promise<string> {
     .poll(
       async () => {
         tabId = await getActiveTabId(page)
-        return Boolean(tabId && tabId !== activeBefore)
+        return tabId === createdTabId && tabId !== activeBefore
       },
       {
         timeout: 5_000,
@@ -93,30 +106,6 @@ async function createTerminalTab(page: Page): Promise<string> {
     throw new Error('createTerminalTab: active tab id was unavailable after creating terminal')
   }
   return tabId
-}
-
-async function clickNewTerminalMenuItem(page: Page): Promise<void> {
-  let lastError: unknown
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await page.keyboard.press('Escape')
-      // Why: headless Electron can keep terminal paints in flight, so this
-      // setup path follows the user menu flow while bypassing stability churn.
-      await page.getByRole('button', { name: 'New tab' }).click({ force: true })
-      const newTerminalMenuItem = page.getByRole('menuitem', { name: /New Terminal/i }).first()
-      await expect(newTerminalMenuItem).toBeVisible({ timeout: 2_000 })
-      // Why: Radix dropdown items may remount during open/close animation;
-      // retrying keeps this perf test focused on scheduler behavior.
-      await newTerminalMenuItem.click({ force: true, timeout: 2_000 })
-      return
-    } catch (error) {
-      lastError = error
-      await page.waitForTimeout(150)
-    }
-  }
-
-  throw lastError ?? new Error('New Terminal menu item could not be clicked')
 }
 
 async function waitForTabPtyId(page: Page, tabId: string): Promise<string> {
@@ -290,8 +279,9 @@ test.describe('Terminal output scheduler', () => {
 
     const debug = await getSchedulerDebug(orcaPage)
     expect(debug.foregroundWriteCount).toBeGreaterThan(0)
-    if (debug.drainWrites.length > 0) {
-      expect(Math.max(...debug.drainWrites)).toBeLessThanOrEqual(2)
+    expect(debug.drainHighPriority).toHaveLength(debug.drainWrites.length)
+    for (const [index, writes] of debug.drainWrites.entries()) {
+      expect(writes).toBeLessThanOrEqual(debug.drainHighPriority[index] ? 8 : 2)
     }
 
     const firstBackground = backgroundCommands[0]

@@ -10,7 +10,10 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
-import type { AgentActivityDisplayMode, WorktreeCardProperty } from '../../../../shared/types'
+import type {
+  AgentActivityDisplayMode,
+  WorktreeCardProperty
+} from '../../../../shared/ui-chrome-types'
 import {
   AGENT_ACTIVITY_DISPLAY_OPTIONS,
   CARD_LAYOUT_OPTIONS,
@@ -32,6 +35,7 @@ export function WorktreeCardDisplayMenuSection({
   const setWorktreeCardMode = useAppStore((s) => s.setWorktreeCardMode)
   const agentActivityDisplayMode = useAppStore((s) => s.agentActivityDisplayMode)
   const setAgentActivityDisplayMode = useAppStore((s) => s.setAgentActivityDisplayMode)
+  const projectGroups = useAppStore((s) => s.projectGroups)
   const newCardStyle = settings?.experimentalNewWorktreeCardStyle === true
   const cardLayout = settings?.compactWorktreeCards ? 'compact' : 'detailed'
   const cardLayoutLabel =
@@ -39,9 +43,10 @@ export function WorktreeCardDisplayMenuSection({
   const visiblePropertyCount = PROPERTY_OPTIONS.filter((opt) =>
     worktreeCardProperties.includes(opt.id)
   ).length
+  const hasProjectGroups = projectGroups.length > 0
   const worktreeCardPropertyOptions = useMemo(
-    () => getWorktreeCardPropertyOptions({ newCardStyle }),
-    [newCardStyle]
+    () => getWorktreeCardPropertyOptions({ newCardStyle, hasProjectGroups }),
+    [newCardStyle, hasProjectGroups]
   )
   const handleWorktreeCardPropertyChange = useCallback(
     (properties: readonly WorktreeCardProperty[], checked: boolean): void => {

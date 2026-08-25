@@ -18,7 +18,11 @@ if (reportPaths.length === 0) {
 const BUDGETS = {
   maxMedianKeyLatencyMs: 75,
   maxWorstKeyLatencyMs: 300,
+  maxRevisitLatencyMs: 300,
   maxTimerDriftMs: 150,
+  // Why: mirrors MAX_TIMER_DRIFT_UNDER_LOAD_MS in artificial-opencode-terminal-load.spec.ts
+  // so injected multi-pane redraw rows are not judged against the unloaded ceiling.
+  maxTimerDriftUnderLoadMs: 3_500,
   maxScrollLatencyMs: 150,
   maxRestoreLatencyMs: 1000,
   maxRendererQueuedChars: 2 * 1024 * 1024,
@@ -26,53 +30,15 @@ const BUDGETS = {
   maxRendererDroppedBacklogs: 0
 }
 
-const HIDDEN_REAL_PTY_BUDGETS = {
-  ...BUDGETS,
-  maxWorstKeyLatencyMs: 500,
-  maxTimerDriftMs: 250,
-  maxRestoreLatencyMs: 8000,
-  maxRendererQueuedChars: 5 * 1024 * 1024,
-  maxRendererPeakQueuedChars: 5 * 1024 * 1024
-}
-
-const SYNTHETIC_REDRAW_BUDGETS = {
-  ...BUDGETS,
-  maxMedianKeyLatencyMs: 150,
-  maxWorstKeyLatencyMs: 1000
-}
-
-const ACK_PRESSURE_BUDGETS = {
-  ...BUDGETS,
-  maxMedianKeyLatencyMs: 750,
-  maxWorstKeyLatencyMs: 5000,
-  maxTimerDriftMs: 250,
-  maxScrollLatencyMs: 300,
-  maxRendererQueuedChars: 5 * 1024 * 1024,
-  maxRendererPeakQueuedChars: 5 * 1024 * 1024
-}
-
-function budgetsForRow(row) {
-  // Why: hidden real PTYs deliberately exercise source-pause recovery, which is
-  // noisier than the default typing gate; keep the wider budget scenario-local.
-  if (row.scenario.startsWith('opencode-hidden-real-pty-')) {
-    return HIDDEN_REAL_PTY_BUDGETS
-  }
-  // Why: synthetic redraw storms keep median/timer/queue budgets tight, but one
-  // Electron headless key sample can be noisier than the baseline keyboard path.
-  if (
-    row.scenario.startsWith('opencode-same-workspace-typing') ||
-    row.scenario.startsWith('opencode-scale-same-workspace-') ||
-    row.scenario.startsWith('opencode-cross-workspace-typing') ||
-    row.scenario.startsWith('opencode-scale-cross-workspace-')
-  ) {
-    return SYNTHETIC_REDRAW_BUDGETS
-  }
-  // Why: ACK-gated rows validate bounded queues under real process pressure;
-  // the first active echo can briefly wait on OS PTY scheduling.
-  if (row.scenario.startsWith('opencode-main-pressure-active-')) {
-    return ACK_PRESSURE_BUDGETS
-  }
-  return BUDGETS
+// Why: only these annotation types assert against MAX_TIMER_DRIFT_UNDER_LOAD_MS
+// in the e2e suite; other rows keep the unloaded smoke ceiling.
+function isUnderLoadTimerDriftScenario(scenario) {
+  return (
+    scenario === 'opencode-same-workspace-typing' ||
+    scenario === 'opencode-cross-workspace-typing' ||
+    scenario.startsWith('opencode-scale-same-workspace-') ||
+    scenario.startsWith('opencode-scale-cross-workspace-')
+  )
 }
 
 function parseMs(value, fieldName, row, failures) {
@@ -111,7 +77,6 @@ function addMaxFailure(failures, row, label, actual, budget, unit = '') {
 function validateRow(row) {
   const failures = []
   let checkedMetricCount = 0
-  const budgets = budgetsForRow(row)
   const addBudgetCheck = (label, actual, budget, unit = '') => {
     if (actual != null) {
       checkedMetricCount += 1
@@ -121,48 +86,64 @@ function validateRow(row) {
   addBudgetCheck(
     'median typing latency',
     parseMs(row.median, 'median', row, failures),
-    budgets.maxMedianKeyLatencyMs,
+    BUDGETS.maxMedianKeyLatencyMs,
     'ms'
   )
   addBudgetCheck(
     'worst typing latency',
     parseMs(row.worst, 'worst', row, failures),
-    budgets.maxWorstKeyLatencyMs,
+    BUDGETS.maxWorstKeyLatencyMs,
+    'ms'
+  )
+  addBudgetCheck(
+    'revisit latency',
+    parseMs(row.revisit, 'revisit', row, failures),
+    BUDGETS.maxRevisitLatencyMs,
     'ms'
   )
   addBudgetCheck(
     'timer drift',
     parseMs(row.maxTimerDrift, 'maxTimerDrift', row, failures),
-    budgets.maxTimerDriftMs,
+    isUnderLoadTimerDriftScenario(row.scenario)
+      ? BUDGETS.maxTimerDriftUnderLoadMs
+      : BUDGETS.maxTimerDriftMs,
     'ms'
   )
   addBudgetCheck(
     'scroll latency',
     parseMs(row.scroll, 'scroll', row, failures),
-    budgets.maxScrollLatencyMs,
+    BUDGETS.maxScrollLatencyMs,
     'ms'
   )
   addBudgetCheck(
     'restore latency',
     parseMs(row.restore, 'restore', row, failures),
-    budgets.maxRestoreLatencyMs,
+    BUDGETS.maxRestoreLatencyMs,
     'ms'
   )
   addBudgetCheck(
     'renderer queued chars',
     parseCount(row.rendererQueuedChars, 'rendererQueuedChars', row, failures),
-    budgets.maxRendererQueuedChars
+    BUDGETS.maxRendererQueuedChars
   )
   addBudgetCheck(
     'renderer peak queued chars',
     parseCount(row.rendererPeakQueuedChars, 'rendererPeakQueuedChars', row, failures),
-    budgets.maxRendererPeakQueuedChars
+    BUDGETS.maxRendererPeakQueuedChars
   )
   addBudgetCheck(
     'renderer dropped backlogs',
     parseCount(row.rendererDroppedBacklogs, 'rendererDroppedBacklogs', row, failures),
-    budgets.maxRendererDroppedBacklogs
+    BUDGETS.maxRendererDroppedBacklogs
   )
+  // Why: parked-memory rows carry heap/view-count metrics with no latency
+  // budget; recognize them so memory-only scenarios pass the gate instead of
+  // tripping the "no recognized budget metrics" guard.
+  for (const fieldName of ['heapUsedMB', 'liveTerminals', 'livePaneManagers']) {
+    if (parseCount(row[fieldName], fieldName, row, failures) != null) {
+      checkedMetricCount += 1
+    }
+  }
   if (checkedMetricCount === 0) {
     failures.push(`${row.source} ${row.scenario}: no recognized budget metrics found`)
   }

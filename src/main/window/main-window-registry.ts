@@ -1,5 +1,5 @@
-import { BrowserWindow } from 'electron'
-import type { WebContents } from 'electron'
+import type { BaseWindow, BrowserWindow, WebContents } from 'electron'
+import { getMainWindowElectronBindings } from './main-window-electron-bindings'
 
 const windowsById = new Map<number, BrowserWindow>()
 let lastActiveWindowId: number | null = null
@@ -80,7 +80,7 @@ export function getLastActiveMainWindow(): BrowserWindow | null {
 }
 
 export function getFocusedOrLastActiveMainWindow(): BrowserWindow | null {
-  const focusedWindow = BrowserWindow.getFocusedWindow()
+  const focusedWindow = getMainWindowElectronBindings().getFocusedWindow()
   if (isLiveWindow(focusedWindow) && windowsById.get(focusedWindow.id) === focusedWindow) {
     return focusedWindow
   }
@@ -100,7 +100,7 @@ export function getMainWindowById(windowId: number): BrowserWindow | null {
 }
 
 export function getMainWindowForWebContents(webContents: WebContents): BrowserWindow | null {
-  const window = BrowserWindow.fromWebContents(webContents)
+  const window = getMainWindowElectronBindings().fromWebContents(webContents)
   if (!isLiveWindow(window)) {
     return null
   }
@@ -108,9 +108,9 @@ export function getMainWindowForWebContents(webContents: WebContents): BrowserWi
 }
 
 export function getRegisteredMainWindow(
-  window: Electron.BaseWindow | null | undefined
+  window: BaseWindow | null | undefined
 ): BrowserWindow | null {
-  if (!(window instanceof BrowserWindow) || !isLiveWindow(window)) {
+  if (!getMainWindowElectronBindings().isBrowserWindow(window) || !isLiveWindow(window)) {
     return null
   }
   return windowsById.get(window.id) === window ? window : null
@@ -173,4 +173,9 @@ export function hasVisibleMainWindow(): boolean {
     }
   }
   return false
+}
+
+export function _resetMainWindowRegistryForTests(): void {
+  windowsById.clear()
+  lastActiveWindowId = null
 }

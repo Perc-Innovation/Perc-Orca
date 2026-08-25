@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { join } from 'path'
+import { join } from 'node:path'
 import { DEFAULT_REPO_BADGE_COLOR } from '../../shared/constants'
 
 const {
@@ -71,13 +71,12 @@ vi.mock('../git/runner', () => ({
 
 vi.mock('../git/repo', () => ({
   isGitRepo: vi.fn().mockReturnValue(true),
-  getGitUsername: vi.fn().mockReturnValue(''),
   getRepoName: vi.fn().mockImplementation((path: string) => path.split('/').pop()),
   getBaseRefDefault: vi.fn().mockResolvedValue('origin/main'),
   searchBaseRefs: vi.fn().mockResolvedValue([])
 }))
 
-vi.mock('./filesystem-auth', () => ({
+vi.mock('./registered-worktree-roots-cache', () => ({
   invalidateAuthorizedRootsCache: invalidateAuthorizedRootsCacheMock
 }))
 

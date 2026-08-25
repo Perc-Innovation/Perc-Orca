@@ -10,7 +10,8 @@ import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review-cache-identity'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
-import type { PRCheckDetail, PRCheckRunDetails, Repo } from '../../../../shared/types'
+import type { PRCheckDetail, PRCheckRunDetails } from '../../../../shared/github/check-types'
+import type { Repo } from '../../../../shared/repo-types'
 import { translate } from '@/i18n/i18n'
 
 export function resolveCheckRunDetailsFixCheck(
@@ -58,7 +59,8 @@ export function resolveHostedReviewForCheckRunDetailsFix(
     branch,
     settings,
     repo.connectionId,
-    repo.executionHostId
+    repo.executionHostId,
+    true
   )
   const hostedReviewCacheKey = getHostedReviewCacheKey(
     repo.path,
@@ -66,7 +68,8 @@ export function resolveHostedReviewForCheckRunDetailsFix(
     settings,
     repo.id,
     repo.connectionId,
-    repo.executionHostId
+    repo.executionHostId,
+    true
   )
   const pr = prCacheKey ? (store.prCache[prCacheKey]?.data ?? null) : null
   const hostedReview = hostedReviewCacheKey
