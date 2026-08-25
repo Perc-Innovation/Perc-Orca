@@ -1176,9 +1176,6 @@ const api = {
       rendererInFlightChars: number
       maxRendererInFlightCharsByPty: number
       activeRendererPtyCount: number
-      sourcePausedPtyCount: number
-      inputTrackedPtyCount: number
-      latestInputAgeMs: number | null
       flushScheduled: boolean
       peakPendingChars: number
       peakMaxPendingCharsByPty: number
