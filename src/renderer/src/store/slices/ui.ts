@@ -2557,13 +2557,18 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         // precisely the ones showing the bug, so absence must mean "exempt".
         alwaysShowDefaultBranchWorkspace: ui.alwaysShowDefaultBranchWorkspace !== false,
         showDotfilesByWorktree: sanitizeShowDotfilesByWorktree(ui.showDotfilesByWorktree),
+        // Why: the project filter is per-window view-state (shared/window-view-state): a sync broadcast
+        // carries the profile blob, so only startup may seed it — same rule as activeView below.
         // Why: startup hydrates UI before repo catalogs, so defer repo-filter validation to the all-host refresh.
         filterRepoIds:
-          validRepoIds.size === 0
-            ? persistedFilterRepoIds
-            : persistedFilterRepoIds.filter((repoId) => validRepoIds.has(repoId)),
+          source !== 'startup'
+            ? s.filterRepoIds
+            : validRepoIds.size === 0
+              ? persistedFilterRepoIds
+              : persistedFilterRepoIds.filter((repoId) => validRepoIds.has(repoId)),
         // Why: group catalogs load after UI too, and unknown group ids are inert in the filter derivation.
-        filterGroupIds: sanitizePersistedIdList(ui.filterGroupIds),
+        filterGroupIds:
+          source !== 'startup' ? s.filterGroupIds : sanitizePersistedIdList(ui.filterGroupIds),
         collapsedGroups: new Set(ui.collapsedGroups ?? []),
         uiZoomLevel: ui.uiZoomLevel ?? 0,
         editorFontZoomLevel: ui.editorFontZoomLevel ?? 0,

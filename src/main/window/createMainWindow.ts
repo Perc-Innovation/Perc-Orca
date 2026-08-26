@@ -32,6 +32,12 @@ import {
 import { installMainWindowWebviewSecurity } from './main-window-webview-security'
 import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { installWindowsPathRegistryChangeListener } from '../pty/windows-path-registry-change'
+import { formatWindowIdArgument } from '../../shared/window-identity'
+import {
+  bindWindowIdToWebContents,
+  createWindowId,
+  unbindWindowIdFromWebContents
+} from './window-view-state-registry'
 
 export { closeWindowAfterConfirmation, requestWindowCloseForQuit }
 export { _resetWindowControlIpcHandlersForTests } from './window-control-registration-latch'
@@ -104,6 +110,7 @@ export function createMainWindow(
   const platformBlurOptions =
     blur && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}
 
+  const windowId = createWindowId()
   const mainWindow = new BrowserWindow({
     width: offsetBounds?.width ?? savedBounds?.width ?? defaultBounds.width,
     height: offsetBounds?.height ?? savedBounds?.height ?? defaultBounds.height,
@@ -144,10 +151,14 @@ export function createMainWindow(
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
-      webviewTag: true
+      webviewTag: true,
+      // Why argv: the sandboxed preload still sees process.argv, so the renderer learns its
+      // window id synchronously and without an IPC round-trip (see shared/window-identity).
+      additionalArguments: [formatWindowIdArgument(windowId)]
     }
   })
   const rendererWebContentsId = mainWindow.webContents.id
+  bindWindowIdToWebContents(rendererWebContentsId, windowId)
   installWindowsPathRegistryChangeListener(mainWindow)
   // Why: native paste fallback is privileged IPC; only the top-level renderer may request it.
   setTrustedUIRendererWebContentsId(rendererWebContentsId)
@@ -220,6 +231,7 @@ export function createMainWindow(
     powerMonitor.removeListener('resume', onSystemResume)
     clearTrustedUIRendererWebContentsId(rendererWebContentsId)
     clearTrustedClipboardRendererWebContentsId(rendererWebContentsId)
+    unbindWindowIdFromWebContents(rendererWebContentsId)
     state.dispose()
   })
 

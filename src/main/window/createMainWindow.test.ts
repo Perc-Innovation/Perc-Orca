@@ -115,7 +115,11 @@ describe('createMainWindow', () => {
 
     expect(browserWindowMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        webPreferences: expect.objectContaining({ sandbox: true })
+        webPreferences: expect.objectContaining({
+          sandbox: true,
+          // Why: the sandboxed preload learns its window id from argv, not IPC.
+          additionalArguments: [expect.stringMatching(/^--orca-window-id=.+$/)]
+        })
       })
     )
     const browserWindowOptions = browserWindowMock.mock.calls[0]?.[0]
