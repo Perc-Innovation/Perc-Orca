@@ -70,6 +70,8 @@ export type PersistedUIState = {
   /** Per-worktree Explorer dotfile visibility. Missing entries inherit the default: show. */
   showDotfilesByWorktree?: Record<string, boolean>
   filterRepoIds: string[]
+  /** Project groups whose members (including nested subgroups) the sidebar shows. Absent in pre-feature state. */
+  filterGroupIds?: string[]
   collapsedGroups: string[]
   uiZoomLevel: number
   editorFontZoomLevel: number
