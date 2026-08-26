@@ -1,5 +1,6 @@
-import React from 'react'
-import { Ellipsis, Plus } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { AppWindow, Ellipsis, Plus } from 'lucide-react'
+import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -71,12 +72,34 @@ function ProjectGroupMoveSubmenu({
   )
 }
 
+/** Right-click anywhere on the header row opens the same menu the ··· button does. */
+function useContextMenuOpensRowMenu(rowElementId: string | undefined): {
+  open: boolean
+  setOpen: (open: boolean) => void
+} {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const row = rowElementId ? document.getElementById(rowElementId) : null
+    if (!row) {
+      return
+    }
+    const onContextMenu = (event: MouseEvent): void => {
+      event.preventDefault()
+      setOpen(true)
+    }
+    row.addEventListener('contextmenu', onContextMenu)
+    return () => row.removeEventListener('contextmenu', onContextMenu)
+  }, [rowElementId])
+  return { open, setOpen }
+}
+
 export function ProjectGroupHeaderMenu({
   groupId,
   hostId,
   label,
   projectGroup = null,
   projectGroups,
+  rowElementId,
   onRename,
   onCreateFolderWorkspaceOnHost,
   onDelete,
@@ -89,14 +112,20 @@ export function ProjectGroupHeaderMenu({
   label: string
   projectGroup?: ProjectGroup | null
   projectGroups: readonly ProjectGroup[]
+  /** DOM id of the header row; right-clicking it opens this menu. */
+  rowElementId?: string
   onRename: (groupId: string, currentName: string, hostId?: ExecutionHostId) => void
   onCreateFolderWorkspaceOnHost: (projectGroup: ProjectGroup) => void
   onDelete: (groupId: string, groupName: string, hostId?: ExecutionHostId) => void
   onCreateSubgroup: (parentGroupId: string, parentName: string) => void
   onMoveToGroup: (groupId: string, parentGroupId: string | null) => void
 }): React.JSX.Element {
+  const { open, setOpen } = useContextMenuOpensRowMenu(rowElementId)
+  // Why: launch-time flag from main; with multi-window off nothing could open a second window.
+  const scopedWindowsEnabled = useAppStore((s) => s.scopedWindowsEnabled)
+  const openProjectGroupWindow = useAppStore((s) => s.openProjectGroupWindow)
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -128,6 +157,18 @@ export function ProjectGroupHeaderMenu({
         onClick={stopRepoHeaderMenuEvent}
         onKeyDown={stopRepoHeaderMenuEvent}
       >
+        {scopedWindowsEnabled ? (
+          <>
+            <DropdownMenuItem onSelect={() => void openProjectGroupWindow(groupId)}>
+              <AppWindow className="size-3.5" />
+              {translate(
+                'auto.components.sidebar.WorktreeList.openInNewWindow',
+                'Open in new window'
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {projectGroup ? (
           <DropdownMenuItem onSelect={() => onCreateFolderWorkspaceOnHost(projectGroup)}>
             {translate(

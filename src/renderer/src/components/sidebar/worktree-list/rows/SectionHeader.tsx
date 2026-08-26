@@ -369,6 +369,7 @@ export function renderWorktreeSectionHeaderRow(args: {
                 typeof row.projectGroup?.id === 'string' ? (row.projectGroup as ProjectGroup) : null
               }
               projectGroups={ctx.projectGroups}
+              rowElementId={getWorktreeOptionId(row.key)}
               onRename={ctx.onRenameProjectGroup}
               onCreateFolderWorkspaceOnHost={ctx.onCreateFolderWorkspaceOnHost}
               onDelete={ctx.onDeleteProjectGroup}

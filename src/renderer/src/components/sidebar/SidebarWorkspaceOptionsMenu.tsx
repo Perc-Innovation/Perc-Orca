@@ -27,6 +27,7 @@ import { WorktreeCardDisplayMenuSection } from './WorktreeCardDisplayMenuSection
 import { translate } from '@/i18n/i18n'
 import { SidebarGroupByToggle } from './SidebarGroupByToggle'
 import { useProjectFilterSelection } from './use-project-filter-selection'
+import { isProjectFilterActive } from './window-scope-project-filter'
 
 type SidebarWorkspaceOptionsMenuProps = {
   preserveWorkspaceBoardOpen?: boolean
@@ -45,6 +46,9 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   const hideWorkspacesFromOtherDevices = useAppStore((s) => s.hideWorkspacesFromOtherDevices)
   const alwaysShowDefaultBranchWorkspace = useAppStore((s) => s.alwaysShowDefaultBranchWorkspace)
   const repos = useAppStore((s) => s.repos)
+  const windowScope = useAppStore((s) => s.windowScope ?? null)
+  const filterRepoIds = useAppStore((s) => s.filterRepoIds)
+  const filterGroupIds = useAppStore((s) => s.filterGroupIds)
   const setWorkspaceHostScope = useAppStore((s) => s.setWorkspaceHostScope)
   const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
   const setVisibleWorkspaceHostIds = useAppStore((s) => s.setVisibleWorkspaceHostIds)
@@ -67,9 +71,17 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
     [onMenuOpenChange]
   )
 
-  // Why: a picked group counts as one filter, however many projects it admits.
-  const { selectedGroups, selectedRepos, hasRepoFilter } = useProjectFilterSelection()
-  const selectedCount = selectedGroups.length + selectedRepos.length
+  // Why: a picked group counts as one filter, however many projects it admits — except the
+  // group a project window is bound to, which is that window's baseline rather than a filter.
+  const { selectedGroups, selectedRepos } = useProjectFilterSelection()
+  const hasRepoFilter = isProjectFilterActive({
+    windowScope,
+    filterRepoIds,
+    filterGroupIds
+  })
+  const selectedCount = windowScope
+    ? selectedRepos.length
+    : selectedGroups.length + selectedRepos.length
   const hasSleepingFilter = showSleepingWorkspaces !== DEFAULT_SHOW_SLEEPING_WORKSPACES
   const hasHostVisibilityFilter = visibleWorkspaceHostIds !== null
   // Why gated on the parent row: the exemption only narrows the list during the
@@ -164,7 +176,7 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
       >
         {/* Why: host + project filters share one section and the same single-row
             shell as Sort by (label left, value right) so the menu stays flat. */}
-        {(showHostScopeControls || repos.length > 1) && (
+        {(showHostScopeControls || repos.length > 1 || windowScope !== null) && (
           <>
             <DropdownMenuLabel>
               {translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.showSection', 'Show')}

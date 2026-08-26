@@ -254,6 +254,7 @@ import {
   revealExistingMainWindow,
   shouldReuseExistingMainWindow
 } from './window/main-window-open-policy'
+import { setScopedWindowsEnabled } from './window/window-view-state-registry'
 import { removeTrustedBrowserRendererWebContentsId } from './ipc/browser-renderer-trust'
 import {
   getDashboardPopoutWindow,
@@ -1601,7 +1602,11 @@ function syncMacMenuBarIcon(showMenuBarIcon: boolean): Tray | null {
 }
 
 function openMainWindow(
-  options: { revealOnDidFinishLoad?: boolean; forceNewWindow?: boolean } = {}
+  options: {
+    revealOnDidFinishLoad?: boolean
+    forceNewWindow?: boolean
+    windowId?: string
+  } = {}
 ): BrowserWindow {
   logStartupMilestone('open-main-window-start')
   if (isQuitting) {
@@ -1710,6 +1715,7 @@ function openMainWindow(
     },
     deferLoad: true,
     ...(options.revealOnDidFinishLoad === true ? { revealOnDidFinishLoad: true } : {}),
+    ...(options.windowId ? { windowId: options.windowId } : {}),
     title: devInstanceIdentity.name,
     getKeybindings: () => keybindings?.getOverrides(),
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
@@ -1803,6 +1809,10 @@ function openMainWindow(
         desktopRelayService?.fenceAndCloseNow()
         await preserveAgentAuthBeforeRestart({ codexRuntimeHome, claudeRuntimeAuth, store })
       },
+      openScopedMainWindow: (windowId) =>
+        isQuitting || !experimentalMultiWindowEnabledAtStartup
+          ? null
+          : openMainWindow({ forceNewWindow: true, windowId }),
       onOrcaProfileAuthMutation: () => desktopRelayService?.authMutated(),
       onBeforeOrcaProfileSignOut: () => desktopRelayService?.fenceAndCloseNow()
     },
@@ -3281,6 +3291,9 @@ void app.whenReady().then(async () => {
   await setMainUiLanguage(store.getSettings().uiLanguage)
   logStartupMilestone('i18n-ready')
   experimentalMultiWindowEnabledAtStartup = store.getSettings().experimentalMultiWindow === true
+  // Why: project-scoped windows ride the same launch-time snapshot; with the flag off the
+  // registry treats every id as a plain per-launch id and the renderer hides the affordances.
+  setScopedWindowsEnabled(experimentalMultiWindowEnabledAtStartup)
 
   registerAppMenu({
     appMenuLabel: devInstanceIdentity.name,

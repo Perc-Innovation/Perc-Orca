@@ -33,6 +33,7 @@ import { useSidebarHostVisibleScope } from './worktree-list/listing/use-host-vis
 import { useSidebarRevealRequests } from './worktree-list/navigation/use-reveal-requests'
 import { useSidebarSectionRows } from './worktree-list/listing/use-section-rows'
 import { useSidebarWorktreeFilters } from './worktree-list/listing/use-filters'
+import { useWindowScopeProject } from './use-window-scope-project'
 import { useSidebarWorktreeSelection } from './worktree-list/navigation/use-selection'
 import { useSidebarWorktreeSortOrder } from './worktree-list/listing/use-sort-order'
 import { useVisibleSidebarWorktrees } from './worktree-list/listing/use-visible-worktrees'
@@ -106,7 +107,12 @@ const WorktreeList = React.memo(function WorktreeList({
 
   const agentSendTargetWorktreeId = useAgentSendTargetWorktreeId()
   const { filterState, hasFilters, clearFilters } = useSidebarWorktreeFilters()
-  const sortedIds = useSidebarWorktreeSortOrder({ allWorktrees, repoMap, sortBy })
+  const scopedProject = useWindowScopeProject()
+  const sortedIds = useSidebarWorktreeSortOrder({
+    allWorktrees,
+    repoMap,
+    sortBy
+  })
   const { visibleWorktrees, pairedDeviceIdsByEnvironment } = useVisibleSidebarWorktrees({
     filterState,
     sortBy,
@@ -280,7 +286,13 @@ const WorktreeList = React.memo(function WorktreeList({
   })
   // Why: when active filters hide every row, the Clear Filters empty state must win over Project Group headers.
   if (rowModel.rows.length === 0 || filtersHideAllRows) {
-    return <SidebarWorktreeListEmptyState hasFilters={hasFilters} onClearFilters={clearFilters} />
+    return (
+      <SidebarWorktreeListEmptyState
+        hasFilters={hasFilters}
+        onClearFilters={clearFilters}
+        projectLoading={scopedProject.scope !== null && scopedProject.group === null}
+      />
+    )
   }
 
   return (
