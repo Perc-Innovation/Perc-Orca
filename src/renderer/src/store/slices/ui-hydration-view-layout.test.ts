@@ -248,7 +248,8 @@ describe('createUISlice hydratePersistedUI', () => {
           'bad-shape': 'yes' as never
         },
         setupScriptPromptDismissedRepoIds: [remoteDismissalKey, 'remote-repo', remoteDismissalKey]
-      })
+      }),
+      'startup'
     )
 
     expect(store.getState().filterRepoIds).toEqual(['remote-repo', 'stale-repo'])
@@ -280,7 +281,8 @@ describe('createUISlice hydratePersistedUI', () => {
           'stale-repo': { all: { approvedAt: 2 } }
         },
         setupScriptPromptDismissedRepoIds: [localDismissalKey, staleDismissalKey]
-      })
+      }),
+      'startup'
     )
 
     expect(store.getState().filterRepoIds).toEqual(['local-repo'])

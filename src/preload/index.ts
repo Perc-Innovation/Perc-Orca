@@ -302,6 +302,7 @@ import type { AiVaultSessionTitlesArgs } from '../shared/ai-vault-session-title'
 import type { AiVaultPrepareSessionResumeArgs } from '../shared/ai-vault-resume-preparation'
 import type { AgentType } from '../shared/native-chat-types'
 import { ORCA_UPDATER_QUIT_AND_INSTALL_ABORTED_EVENT } from '../shared/updater-renderer-events'
+import { parseWindowIdFromArgv } from '../shared/window-identity'
 import {
   ORCA_INTERNAL_FILE_DRAG_TYPE,
   createNativeFileDropPayload,
@@ -3694,6 +3695,10 @@ const api = {
       connectionId?: string
     }): Promise<string | null> => ipcRenderer.invoke('git:remoteCommitUrl', args)
   },
+
+  // Why read once: Electron appends webPreferences.additionalArguments to the renderer argv, so the
+  // id is fixed for this window's lifetime and needs no IPC (works under sandbox: true).
+  windowIdentity: { windowId: parseWindowIdFromArgv(process.argv) },
 
   ui: {
     get: () => ipcRenderer.invoke('ui:get'),

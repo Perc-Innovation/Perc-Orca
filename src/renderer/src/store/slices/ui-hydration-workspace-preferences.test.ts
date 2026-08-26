@@ -700,7 +700,7 @@ describe('createUISlice hydratePersistedUI project-group filter', () => {
     const legacy = makePersistedUI({ filterRepoIds: ['repo-1'] }) as Partial<PersistedUIState>
     delete legacy.filterGroupIds
 
-    store.getState().hydratePersistedUI(legacy as PersistedUIState)
+    store.getState().hydratePersistedUI(legacy as PersistedUIState, 'startup')
 
     expect(store.getState().filterGroupIds).toEqual([])
     expect(store.getState().filterRepoIds).toEqual(['repo-1'])
@@ -712,7 +712,8 @@ describe('createUISlice hydratePersistedUI project-group filter', () => {
     store.getState().hydratePersistedUI(
       makePersistedUI({
         filterGroupIds: ['group-1', 42 as unknown as string, 'group-2']
-      })
+      }),
+      'startup'
     )
 
     expect(store.getState().filterGroupIds).toEqual(['group-1', 'group-2'])
