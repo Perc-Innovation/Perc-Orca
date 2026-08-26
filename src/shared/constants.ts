@@ -487,6 +487,7 @@ export function getDefaultUIState(): PersistedUIState {
     alwaysShowDefaultBranchWorkspace: true,
     showDotfilesByWorktree: {},
     filterRepoIds: [],
+    filterGroupIds: [],
     collapsedGroups: [],
     uiZoomLevel: 0,
     editorFontZoomLevel: 0,

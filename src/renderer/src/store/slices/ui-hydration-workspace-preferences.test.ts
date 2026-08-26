@@ -693,3 +693,28 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(store.getState().agentActivityDisplayMode).toBe('compact')
   })
 })
+
+describe('createUISlice hydratePersistedUI project-group filter', () => {
+  it('loads UI state written before filterGroupIds existed as no group filter', () => {
+    const store = createUIStore()
+    const legacy = makePersistedUI({ filterRepoIds: ['repo-1'] }) as Partial<PersistedUIState>
+    delete legacy.filterGroupIds
+
+    store.getState().hydratePersistedUI(legacy as PersistedUIState)
+
+    expect(store.getState().filterGroupIds).toEqual([])
+    expect(store.getState().filterRepoIds).toEqual(['repo-1'])
+  })
+
+  it('keeps persisted group ids without validating them against catalogs that load later', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        filterGroupIds: ['group-1', 42 as unknown as string, 'group-2']
+      })
+    )
+
+    expect(store.getState().filterGroupIds).toEqual(['group-1', 'group-2'])
+  })
+})

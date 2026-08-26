@@ -374,11 +374,11 @@ function isPlainPersistedRecord(value: unknown): value is Record<string, unknown
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function sanitizePersistedRepoIds(value: unknown): string[] {
+function sanitizePersistedIdList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
   }
-  return value.filter((repoId): repoId is string => typeof repoId === 'string')
+  return value.filter((id): id is string => typeof id === 'string')
 }
 
 function sanitizeTrustedOrcaHooks(trust: unknown): PersistedTrustedOrcaHooks {
@@ -926,6 +926,8 @@ export type UISlice = {
   toggleShowDotfilesForWorktree: (worktreeId: string) => void
   filterRepoIds: readonly string[]
   setFilterRepoIds: (ids: readonly string[]) => void
+  filterGroupIds: readonly string[]
+  setFilterGroupIds: (ids: readonly string[]) => void
   collapsedGroups: Set<string>
   toggleCollapsedGroup: (key: string) => void
   worktreeCardProperties: WorktreeCardProperty[]
@@ -2178,6 +2180,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
 
   filterRepoIds: [],
   setFilterRepoIds: (ids) => set({ filterRepoIds: ids }),
+  filterGroupIds: [],
+  setFilterGroupIds: (ids) => set({ filterGroupIds: ids }),
 
   collapsedGroups: new Set<string>(),
   toggleCollapsedGroup: (key) =>
@@ -2451,7 +2455,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       const orderedRepos = applyManualRepoOrder(s.repos, manualRepoOrder)
       const validRepoIds = new Set(s.repos.map((repo) => repo.id))
       const validRepoHostIdentities = new Set(s.repos.map(getRepoHostIdentity))
-      const persistedFilterRepoIds = sanitizePersistedRepoIds(ui.filterRepoIds)
+      const persistedFilterRepoIds = sanitizePersistedIdList(ui.filterRepoIds)
       // Why: pre-rename builds used sidekick* keys; read as fallback only so new pet* writes win after upgrade.
       const customPets = Array.isArray(ui.customPets)
         ? ui.customPets
@@ -2558,6 +2562,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
           validRepoIds.size === 0
             ? persistedFilterRepoIds
             : persistedFilterRepoIds.filter((repoId) => validRepoIds.has(repoId)),
+        // Why: group catalogs load after UI too, and unknown group ids are inert in the filter derivation.
+        filterGroupIds: sanitizePersistedIdList(ui.filterGroupIds),
         collapsedGroups: new Set(ui.collapsedGroups ?? []),
         uiZoomLevel: ui.uiZoomLevel ?? 0,
         editorFontZoomLevel: ui.editorFontZoomLevel ?? 0,
