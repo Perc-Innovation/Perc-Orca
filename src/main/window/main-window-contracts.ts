@@ -30,6 +30,8 @@ export type CreateMainWindowOptions = {
   /** Reveal after load instead of first paint when startup must show the shell before slower renderer work. */
   revealOnDidFinishLoad?: boolean
   title?: string
+  /** Window id the renderer is routed by; a scope key (shared/window-scope) binds the window to a project group. Defaults to a per-launch UUID. */
+  windowId?: string
   getKeybindings?: () => KeybindingOverrides | undefined
   onBeforeReload?: (options: { ignoreCache: boolean; webContentsId: number }) => void
   /** Marks the in-place recovery reload so did-finish-load's PTY orphan sweep spares live sessions until restore re-attaches (#5787). */

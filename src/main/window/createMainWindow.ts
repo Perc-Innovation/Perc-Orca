@@ -20,6 +20,7 @@ import type { CreateMainWindowOptions } from './main-window-contracts'
 import { installMainWindowFocusLifecycle } from './main-window-focus-lifecycle'
 import { installMainWindowShortcutRouting } from './main-window-shortcut-routing'
 import { installMainWindowStateLifecycle } from './main-window-state-lifecycle'
+import { installMainWindowTitle } from './main-window-title'
 import {
   forceRepaint,
   installMacosVisibilityRepaint,
@@ -110,7 +111,7 @@ export function createMainWindow(
   const platformBlurOptions =
     blur && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}
 
-  const windowId = createWindowId()
+  const windowId = opts?.windowId ?? createWindowId()
   const mainWindow = new BrowserWindow({
     width: offsetBounds?.width ?? savedBounds?.width ?? defaultBounds.width,
     height: offsetBounds?.height ?? savedBounds?.height ?? defaultBounds.height,
@@ -159,6 +160,7 @@ export function createMainWindow(
   })
   const rendererWebContentsId = mainWindow.webContents.id
   bindWindowIdToWebContents(rendererWebContentsId, windowId)
+  installMainWindowTitle(mainWindow, opts?.title ?? 'Orca')
   installWindowsPathRegistryChangeListener(mainWindow)
   // Why: native paste fallback is privileged IPC; only the top-level renderer may request it.
   setTrustedUIRendererWebContentsId(rendererWebContentsId)

@@ -1,5 +1,5 @@
 import React from 'react'
-import { FolderPlus, Plus } from 'lucide-react'
+import { FolderPlus, FolderTree, Plus } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -7,6 +7,7 @@ import SidebarWorkspaceOptionsMenu from './SidebarWorkspaceOptionsMenu'
 import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import { openWorkspaceCreationComposerWithTourHandoff } from '../contextual-tours/workspace-creation-tour-handoff'
 import { translate } from '@/i18n/i18n'
+import { useWindowScopeProject } from './use-window-scope-project'
 
 type SidebarHeaderProps = {
   onWorkspaceBoardMenuOpenChange: (open: boolean) => void
@@ -19,16 +20,45 @@ const SidebarHeader = React.memo(function SidebarHeader({
   const newWorktreeShortcutLabel = useShortcutLabel('workspace.create')
   const groupBy = useAppStore((s) => s.groupBy)
   const sidebarTitle = groupBy === 'repo' ? 'Projects' : 'Workspaces'
+  const scopedProject = useWindowScopeProject()
 
   return (
     <div className="mt-2 flex h-8 items-center justify-between px-2 gap-2">
       <div className="flex min-w-0 items-center gap-1">
-        <span
-          className="pl-2 pr-0.5 text-xs font-semibold text-muted-foreground/80 select-none"
-          data-sidebar-section-title={groupBy === 'repo' ? 'projects' : 'workspaces'}
-        >
-          {sidebarTitle}
-        </span>
+        {scopedProject.scope ? (
+          // Why: the window title is hidden on Windows/Linux chrome; this label is the affordance
+          // that names the bound project on every platform.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex min-w-0 items-center gap-1.5 pl-2 pr-0.5 text-xs font-semibold text-muted-foreground/80 select-none"
+                data-sidebar-section-title="project-window"
+                data-sidebar-project-window={scopedProject.scope.projectGroupId}
+              >
+                <FolderTree className="size-3.5 shrink-0" strokeWidth={2.25} />
+                <span
+                  className={scopedProject.group ? 'truncate text-foreground' : 'truncate italic'}
+                >
+                  {scopedProject.group?.name ??
+                    translate(
+                      'auto.components.sidebar.SidebarHeader.loadingProject',
+                      'Loading project…'
+                    )}
+                </span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>
+              {translate('auto.components.sidebar.SidebarHeader.projectWindow', 'Project window')}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span
+            className="pl-2 pr-0.5 text-xs font-semibold text-muted-foreground/80 select-none"
+            data-sidebar-section-title={groupBy === 'repo' ? 'projects' : 'workspaces'}
+          >
+            {sidebarTitle}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <SidebarWorkspaceOptionsMenu

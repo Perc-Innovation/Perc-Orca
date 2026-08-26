@@ -5067,7 +5067,9 @@
           "49f62c5665": "Workspace board",
           "5c9c7c16aa": "Add a project to create workspaces",
           "ca6f729da2": "New workspace ({{value0}})",
-          "a30e34eb5c": "Close workspace board"
+          "a30e34eb5c": "Close workspace board",
+          "loadingProject": "Loading project…",
+          "projectWindow": "Project window"
         },
         "SidebarNav": {
           "80611a8b10": "Search",
@@ -5096,7 +5098,8 @@
           "bbbc6e8e3b": "No unselected projects match",
           "allProjects": "All projects",
           "selectedProjectsCount": "{{value0}} projects",
-          "groupsHeading": "Groups"
+          "groupsHeading": "Groups",
+          "projectRow": "Project"
         },
         "SidebarSettingsHelpMenu": {
           "ad3d3ed7f1": "Restart Orca",
@@ -5426,7 +5429,9 @@
           "newSubgroupDesc": "Create a group nested under {{value0}}.",
           "moveGroupTopLevel": "Top level",
           "groupMoveFailed": "Failed to move group",
-          "groupMoveFailedDesc": "The group kept its previous place. Groups cannot be nested into themselves, into their own subgroups, or deeper than the sidebar allows; remote runtimes may also need an update."
+          "groupMoveFailedDesc": "The group kept its previous place. Groups cannot be nested into themselves, into their own subgroups, or deeper than the sidebar allows; remote runtimes may also need an update.",
+          "openInNewWindow": "Open in new window",
+          "loadingProject": "Loading project…"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancel",
@@ -6071,6 +6076,13 @@
           "projectOnly": "Added in this project only.",
           "useGlobalFor": "Use global for {{value0}}",
           "useGlobal": "Use global"
+        },
+        "SidebarScopedProjectMenuItems": {
+          "loadingProject": "Loading project…",
+          "projectLabel": "Project",
+          "changeProject": "Change project",
+          "freeMode": "Free mode",
+          "alreadyOpen": "That project is already open in another window"
         }
       },
       "shared": {

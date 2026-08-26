@@ -104,6 +104,7 @@ import type {
 } from '../shared/notification-settings-types'
 import type { OnboardingState } from '../shared/onboarding-state-types'
 import type { PersistedUIState } from '../shared/persisted-ui-state-types'
+import type { WindowScopeChangedPayload } from '../shared/window-scope'
 import type { CustomPet } from '../shared/pet-types'
 import type { MemorySnapshot } from '../shared/process-stats-types'
 import type { NestedRepoScanResult } from '../shared/project-group-types'
@@ -3697,12 +3698,27 @@ const api = {
   },
 
   // Why read once: Electron appends webPreferences.additionalArguments to the renderer argv, so the
-  // id is fixed for this window's lifetime and needs no IPC (works under sandbox: true).
+  // id is fixed for this window's lifetime and needs no IPC (works under sandbox: true). It only
+  // bootstraps diagnostics — main can re-key the window, so the scope comes from ui.getWindowScope.
   windowIdentity: { windowId: parseWindowIdFromArgv(process.argv) },
 
   ui: {
     get: () => ipcRenderer.invoke('ui:get'),
     set: (args) => ipcRenderer.invoke('ui:set', args),
+    getWindowScope: () => ipcRenderer.invoke('ui:getWindowScope'),
+    openProjectGroupWindow: (args) => ipcRenderer.invoke('ui:openProjectGroupWindow', args),
+    setWindowScope: (args) => ipcRenderer.invoke('ui:setWindowScope', args),
+    setWindowScopeLabel: (label) => ipcRenderer.send('ui:setWindowScopeLabel', label),
+    onWindowScopeChanged: (
+      callback: (payload: WindowScopeChangedPayload) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: WindowScopeChangedPayload
+      ): void => callback(payload)
+      ipcRenderer.on('ui:windowScopeChanged', listener)
+      return () => ipcRenderer.removeListener('ui:windowScopeChanged', listener)
+    },
     recordFeatureInteraction: (id) => ipcRenderer.invoke('ui:recordFeatureInteraction', id),
     onStateChanged: (callback: (ui: PersistedUIState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, ui: PersistedUIState): void =>

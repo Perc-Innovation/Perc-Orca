@@ -72,6 +72,7 @@ function useStartupActions() {
       setDeferredSshReconnectTargets: s.setDeferredSshReconnectTargets,
       setSshConnectionState: s.setSshConnectionState,
       hydratePersistedUI: s.hydratePersistedUI,
+      applyWindowScopeSnapshot: s.applyWindowScopeSnapshot,
       setHydrationSucceeded: s.setHydrationSucceeded,
       pruneLastVisitedTimestamps: s.pruneLastVisitedTimestamps,
       seedActiveWorktreeLastVisitedIfMissing: s.seedActiveWorktreeLastVisitedIfMissing
@@ -131,8 +132,14 @@ export function useAppStartupHydration(onOnboardingLoaded: (state: OnboardingSta
           window.api.onboarding.get()
         )
         onboardingPromise.catch(() => {})
+        // Why: main owns the window's scope (shared/window-scope); read it with ui.get so first paint knows the filter is derived. A failed read leaves the window free.
+        const windowScopePromise = window.api.ui.getWindowScope().catch(() => null)
         // Why: await ui.get() (not overlap) so persisted view settings hydrate before the local catalog/session steps and first paint reflects them.
         const persistedUI = await timeRendererStartupStep('ui-get', () => window.api.ui.get())
+        const windowScopeSnapshot = await windowScopePromise
+        if (windowScopeSnapshot && !cancelled) {
+          actions.applyWindowScopeSnapshot(windowScopeSnapshot)
+        }
         uiHydrated = timeRendererStartupSyncStep('hydrate-persisted-ui', () =>
           hydratePersistedUIAfterStartupRead({
             persistedUI,

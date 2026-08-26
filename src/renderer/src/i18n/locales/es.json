@@ -4328,7 +4328,9 @@
           "5c9c7c16aa": "Agregar un proyecto para crear espacios de trabajo",
           "ca6f729da2": "Nuevo espacio de trabajo ({{value0}})",
           "a30e34eb5c": "Cerrar tablero del espacio de trabajo",
-          "25a95899c9": "Agregar proyecto"
+          "25a95899c9": "Agregar proyecto",
+          "loadingProject": "Cargando proyecto…",
+          "projectWindow": "Ventana de proyecto"
         },
         "SidebarNav": {
           "80611a8b10": "Buscar",
@@ -4355,7 +4357,8 @@
           "bbbc6e8e3b": "Ningún proyecto no seleccionado coincide",
           "allProjects": "Todos los proyectos",
           "selectedProjectsCount": "{{value0}} proyectos",
-          "groupsHeading": "Grupos"
+          "groupsHeading": "Grupos",
+          "projectRow": "Proyecto"
         },
         "SidebarSettingsHelpMenu": {
           "ad3d3ed7f1": "Reiniciar Orca",
@@ -4667,7 +4670,9 @@
           "newSubgroupDesc": "Crea un grupo anidado dentro de {{value0}}.",
           "moveGroupTopLevel": "Nivel superior",
           "groupMoveFailed": "No se pudo mover el grupo",
-          "groupMoveFailedDesc": "El grupo conservó su ubicación anterior. Un grupo no puede anidarse dentro de sí mismo, de sus propios subgrupos ni más profundo de lo que permite la barra lateral; los runtimes remotos también pueden necesitar una actualización."
+          "groupMoveFailedDesc": "El grupo conservó su ubicación anterior. Un grupo no puede anidarse dentro de sí mismo, de sus propios subgrupos ni más profundo de lo que permite la barra lateral; los runtimes remotos también pueden necesitar una actualización.",
+          "openInNewWindow": "Abrir en ventana nueva",
+          "loadingProject": "Cargando proyecto…"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "Cancelar",
@@ -5206,6 +5211,13 @@
           "agentLabel": "Agente",
           "cancel": "Cancelar",
           "create": "Crear grupo"
+        },
+        "SidebarScopedProjectMenuItems": {
+          "loadingProject": "Cargando proyecto…",
+          "projectLabel": "Proyecto",
+          "changeProject": "Cambiar proyecto",
+          "freeMode": "Modo libre",
+          "alreadyOpen": "Ese proyecto ya está abierto en otra ventana"
         }
       },
       "shared": {

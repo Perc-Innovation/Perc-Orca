@@ -4309,7 +4309,9 @@
           "5c9c7c16aa": "プロジェクトを追加してワークスペースを作成する",
           "ca6f729da2": "新規ワークスペース ({{value0}})",
           "a30e34eb5c": "ワークスペースボードを閉じる",
-          "25a95899c9": "プロジェクトを追加"
+          "25a95899c9": "プロジェクトを追加",
+          "loadingProject": "プロジェクトを読み込み中…",
+          "projectWindow": "プロジェクトウィンドウ"
         },
         "SidebarNav": {
           "80611a8b10": "検索",
@@ -4336,7 +4338,8 @@
           "bbbc6e8e3b": "選択されていないプロジェクトは一致しません",
           "allProjects": "すべてのプロジェクト",
           "selectedProjectsCount": "{{value0}} 件のプロジェクト",
-          "groupsHeading": "グループ"
+          "groupsHeading": "グループ",
+          "projectRow": "プロジェクト"
         },
         "SidebarSettingsHelpMenu": {
           "ad3d3ed7f1": "Orca を再起動",
@@ -4648,7 +4651,9 @@
           "newSubgroupDesc": "{{value0}} の下にネストしたグループを作成します。",
           "moveGroupTopLevel": "トップレベル",
           "groupMoveFailed": "グループを移動できませんでした",
-          "groupMoveFailedDesc": "グループは元の場所に残りました。グループは自分自身や自分のサブグループの中、またはサイドバーで許可される深さを超えてネストできません。リモートランタイムの更新が必要な場合もあります。"
+          "groupMoveFailedDesc": "グループは元の場所に残りました。グループは自分自身や自分のサブグループの中、またはサイドバーで許可される深さを超えてネストできません。リモートランタイムの更新が必要な場合もあります。",
+          "openInNewWindow": "新しいウィンドウで開く",
+          "loadingProject": "プロジェクトを読み込み中…"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "キャンセル",
@@ -5206,6 +5211,13 @@
           "agentLabel": "Agent",
           "cancel": "キャンセル",
           "create": "グループを作成"
+        },
+        "SidebarScopedProjectMenuItems": {
+          "loadingProject": "プロジェクトを読み込み中…",
+          "projectLabel": "プロジェクト",
+          "changeProject": "プロジェクトを変更",
+          "freeMode": "フリーモード",
+          "alreadyOpen": "そのプロジェクトは別のウィンドウで既に開いています"
         }
       },
       "shared": {

@@ -4359,7 +4359,9 @@
           "5c9c7c16aa": "添加项目以创建工作区",
           "ca6f729da2": "新工作区 ({{value0}})",
           "a30e34eb5c": "关闭工作区板",
-          "25a95899c9": "添加项目"
+          "25a95899c9": "添加项目",
+          "loadingProject": "正在加载项目…",
+          "projectWindow": "项目窗口"
         },
         "SidebarNav": {
           "80611a8b10": "搜索",
@@ -4386,7 +4388,8 @@
           "bbbc6e8e3b": "没有匹配的未选择项目",
           "allProjects": "所有项目",
           "selectedProjectsCount": "{{value0}} 个项目",
-          "groupsHeading": "群组"
+          "groupsHeading": "群组",
+          "projectRow": "项目"
         },
         "SidebarSettingsHelpMenu": {
           "ad3d3ed7f1": "重启 Orca",
@@ -4698,7 +4701,9 @@
           "newSubgroupDesc": "在 {{value0}} 下创建一个嵌套的组。",
           "moveGroupTopLevel": "顶层",
           "groupMoveFailed": "移动组失败",
-          "groupMoveFailedDesc": "该组保留在原来的位置。组不能嵌套到自身、自己的子组中，也不能超过侧边栏允许的深度；远程运行时可能也需要更新。"
+          "groupMoveFailedDesc": "该组保留在原来的位置。组不能嵌套到自身、自己的子组中，也不能超过侧边栏允许的深度；远程运行时可能也需要更新。",
+          "openInNewWindow": "在新窗口中打开",
+          "loadingProject": "正在加载项目…"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "取消",
@@ -5256,6 +5261,13 @@
           "agentLabel": "代理",
           "cancel": "取消",
           "create": "创建组"
+        },
+        "SidebarScopedProjectMenuItems": {
+          "loadingProject": "正在加载项目…",
+          "projectLabel": "项目",
+          "changeProject": "更改项目",
+          "freeMode": "自由模式",
+          "alreadyOpen": "该项目已在另一个窗口中打开"
         }
       },
       "shared": {
@@ -14637,23 +14649,6 @@
     "workspace": {
       "cleanup": {
         "browse": {
-          "selectionWithheldOne": "当前筛选条件隐藏了 1 个已选工作区，已取消选择。",
-          "selectionWithheld": "当前筛选条件隐藏了 {{value0}} 个已选工作区，已取消选择。",
-          "selectAllCountOne": "选择 1 个通过安全检查的工作区",
-          "selectAllCount": "选择全部 {{value0}} 个通过安全检查的工作区"
-        },
-        "scan": {
-          "readyOne": "找到 1 个工作区。",
-          "readyMany": "找到 {{value0}} 个工作区。"
-        },
-        "presentationFixtures": {
-          "reviewAlphaCleanup": "评审 Alpha 清理"
-        },
-        "presentation": {
-          "gitlabMergeRequestNumber": "MR #{{value0}}",
-          "githubPullRequestNumber": "PR #{{value0}}"
-        },
-        "browse": {
           "gitStatusCheckFailed": "Git 状态检查失败",
           "gitStatusUnverified": "无法验证 Git 状态",
           "deleteAnyway": "仍然删除",
@@ -14705,6 +14700,17 @@
               "retainedAgents": "已完成的代理"
             }
           }
+        },
+        "scan": {
+          "readyOne": "找到 1 个工作区。",
+          "readyMany": "找到 {{value0}} 个工作区。"
+        },
+        "presentationFixtures": {
+          "reviewAlphaCleanup": "评审 Alpha 清理"
+        },
+        "presentation": {
+          "gitlabMergeRequestNumber": "MR #{{value0}}",
+          "githubPullRequestNumber": "PR #{{value0}}"
         }
       }
     },
