@@ -600,6 +600,13 @@ import { findRuntimeWorkspaceFileOwner } from '../../shared/runtime-workspace-fi
 import { resolveTerminalStartupCwd } from '../../shared/terminal-startup-cwd'
 import { isWslUncPath, parseWslUncPath } from '../../shared/wsl-paths'
 import {
+  computeWindowOwnershipPrioritySeed,
+  diffPtyOwnerWindows,
+  resolveWorktreeProjectGroupId,
+  windowPublishesPty,
+  type PtyOwnerWindowChange
+} from './window-pty-ownership-priority'
+import {
   folderWorkspaceKey,
   parseWorkspaceKey,
   worktreeWorkspaceKey
@@ -3121,6 +3128,11 @@ export class OrcaRuntimeService {
   private leafOwnerWindowByKey = new Map<string, number>()
   private ptyOwnerWindowById = new Map<string, number>()
   private transientPtyOwnerWindowById = new Map<string, number>()
+  // Why: "bring here" claims outrank project scope until the claiming window closes or the PTY
+  // dies; in-memory only, like the rest of window ownership.
+  private explicitPtyOwnerWindowById = new Map<string, number>()
+  private readonly resolveWindowProjectGroupIdFn: ((windowId: number) => string | null) | null
+  private readonly onPtyOwnerWindowsChanged: ((changes: PtyOwnerWindowChange[]) => void) | null
   private browserPageOwnerWindowById = new Map<string, number>()
   private headlessGraphFallbackAvailable = false
   private pendingHeadlessPromotionWindowId: number | null = null
@@ -3833,6 +3845,11 @@ export class OrcaRuntimeService {
       ) => Promise<AiVaultPrepareSessionResumeResult>
       buildAgentHookPtyEnv?: () => Record<string, string>
       getDesktopWindowStatus?: () => RuntimeDesktopWindowStatus
+      /** The project group a main window (numeric BrowserWindow id) is bound to; null for a free window
+       *  and always while scoped windows are off. Injected so the runtime never reads main/window. */
+      resolveWindowProjectGroupId?: (windowId: number) => string | null
+      /** Fires after any owner-index rebuild that moved a PTY between windows (or gave/removed one). */
+      onPtyOwnerWindowsChanged?: (changes: PtyOwnerWindowChange[]) => void
       agentSessionClaimSigner?: AgentSessionClaimSigner
       orchestrationEnvironmentTransport?: OrchestrationEnvironmentTransport
       skillTransactionRecovery?: Promise<unknown>
@@ -3886,6 +3903,8 @@ export class OrcaRuntimeService {
     this.onTerminalAgentStatus = deps?.onTerminalAgentStatus ?? null
     this.buildAgentHookPtyEnv = deps?.buildAgentHookPtyEnv ?? null
     this.getDesktopWindowStatusFn = deps?.getDesktopWindowStatus ?? (() => 'openable')
+    this.resolveWindowProjectGroupIdFn = deps?.resolveWindowProjectGroupId ?? null
+    this.onPtyOwnerWindowsChanged = deps?.onPtyOwnerWindowsChanged ?? null
     this.prepareAiVaultSessionResumeFn = deps?.prepareAiVaultSessionResume ?? null
     this.agentSessionClaimSigner =
       deps?.agentSessionClaimSigner ?? createEphemeralAgentSessionClaimSigner(this.runtimeId)
@@ -33383,14 +33402,18 @@ export class OrcaRuntimeService {
     return ownerWindowId !== undefined && ownerWindowId !== windowId
   }
 
-  // Why: duplicate ids across windows keep their first live owner so relay
-  // routing stays deterministic across republishes.
+  // Why: an explicit claim, then the window bound to the entry's project group, then the first
+  // live publisher (window-pty-ownership-priority.ts) — so a project window takes its own
+  // terminals over a free window that merely published first, and duplicate ids stay
+  // deterministic across republishes.
   private rebuildOwnerWindowIndexes(): void {
+    const previousPtyOwners = new Map(this.ptyOwnerWindowById)
     this.tabOwnerWindowById.clear()
     this.tabOwnerWindowByWorktreeAndTabId.clear()
     this.leafOwnerWindowByKey.clear()
     this.ptyOwnerWindowById.clear()
     this.browserPageOwnerWindowById.clear()
+    this.seedOwnerWindowIndexesByPriority()
     for (const [windowId, publication] of this.windowGraphPublications) {
       for (const tabId of publication.tabIds) {
         if (!this.tabOwnerWindowById.has(tabId)) {
@@ -33400,7 +33423,10 @@ export class OrcaRuntimeService {
         if (worktreeId !== undefined) {
           const worktreeTabKey = this.getWorktreeTabOwnerKey(worktreeId, tabId)
           if (!this.tabOwnerWindowByWorktreeAndTabId.has(worktreeTabKey)) {
-            this.tabOwnerWindowByWorktreeAndTabId.set(worktreeTabKey, windowId)
+            this.tabOwnerWindowByWorktreeAndTabId.set(
+              worktreeTabKey,
+              this.tabOwnerWindowById.get(tabId) ?? windowId
+            )
           }
         }
       }
@@ -33425,17 +33451,94 @@ export class OrcaRuntimeService {
         this.ptyOwnerWindowById.set(ptyId, windowId)
       }
     }
+    const changes = diffPtyOwnerWindows(previousPtyOwners, this.ptyOwnerWindowById)
+    if (changes.length > 0) {
+      this.onPtyOwnerWindowsChanged?.(changes)
+    }
+  }
+
+  private seedOwnerWindowIndexesByPriority(): void {
+    const resolveWindowProjectGroupId = this.resolveWindowProjectGroupIdFn
+    if (!resolveWindowProjectGroupId && this.explicitPtyOwnerWindowById.size === 0) {
+      return
+    }
+    const store = this.store
+    const seed = computeWindowOwnershipPrioritySeed({
+      publications: this.windowGraphPublications,
+      explicitPtyClaims: this.explicitPtyOwnerWindowById,
+      resolveWindowProjectGroupId: resolveWindowProjectGroupId ?? (() => null),
+      resolveWorktreeProjectGroupId: (worktreeId) =>
+        store
+          ? resolveWorktreeProjectGroupId(
+              {
+                getRepo: (repoId) => store.getRepo(repoId),
+                getFolderWorkspaces: () => store.getFolderWorkspaces?.() ?? []
+              },
+              worktreeId
+            )
+          : null,
+      getTabWorktreeId: (tabId) => this.tabs.get(tabId)?.worktreeId,
+      getLeaf: (leafKey) => this.leaves.get(leafKey)
+    })
+    for (const [tabId, windowId] of seed.tabOwners) {
+      this.tabOwnerWindowById.set(tabId, windowId)
+    }
+    for (const [leafKey, windowId] of seed.leafOwners) {
+      this.leafOwnerWindowByKey.set(leafKey, windowId)
+    }
+    for (const [ptyId, windowId] of seed.ptyOwners) {
+      this.ptyOwnerWindowById.set(ptyId, windowId)
+      this.transientPtyOwnerWindowById.delete(ptyId)
+    }
+  }
+
+  /** A rebind ("change project", "free mode", group deleted) changes who outranks whom; re-resolve. */
+  handleWindowScopesChanged(): void {
+    this.rebuildOwnerWindowIndexes()
+  }
+
+  /**
+   * "Bring here": the sender window takes the PTY over scope and arrival order. Only a window
+   * that publishes a pane for it may claim it, so a claim never targets a PTY the window cannot
+   * render.
+   */
+  claimPtyOwnerWindow(
+    ptyId: string,
+    windowId: number
+  ): 'claimed' | 'already-owner' | 'unavailable' {
+    const publication = this.windowGraphPublications.get(windowId)
+    if (!publication || !windowPublishesPty(publication, ptyId, (key) => this.leaves.get(key))) {
+      return 'unavailable'
+    }
+    if (this.ptyOwnerWindowById.get(ptyId) === windowId) {
+      this.explicitPtyOwnerWindowById.set(ptyId, windowId)
+      return 'already-owner'
+    }
+    this.explicitPtyOwnerWindowById.set(ptyId, windowId)
+    this.rebuildOwnerWindowIndexes()
+    return 'claimed'
+  }
+
+  listPtyOwnerWindows(): { ptyId: string; windowId: number }[] {
+    return Array.from(this.ptyOwnerWindowById, ([ptyId, windowId]) => ({ ptyId, windowId }))
   }
 
   private clearOwnerWindowForPty(ptyId: string): void {
     this.transientPtyOwnerWindowById.delete(ptyId)
+    this.explicitPtyOwnerWindowById.delete(ptyId)
     this.ptyOwnerWindowById.delete(ptyId)
   }
 
+  // Why: a closed window's claims die with it; the PTY falls back to scope or arrival order.
   private clearTransientPtyOwnersForWindow(windowId: number): void {
     for (const [ptyId, ownerWindowId] of this.transientPtyOwnerWindowById) {
       if (ownerWindowId === windowId) {
         this.transientPtyOwnerWindowById.delete(ptyId)
+      }
+    }
+    for (const [ptyId, ownerWindowId] of this.explicitPtyOwnerWindowById) {
+      if (ownerWindowId === windowId) {
+        this.explicitPtyOwnerWindowById.delete(ptyId)
       }
     }
   }

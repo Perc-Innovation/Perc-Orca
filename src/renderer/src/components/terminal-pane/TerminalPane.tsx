@@ -59,6 +59,9 @@ import { resolveLeafCloseCopyKind } from '../terminal/terminal-close-copy-kind'
 import { RUNNING_CLOSE_PROBE_TIMEOUT_MS } from '../terminal/running-terminal-close-guard'
 import CodexRestartChip from '../CodexRestartChip'
 import { MobileDriverOverlay } from './MobileDriverOverlay'
+import { ForeignWindowPaneOverlay } from './ForeignWindowPaneOverlay'
+import { shouldShowForeignWindowPaneOverlay } from './foreign-window-pane-overlay-visibility'
+import { getForeignPtyOwnerWindow } from '@/lib/pane-manager/pty-window-ownership-state'
 import { stripSshReconnectOwnedErrorLines, TerminalErrorToast } from './TerminalErrorToast'
 import { TerminalProcessExitOverlay } from './TerminalProcessExitOverlay'
 import { TerminalSessionStateSaveFailureDialog } from './TerminalSessionStateSaveFailureDialog'
@@ -417,6 +420,7 @@ function TerminalPane(
   const [sessionStateSaveFailureOpen, setSessionStateSaveFailureOpen] = useState(false)
   const daemonActions = useDaemonActions()
   const { refreshMobileOverlays } = useMobileOverlayTicks({ managerRef, paneTransportsRef })
+  const scopedWindowsEnabled = useAppStore((store) => store.scopedWindowsEnabled)
 
   // Pane title state keyed by ephemeral paneId, persisted via titlesByLeafId; ref keeps persistLayoutSnapshot closures fresh.
   const [paneTitles, setPaneTitles] = useState<Record<number, string>>({})
@@ -3346,6 +3350,36 @@ function TerminalPane(
           />,
           pane.container,
           `mobile-driver-banner-${pane.id}`
+        )
+      })}
+      {managedPanes.map((pane) => {
+        const ptyId = paneTransportsRef.current.get(pane.id)?.getPtyId()
+        if (!ptyId) {
+          return null
+        }
+        // Why: this pane mirrors a PTY another window owns — output lands there, so the frozen
+        // scrollback here must say so instead of looking like a dead terminal.
+        const foreignOwner = getForeignPtyOwnerWindow(ptyId)
+        if (!shouldShowForeignWindowPaneOverlay(foreignOwner, scopedWindowsEnabled)) {
+          return null
+        }
+        // Why: same rule as the mobile overlay — a chat-replaced pane has no terminal surface to annotate.
+        const paneSurface =
+          effectiveChatViewMode && pane.leafId === chatLeafId ? 'chat' : 'terminal'
+        if (shouldChatTakeOverMobileSurface(paneSurface)) {
+          return null
+        }
+        return createPortal(
+          <ForeignWindowPaneOverlay
+            key={`foreign-window-${pane.id}-${ptyId}`}
+            owner={foreignOwner}
+            rootClassName="foreign-window-banner"
+            onBringHere={async () => {
+              await window.api.pty.claimOwnerWindow?.(ptyId)
+            }}
+          />,
+          pane.container,
+          `foreign-window-banner-${pane.id}`
         )
       })}
       <CloseTerminalDialog

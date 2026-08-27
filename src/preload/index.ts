@@ -122,6 +122,10 @@ import type {
 } from '../shared/worktree/launch-types'
 import type { GitPushTarget, WorktreeHeadIdentity } from '../shared/worktree/types'
 import type { PtyModelRestoreNeededEvent } from '../shared/pty-model-restore-marker'
+import type {
+  PtyClaimOwnerWindowResult,
+  PtyWindowOwnershipEntry
+} from '../shared/pty-window-ownership'
 import type { PtyListedSession } from '../shared/pty-listed-session'
 import type {
   PtyRendererDeliveryHealthReply,
@@ -1282,6 +1286,20 @@ const api = {
     /** Title-only replay snapshot on (re)attach — attention facts (bells/completions) never replay. */
     getSideEffectSnapshot: (id: string): Promise<TerminalSideEffectBatch | null> =>
       ipcRenderer.invoke('pty:sideEffectSnapshot', { id }),
+
+    getWindowOwnership: (): Promise<PtyWindowOwnershipEntry[]> =>
+      ipcRenderer.invoke('pty:getWindowOwnership'),
+    claimOwnerWindow: (id: string): Promise<PtyClaimOwnerWindowResult> =>
+      ipcRenderer.invoke('pty:claimOwnerWindow', { id }),
+    /** Per-window view of PTY ownership; a pane whose PTY is owned elsewhere is a mirror (shared/pty-window-ownership). */
+    onWindowOwnershipChanged: (
+      callback: (entries: PtyWindowOwnershipEntry[]) => void
+    ): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, entries: PtyWindowOwnershipEntry[]) =>
+        callback(entries)
+      ipcRenderer.on('pty:windowOwnershipChanged', listener)
+      return () => ipcRenderer.removeListener('pty:windowOwnershipChanged', listener)
+    },
 
     onExit: (
       callback: (data: { id: string; code: number; preserveRendererBinding?: boolean }) => void

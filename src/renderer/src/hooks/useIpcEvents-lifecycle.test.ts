@@ -18,6 +18,7 @@ const EXPECTED_DIRECT_CALLBACK_METHODS = [
   'emulator.onPaneFocus',
   'gh.onPRRefreshEvent',
   'keybindings.onChanged',
+  'pty.onWindowOwnershipChanged',
   'rateLimits.onUpdate',
   'remoteWorkspace.onChanged',
   'repos.onChanged',
@@ -189,7 +190,8 @@ const EXPECTED_CALLBACK_REGISTRATION_SEQUENCE = [
   'runtime.onTerminalFitOverrideChanged',
   'runtime.onTerminalDriverChanged',
   'runtime.onNativeChatLaunchDraftResolved',
-  'runtime.onBrowserDriverChanged'
+  'runtime.onBrowserDriverChanged',
+  'pty.onWindowOwnershipChanged'
 ] as const
 
 type ListenerRecord = {
@@ -446,9 +448,10 @@ describe('useIpcEvents App-lifetime lifecycle', () => {
       .filter((entry) => entry.startsWith('ipc.') && entry !== 'ipc.dispose')
       .map((entry) => entry.slice('ipc.'.length))
     expect(ipcCleanupOrder).toEqual(EXPECTED_CALLBACK_REGISTRATION_SEQUENCE)
-    expect(cleanupOrder.slice(0, 6)).toEqual([
+    expect(cleanupOrder.slice(0, 7)).toEqual([
       'agent.disposeAsyncState',
       'mobile.disposeHydration',
+      'ptyWindowOwnership.disposeHydration',
       'store.unsubscribe.0',
       'runtimeStore.unsubscribe',
       'store.unsubscribe.1',
