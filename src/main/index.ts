@@ -245,6 +245,7 @@ import {
   getFocusedOrLastActiveMainWindow,
   getMainWindows,
   getRegisteredMainWindow,
+  getMainWindowById,
   hasLiveMainWindows,
   hasVisibleMainWindow,
   registerMainWindow,
@@ -254,7 +255,12 @@ import {
   revealExistingMainWindow,
   shouldReuseExistingMainWindow
 } from './window/main-window-open-policy'
-import { setScopedWindowsEnabled } from './window/window-view-state-registry'
+import {
+  resolveWindowScopeForWebContents,
+  setScopedWindowsEnabled
+} from './window/window-view-state-registry'
+import { setWindowScopeRebindListener } from './window/window-scope-binding'
+import { handlePtyOwnerWindowsChanged } from './ipc/pty/delivery/owner-transfer'
 import { removeTrustedBrowserRendererWebContentsId } from './ipc/browser-renderer-trust'
 import {
   getDashboardPopoutWindow,
@@ -2943,6 +2949,15 @@ void app.whenReady().then(async () => {
       broadcastToMainWindows('pty:sideEffect', batch)
     },
     getDesktopWindowStatus: getDesktopWindowStatus,
+    // Why: the owner index needs a window's project scope by its numeric id; main/window owns that
+    // mapping, so hand the runtime a resolver instead of letting it reach into the registry.
+    resolveWindowProjectGroupId: (windowId) => {
+      const window = getMainWindowById(windowId)
+      return window
+        ? (resolveWindowScopeForWebContents(window.webContents.id)?.projectGroupId ?? null)
+        : null
+    },
+    onPtyOwnerWindowsChanged: handlePtyOwnerWindowsChanged,
     // Why: worktree.ps pulls hook-reported agent status (same source as the desktop sidebar) at query time so mobile shows the same agents.
     getAgentStatusSnapshot: () =>
       agentHookServer.getStatusSnapshot().filter((entry) => entry.providerSessionOnly !== true),
@@ -2974,6 +2989,8 @@ void app.whenReady().then(async () => {
     skillTransactionRecovery
   })
   runtime = runtimeService
+  // Why: a rebind changes which window outranks the others for a project's terminals.
+  setWindowScopeRebindListener(() => runtimeService.handleWindowScopesChanged())
   runtimeService.prepareLegacyWorkerTerminalRecovery()
   publishProviderSessionChanges(agentHookServer.getProviderSessionIdentities())
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
