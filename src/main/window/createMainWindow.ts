@@ -35,6 +35,12 @@ import { rectHasVisibleAreaOnAnyDisplay } from './window-bounds-validation'
 import { installWindowsPathRegistryChangeListener } from '../pty/windows-path-registry-change'
 import { formatWindowIdArgument } from '../../shared/window-identity'
 import {
+  formatWindowSessionAdoptionArgument,
+  resolveWindowSessionAdoption
+} from '../../shared/window-session-adoption'
+import { parseWindowScopeKey } from '../../shared/window-scope'
+import {
+  areScopedWindowsEnabled,
   bindWindowIdToWebContents,
   createWindowId,
   unbindWindowIdFromWebContents
@@ -112,6 +118,13 @@ export function createMainWindow(
     blur && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' as const } : {}
 
   const windowId = opts?.windowId ?? createWindowId()
+  // Why frozen here rather than derived from the live scope: a later rebind ("change project")
+  // must not empty a window that already adopted the session. See shared/window-session-adoption.
+  const sessionAdoption = resolveWindowSessionAdoption({
+    scope: parseWindowScopeKey(windowId),
+    scopedWindowsEnabled: areScopedWindowsEnabled(),
+    otherMainWindowsOpen: hasLiveMainWindows()
+  })
   const mainWindow = new BrowserWindow({
     width: offsetBounds?.width ?? savedBounds?.width ?? defaultBounds.width,
     height: offsetBounds?.height ?? savedBounds?.height ?? defaultBounds.height,
@@ -155,7 +168,10 @@ export function createMainWindow(
       webviewTag: true,
       // Why argv: the sandboxed preload still sees process.argv, so the renderer learns its
       // window id synchronously and without an IPC round-trip (see shared/window-identity).
-      additionalArguments: [formatWindowIdArgument(windowId)]
+      additionalArguments: [
+        formatWindowIdArgument(windowId),
+        formatWindowSessionAdoptionArgument(sessionAdoption)
+      ]
     }
   })
   const rendererWebContentsId = mainWindow.webContents.id

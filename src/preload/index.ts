@@ -308,6 +308,7 @@ import type { AiVaultPrepareSessionResumeArgs } from '../shared/ai-vault-resume-
 import type { AgentType } from '../shared/native-chat-types'
 import { ORCA_UPDATER_QUIT_AND_INSTALL_ABORTED_EVENT } from '../shared/updater-renderer-events'
 import { parseWindowIdFromArgv } from '../shared/window-identity'
+import { parseWindowSessionAdoptionFromArgv } from '../shared/window-session-adoption'
 import {
   ORCA_INTERNAL_FILE_DRAG_TYPE,
   createNativeFileDropPayload,
@@ -3715,10 +3716,15 @@ const api = {
     }): Promise<string | null> => ipcRenderer.invoke('git:remoteCommitUrl', args)
   },
 
-  // Why read once: Electron appends webPreferences.additionalArguments to the renderer argv, so the
-  // id is fixed for this window's lifetime and needs no IPC (works under sandbox: true). It only
-  // bootstraps diagnostics — main can re-key the window, so the scope comes from ui.getWindowScope.
-  windowIdentity: { windowId: parseWindowIdFromArgv(process.argv) },
+  // Why read once: Electron appends webPreferences.additionalArguments to the renderer argv, so both
+  // values are fixed for this window's lifetime and need no IPC (works under sandbox: true). The id
+  // only bootstraps diagnostics — main can re-key the window, so the scope comes from
+  // ui.getWindowScope; the session adoption is deliberately frozen and does not.
+  windowIdentity: {
+    windowId: parseWindowIdFromArgv(process.argv),
+    // Why the fallback: an older main process appends no flag, and its windows all shared the session.
+    sessionAdoption: parseWindowSessionAdoptionFromArgv(process.argv) ?? 'shared'
+  },
 
   ui: {
     get: () => ipcRenderer.invoke('ui:get'),
