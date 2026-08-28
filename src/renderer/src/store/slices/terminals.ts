@@ -50,6 +50,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   restoredRuntimeHostIdByWorkspaceSessionKey: {},
   defaultTerminalTabsAppliedByWorktreeId: {},
   hydrationSucceeded: false,
+  workspaceSessionAdoption: 'shared',
   pendingReconnectWorktreeIds: [],
   pendingReconnectTabByWorktree: {},
   pendingReconnectPtyIdByTabId: {},

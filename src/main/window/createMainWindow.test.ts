@@ -118,7 +118,10 @@ describe('createMainWindow', () => {
         webPreferences: expect.objectContaining({
           sandbox: true,
           // Why: the sandboxed preload learns its window id from argv, not IPC.
-          additionalArguments: [expect.stringMatching(/^--orca-window-id=.+$/)]
+          additionalArguments: [
+            expect.stringMatching(/^--orca-window-id=.+$/),
+            '--orca-window-session=shared'
+          ]
         })
       })
     )
