@@ -26,6 +26,8 @@ export function registerHeadlessPtyRuntime(
   // Why a fake rather than null: `registerPtyHandlers` takes a non-null BrowserWindow. `isDestroyed: () => true`
   // is what makes that safe — every renderer-liveness guard reads it and skips, so no send is ever attempted.
   // Keep `webContents.isDestroyed` in step with it: guards check both, and a missing method reads as "alive".
+  // The `headless: true` option below is what keeps this fake from being mistaken for a window that
+  // merely closed, which would otherwise let delivery fall back to the main-window registry.
   const headlessWindow = {
     isDestroyed: () => true,
     webContents: {
@@ -42,6 +44,6 @@ export function registerHeadlessPtyRuntime(
     getSettings,
     prepareClaudeAuth,
     store,
-    { prepareCodexSessionResume, ...lifecycle }
+    { headless: true, prepareCodexSessionResume, ...lifecycle }
   )
 }
