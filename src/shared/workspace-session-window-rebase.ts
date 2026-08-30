@@ -87,6 +87,60 @@ function rebaseWorktreeArrayField(
 }
 
 /**
+ * Splits a session in two along the window axis: the keys these worktrees own, and everything
+ * else. Reading a project window is the `owned` half, reading the shared window is `rest`, and a
+ * rebased write is `rest` of what is stored merged with `owned` of what came in — one traversal
+ * behind all three.
+ *
+ * Global fields go to `rest`: they describe one window's focus and there is one slot for them.
+ */
+export function partitionWorkspaceSessionByWorktrees(
+  session: WorkspaceSessionState,
+  owned: OwnedWorktreeIds
+): { owned: WorkspaceSessionState; rest: WorkspaceSessionState } {
+  const resolveContext = {
+    worktreeIdByTabId: buildWorktreeIdByTabId(session),
+    worktreeIdByFileId: buildWorktreeIdByFileId(session)
+  }
+  const ownedOut: WorkspaceSessionRecord = {}
+  const restOut: WorkspaceSessionRecord = {}
+  for (const field of Object.keys(
+    WORKSPACE_SESSION_FIELD_OWNERSHIP
+  ) as (keyof WorkspaceSessionState)[]) {
+    const ownership = WORKSPACE_SESSION_FIELD_OWNERSHIP[field]
+    const value = session[field]
+    if (value === undefined) {
+      continue
+    }
+    if (ownership === 'global' || ownership === 'hostPrivate') {
+      restOut[field] = value
+      continue
+    }
+    if (ownership === 'worktreeArray') {
+      const ids = Array.isArray(value) ? (value as string[]) : []
+      ownedOut[field] = ids.filter((worktreeId) => owned.has(worktreeId))
+      restOut[field] = ids.filter((worktreeId) => !owned.has(worktreeId))
+      continue
+    }
+    const resolve = resolveWorkspaceSessionKeyWorktree(ownership, resolveContext)
+    const mine: WorkspaceSessionRecord = {}
+    const theirs: WorkspaceSessionRecord = {}
+    if (isWorkspaceSessionRecord(value)) {
+      for (const [key, entry] of Object.entries(value)) {
+        const target = ownsKey(ownership, key, entry, owned, resolve) ? mine : theirs
+        target[key] = entry
+      }
+    }
+    ownedOut[field] = mine
+    restOut[field] = theirs
+  }
+  return {
+    owned: ownedOut as WorkspaceSessionState,
+    rest: restOut as WorkspaceSessionState
+  }
+}
+
+/**
  * `owned` empty means the caller is the shared writer and the incoming session wins whole —
  * the pre-window behavior, which is what an older renderer that sends no ownership still gets.
  */
@@ -133,4 +187,26 @@ export function rebaseWorkspaceSessionWrite(
     }
   }
   return out as WorkspaceSessionState
+}
+
+/** Every worktree-keyed key present in a session — the candidates a window's scope selects from. */
+export function collectWorkspaceSessionWorktreeKeys(session: WorkspaceSessionState): Set<string> {
+  const keys = new Set<string>()
+  for (const field of Object.keys(
+    WORKSPACE_SESSION_FIELD_OWNERSHIP
+  ) as (keyof WorkspaceSessionState)[]) {
+    if (WORKSPACE_SESSION_FIELD_OWNERSHIP[field] !== 'worktreeKeyed') {
+      continue
+    }
+    const value = session[field]
+    if (isWorkspaceSessionRecord(value)) {
+      for (const key of Object.keys(value)) {
+        keys.add(key)
+      }
+    }
+  }
+  for (const worktreeId of session.activeWorktreeIdsOnShutdown ?? []) {
+    keys.add(worktreeId)
+  }
+  return keys
 }
