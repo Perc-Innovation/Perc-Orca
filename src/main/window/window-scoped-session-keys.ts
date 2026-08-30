@@ -49,3 +49,26 @@ export function resolveScopeWorktreeIds(
   }
   return owned
 }
+
+/**
+ * The scopes other live windows are serving. The shared window reads everything except these,
+ * so a project that has its own window stops appearing in the window it was opened from.
+ */
+export function resolveScopesServedByOtherWindows(
+  senderWebContentsId: number | undefined,
+  windows: readonly { webContents: { id: number } }[],
+  resolveScope: (webContentsId: number) => WindowScope | null
+): WindowScope[] {
+  const scopes: WindowScope[] = []
+  for (const window of windows) {
+    const webContentsId = window.webContents.id
+    if (webContentsId === senderWebContentsId) {
+      continue
+    }
+    const scope = resolveScope(webContentsId)
+    if (scope) {
+      scopes.push(scope)
+    }
+  }
+  return scopes
+}

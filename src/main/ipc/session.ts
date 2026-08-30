@@ -4,13 +4,26 @@ import type {
   WorkspaceSessionPatch,
   WorkspaceSessionState
 } from '../../shared/workspace-session-state-types'
-import { partitionWorkspaceSessionByWorktrees } from '../../shared/workspace-session-window-rebase'
+import {
+  collectWorkspaceSessionWorktreeKeys,
+  partitionWorkspaceSessionByWorktrees
+} from '../../shared/workspace-session-window-rebase'
 import { resolveWindowScopeForWebContents } from '../window/window-view-state-registry'
 import { resolveScopeRepoIds, resolveScopeWorktreeIds } from '../window/window-scoped-session-keys'
 
+function scopeWorktreeIds(
+  store: Store,
+  scope: WindowScope,
+  session: WorkspaceSessionState
+): Set<string> {
+  const repoIds = resolveScopeRepoIds(scope, store.getRepos(), store.getProjectGroups?.() ?? [])
+  return resolveScopeWorktreeIds(session, repoIds)
+}
+
 /**
- * The worktrees the sending window owns, resolved from its scope. Empty for a free window, which
- * is the shared writer — that is what keeps a single-window profile behaving exactly as before.
+ * The worktrees the sending window owns, resolved from its scope. A free window owns everything
+ * no project window is serving, which is what makes a project "move" out of the window it was
+ * opened from; with no project windows up that is the whole session, exactly as before.
  */
 function ownedWorktreeIdsForSender(
   store: Store,
@@ -19,11 +32,31 @@ function ownedWorktreeIdsForSender(
 ): ReadonlySet<string> {
   const senderId = event?.sender?.id
   const scope = typeof senderId === 'number' ? resolveWindowScopeForWebContents(senderId) : null
-  if (!scope) {
+  if (scope) {
+    return scopeWorktreeIds(store, scope, session)
+  }
+  const served = new Set<string>()
+  for (const otherScope of resolveScopesServedByOtherWindows(
+    senderId,
+    getMainWindows(),
+    resolveWindowScopeForWebContents
+  )) {
+    for (const worktreeId of scopeWorktreeIds(store, otherScope, session)) {
+      served.add(worktreeId)
+    }
+  }
+  // Why the complement: the free window owns every key no project window is serving. An empty
+  // result means no project windows are up, and the store then treats it as the shared writer.
+  if (served.size === 0) {
     return new Set()
   }
-  const repoIds = resolveScopeRepoIds(scope, store.getRepos(), store.getProjectGroups?.() ?? [])
-  return resolveScopeWorktreeIds(session, repoIds)
+  const owned = new Set<string>()
+  for (const key of collectWorkspaceSessionWorktreeKeys(session)) {
+    if (!served.has(key)) {
+      owned.add(key)
+    }
+  }
+  return owned
 }
 
 export function registerSessionHandlers(store: Store): void {
@@ -35,6 +68,8 @@ export function registerSessionHandlers(store: Store): void {
   ipcMain.handle('session:get', (event, hostId?: string | null) => {
     const session = store.getWorkspaceSession(hostId)
     const owned = ownedWorktreeIdsForSender(store, event, session)
+    // Why one branch for both window kinds: `owned` already means "the keys this window serves",
+    // so a project window gets its group and the free window gets everything else.
     return owned.size === 0 ? session : partitionWorkspaceSessionByWorktrees(session, owned).owned
   })
 

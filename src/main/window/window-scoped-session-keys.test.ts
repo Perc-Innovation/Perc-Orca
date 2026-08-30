@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { resolveScopeRepoIds, resolveScopeWorktreeIds } from './window-scoped-session-keys'
+import {
+  resolveScopeRepoIds,
+  resolveScopesServedByOtherWindows,
+  resolveScopeWorktreeIds
+} from './window-scoped-session-keys'
 import { getDefaultWorkspaceSession } from '../../shared/constants'
 import type { WorkspaceSessionState } from '../../shared/workspace-session-state-types'
 
@@ -63,5 +67,32 @@ describe('resolveScopeWorktreeIds', () => {
     expect(resolveScopeWorktreeIds(current, new Set(['repo-a']))).toEqual(
       new Set(['repo-a::/wt/main'])
     )
+  })
+})
+
+describe('resolveScopesServedByOtherWindows', () => {
+  const scopeByWebContents = new Map([
+    [1, null],
+    [2, { type: 'project-group' as const, projectGroupId: 'perc' }],
+    [3, { type: 'project-group' as const, projectGroupId: 'otro' }]
+  ])
+  const windows = [1, 2, 3].map((id) => ({ webContents: { id } }))
+  const resolve = (id: number) => scopeByWebContents.get(id) ?? null
+
+  it('lists the scopes other windows serve, so the free window can exclude them', () => {
+    expect(resolveScopesServedByOtherWindows(1, windows, resolve)).toEqual([
+      { type: 'project-group', projectGroupId: 'perc' },
+      { type: 'project-group', projectGroupId: 'otro' }
+    ])
+  })
+
+  it('never counts the asking window itself', () => {
+    expect(resolveScopesServedByOtherWindows(2, windows, resolve)).toEqual([
+      { type: 'project-group', projectGroupId: 'otro' }
+    ])
+  })
+
+  it('is empty when no other window is scoped', () => {
+    expect(resolveScopesServedByOtherWindows(1, [{ webContents: { id: 1 } }], resolve)).toEqual([])
   })
 })
