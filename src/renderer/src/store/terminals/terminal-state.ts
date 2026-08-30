@@ -92,7 +92,7 @@ export type TerminalState = {
   restoredRuntimeHostIdByWorkspaceSessionKey: Record<string, ExecutionHostId>
   defaultTerminalTabsAppliedByWorktreeId: Record<string, true>
   hydrationSucceeded: boolean
-  /** 'empty' windows read no persisted session and must never write one back over the shared blob. */
+  /** 'scoped' windows read and write only their project group's keys; main enforces the split. */
   workspaceSessionAdoption: WindowSessionAdoption
   pendingReconnectWorktreeIds: string[]
   pendingReconnectTabByWorktree: Record<string, string[]>

@@ -8,15 +8,16 @@ import { isWorktreeHostIdentity } from '../../../shared/worktree/host-qualified-
 import {
   GLOBAL_WORKSPACE_SESSION_FIELDS,
   WORKSPACE_SESSION_FIELD_OWNERSHIP
-} from './workspace-session-host-field-ownership'
+} from '../../../shared/workspace-session-field-ownership'
 import {
   buildWorktreeIdByFileId,
   buildWorktreeIdByTabId,
   isWorkspaceSessionRecord,
   mergeWorkspaceSessionArrayField,
   mergeWorkspaceSessionRecordField,
+  resolveWorkspaceSessionKeyWorktree,
   type WorkspaceSessionRecord
-} from './workspace-session-host-records'
+} from '../../../shared/workspace-session-key-resolution'
 
 /**
  * Split / merge the unified WorkspaceSessionState across per-host partitions.
@@ -207,79 +208,15 @@ export function splitWorkspaceSessionByHost(
         }
         break
       }
-      case 'tabKeyed':
+      // Why one call: the key→worktree rule is shared with the per-window rebase
+      // (shared/workspace-session-window-rebase.ts); two copies would drift.
+      default:
         assignKeyedByResolvedWorktree(
           slices,
           template,
           field,
           value,
-          (tabId) => ctx.worktreeIdByTabId.get(tabId),
-          ctx
-        )
-        break
-      case 'fileKeyed':
-        assignKeyedByResolvedWorktree(
-          slices,
-          template,
-          field,
-          value,
-          (fileId) => ctx.worktreeIdByFileId.get(fileId),
-          ctx
-        )
-        break
-      case 'browserWorkspaceKeyed':
-        assignKeyedByResolvedWorktree(
-          slices,
-          template,
-          field,
-          value,
-          (_workspaceId, pages) => {
-            const first = Array.isArray(pages)
-              ? (pages[0] as { worktreeId?: string } | undefined)
-              : undefined
-            return first?.worktreeId
-          },
-          ctx
-        )
-        break
-      case 'sleepingAgentKeyed':
-        assignKeyedByResolvedWorktree(
-          slices,
-          template,
-          field,
-          value,
-          (_paneKey, record) =>
-            isWorkspaceSessionRecord(record) && typeof record.worktreeId === 'string'
-              ? record.worktreeId
-              : undefined,
-          ctx
-        )
-        break
-      case 'paneKeyed':
-        assignKeyedByResolvedWorktree(
-          slices,
-          template,
-          field,
-          value,
-          (paneKey) => {
-            const separator = paneKey.lastIndexOf(':')
-            return separator > 0
-              ? ctx.worktreeIdByTabId.get(paneKey.slice(0, separator))
-              : undefined
-          },
-          ctx
-        )
-        break
-      case 'surfaceTombstoneKeyed':
-        assignKeyedByResolvedWorktree(
-          slices,
-          template,
-          field,
-          value,
-          (_paneKey, record) =>
-            isWorkspaceSessionRecord(record) && typeof record.worktreeId === 'string'
-              ? record.worktreeId
-              : undefined,
+          resolveWorkspaceSessionKeyWorktree(ownership, ctx) ?? (() => undefined),
           ctx
         )
         break
