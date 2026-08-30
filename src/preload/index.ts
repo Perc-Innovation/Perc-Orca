@@ -4433,6 +4433,12 @@ const api = {
       ipcRenderer.on('system:resumed', listener)
       return () => ipcRenderer.removeListener('system:resumed', listener)
     },
+    /** Window > Recover Terminal: user-invoked rescue for a pane that stopped taking input. */
+    onRecoverTerminal: (callback: () => void): (() => void) => {
+      const listener = () => callback()
+      ipcRenderer.on('ui:recoverTerminal', listener)
+      return () => ipcRenderer.removeListener('ui:recoverTerminal', listener)
+    },
     /** Desktop custom titlebar only: minimize via renderer-drawn window controls. */
     minimize: (): void => {
       ipcRenderer.send('window:minimize')

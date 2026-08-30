@@ -1564,6 +1564,16 @@ function openSettingsFromSystemMenu(targetBaseWindow?: Electron.BaseWindow | nul
   pendingOpenSettings.mark(targetWindow.webContents.id, Number.POSITIVE_INFINITY)
 }
 
+/** Window > Recover Terminal: the focused renderer re-runs the terminal recovery sequence.
+ *  No pending-intent latch — with no mounted renderer there is nothing to recover. */
+function recoverTerminalFromSystemMenu(targetBaseWindow?: Electron.BaseWindow | null): void {
+  const targetWindow = resolveMenuTargetMainWindow(targetBaseWindow)
+  if (!targetWindow) {
+    return
+  }
+  targetWindow.webContents.send('ui:recoverTerminal')
+}
+
 function quitFromSystemTray(): void {
   if (hasLiveMainWindows()) {
     // Why: a hidden session may veto shutdown with a save/discard prompt, so make the window visible.
@@ -3327,6 +3337,7 @@ void app.whenReady().then(async () => {
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
     },
     onOpenSettings: (targetWindow) => openSettingsFromSystemMenu(targetWindow),
+    onRecoverTerminal: (targetWindow) => recoverTerminalFromSystemMenu(targetWindow),
     onOpenSetupGuide: (targetWindow) => {
       recordCrashBreadcrumb('setup_guide_opened')
       const targetBrowserWindow = targetWindow instanceof BrowserWindow ? targetWindow : null
