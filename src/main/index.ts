@@ -260,6 +260,7 @@ import {
   setScopedWindowsEnabled
 } from './window/window-view-state-registry'
 import { setWindowScopeRebindListener } from './window/window-scope-binding'
+import { publishWorkspaceSessionRelease } from './window/project-window-session-release'
 import { handlePtyOwnerWindowsChanged } from './ipc/pty/delivery/owner-transfer'
 import { removeTrustedBrowserRendererWebContentsId } from './ipc/browser-renderer-trust'
 import {
@@ -2999,8 +3000,14 @@ void app.whenReady().then(async () => {
     skillTransactionRecovery
   })
   runtime = runtimeService
-  // Why: a rebind changes which window outranks the others for a project's terminals.
-  setWindowScopeRebindListener(() => runtimeService.handleWindowScopesChanged())
+  // Why: a rebind changes which window outranks the others for a project's terminals, and which
+  // window serves the project's session keys — the second one has to reach the renderers.
+  setWindowScopeRebindListener(() => {
+    runtimeService.handleWindowScopesChanged()
+    if (store) {
+      publishWorkspaceSessionRelease(store)
+    }
+  })
   runtimeService.prepareLegacyWorkerTerminalRecovery()
   publishProviderSessionChanges(agentHookServer.getProviderSessionIdentities())
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {

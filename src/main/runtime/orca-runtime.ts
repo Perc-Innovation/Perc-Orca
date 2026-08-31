@@ -602,10 +602,10 @@ import { isWslUncPath, parseWslUncPath } from '../../shared/wsl-paths'
 import {
   computeWindowOwnershipPrioritySeed,
   diffPtyOwnerWindows,
-  resolveWorktreeProjectGroupId,
   windowPublishesPty,
   type PtyOwnerWindowChange
 } from './window-pty-ownership-priority'
+import { resolveWorkspaceProjectGroupId } from '../../shared/workspace-project-group'
 import {
   folderWorkspaceKey,
   parseWorkspaceKey,
@@ -33469,7 +33469,7 @@ export class OrcaRuntimeService {
       resolveWindowProjectGroupId: resolveWindowProjectGroupId ?? (() => null),
       resolveWorktreeProjectGroupId: (worktreeId) =>
         store
-          ? resolveWorktreeProjectGroupId(
+          ? resolveWorkspaceProjectGroupId(
               {
                 getRepo: (repoId) => store.getRepo(repoId),
                 getFolderWorkspaces: () => store.getFolderWorkspaces?.() ?? []
