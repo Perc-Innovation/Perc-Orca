@@ -105,6 +105,10 @@ import type {
 import type { OnboardingState } from '../shared/onboarding-state-types'
 import type { PersistedUIState } from '../shared/persisted-ui-state-types'
 import type { WindowScopeChangedPayload } from '../shared/window-scope'
+import {
+  WORKSPACE_SESSION_RELEASE_CHANNEL,
+  type WorkspaceSessionReleasePayload
+} from '../shared/workspace-session-release'
 import type { CustomPet } from '../shared/pet-types'
 import type { MemorySnapshot } from '../shared/process-stats-types'
 import type { NestedRepoScanResult } from '../shared/project-group-types'
@@ -3248,6 +3252,16 @@ const api = {
     /** Synchronous session save for beforeunload — blocks until flushed to disk. */
     setSync: (args, hostId) => {
       ipcRenderer.sendSync('session:set-sync', args, hostId)
+    },
+    onWorkspacesReleased: (
+      callback: (payload: WorkspaceSessionReleasePayload) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: WorkspaceSessionReleasePayload
+      ): void => callback(payload)
+      ipcRenderer.on(WORKSPACE_SESSION_RELEASE_CHANNEL, listener)
+      return () => ipcRenderer.removeListener(WORKSPACE_SESSION_RELEASE_CHANNEL, listener)
     }
   } satisfies PreloadApi['session'],
 
