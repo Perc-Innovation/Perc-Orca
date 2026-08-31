@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type * as AgentStatusModule from '@/lib/agent-status'
-import { adoptWorkspaceSessionRead } from '@/lib/empty-window-workspace-session'
+import {
+  adoptWorkspaceSessionRead,
+  emptyWindowWorkspaceSession
+} from '@/lib/empty-window-workspace-session'
+import { partitionWorkspaceSessionByWorktrees } from '../../../../shared/workspace-session-window-rebase'
 import type { WorkspaceSessionHostRead } from '@/lib/workspace-session-host-persistence'
 import { worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
 import { createTestStore, makeWorktree, makeTab, makeLayout } from './store-test-helpers'
@@ -43,36 +47,55 @@ function persistedSessionRead(): WorkspaceSessionHostRead {
   }
 }
 
-describe('startup hydration for a window that opens empty', () => {
-  it('leaves a project window with no active workspace and no tabs', () => {
+describe('startup hydration for a project window', () => {
+  it('hydrates the project window with its own project, not an empty session', () => {
     const store = createTestStore()
     seedCatalog(store)
 
-    const read = adoptWorkspaceSessionRead(persistedSessionRead(), 'empty')
-    store.getState().hydrateWorkspaceSession(read.session)
-    store.getState().hydrateTabsSession(read.session)
+    // Main partitions the read by the window's scope; this is the half it receives.
+    const scoped = partitionWorkspaceSessionByWorktrees(
+      persistedSessionRead().session,
+      new Set([WORKTREE_ID])
+    ).owned
+    store.getState().hydrateWorkspaceSession(scoped)
+    store.getState().hydrateTabsSession(scoped)
 
     const state = store.getState()
-    expect(state.activeWorkspaceKey).toBeNull()
-    expect(state.activeWorktreeId).toBeNull()
-    expect(state.activeRepoId).toBeNull()
-    expect(state.activeTabId).toBeNull()
+    expect(state.tabsByWorktree[WORKTREE_ID]).toHaveLength(1)
+    // Why the focus follows: without it the window hydrates its tabs with nothing selected.
+    expect(state.activeWorktreeId).toBe(WORKTREE_ID)
+    expect(state.activeTabId).toBe('tab-1')
+  })
+
+  it('leaves the free window with nothing once a project window serves that worktree', () => {
+    const store = createTestStore()
+    seedCatalog(store)
+
+    const rest = partitionWorkspaceSessionByWorktrees(
+      persistedSessionRead().session,
+      new Set([WORKTREE_ID])
+    ).rest
+    store.getState().hydrateWorkspaceSession(rest)
+    store.getState().hydrateTabsSession(rest)
+
+    const state = store.getState()
     expect(state.tabsByWorktree).toEqual({})
     expect(state.unifiedTabsByWorktree).toEqual({})
     expect(state.pendingReconnectWorktreeIds).toEqual([])
-    // Why: a startup SSH restore would pull that target's remote workspace back into the window.
-    expect(read.session.activeConnectionIdsAtShutdown ?? []).toEqual([])
   })
 
-  it('keeps the ledgers an empty window still needs', () => {
-    const read = adoptWorkspaceSessionRead(persistedSessionRead(), 'empty')
+  it('keeps the ledgers a window with no project of its own still needs', () => {
+    // The carry/drop policy outlived the projection: it is what forces a new session field to be
+    // classified rather than leaking into a window that has no project.
+    const projected = emptyWindowWorkspaceSession(persistedSessionRead().session)
 
     // Why: dropping this one re-runs the repo's default tab template — and its commands.
-    expect(read.session.defaultTerminalTabsAppliedByWorktreeId).toEqual({ [WORKTREE_ID]: true })
-    expect(read.session.lastVisitedAtByWorktreeId).toEqual({ [WORKTREE_ID]: 1_700_000_000_000 })
+    expect(projected.defaultTerminalTabsAppliedByWorktreeId).toEqual({ [WORKTREE_ID]: true })
+    expect(projected.lastVisitedAtByWorktreeId).toEqual({ [WORKTREE_ID]: 1_700_000_000_000 })
+    expect(projected.tabsByWorktree).toEqual({})
   })
 
-  it('still hydrates everything in the launch’s first window', () => {
+  it('hands the free window the whole read when no project window is up', () => {
     const store = createTestStore()
     seedCatalog(store)
 
