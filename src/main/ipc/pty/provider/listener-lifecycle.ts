@@ -84,6 +84,20 @@ export function setDidFinishLoadHandler(
   }
 }
 
+/**
+ * Drops the sweep handler when the window goes.
+ *
+ * The contents is a parameter rather than read inside the callback because `closed` fires *after*
+ * the window is destroyed: `window.webContents` throws "Object has been destroyed" there, which
+ * surfaced as a main-process error dialog and left the handler in the map forever.
+ */
+export function clearDidFinishLoadHandlerOnWindowClosed(
+  window: { once?: (event: 'closed', listener: () => void) => void },
+  contents: WebContents
+): void {
+  window.once?.('closed', () => clearDidFinishLoadHandlerForWebContents(contents))
+}
+
 export function clearDidFinishLoadHandlerForWebContents(contents: WebContents): void {
   const handler = didFinishLoadHandlersByWebContents.get(contents)
   if (handler) {

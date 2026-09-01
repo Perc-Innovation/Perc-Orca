@@ -30,6 +30,7 @@ import {
 } from './delivery/visibility-state'
 import {
   clearDidFinishLoadHandlerForWebContents,
+  clearDidFinishLoadHandlerOnWindowClosed,
   setRebindProviderListeners,
   setDidFinishLoadHandler,
   setRendererGateResetState
@@ -194,9 +195,7 @@ export function registerPtyHandlers(
     setDidFinishLoadHandler(finishLoadHandler, mainWindow.webContents)
     mainWindow.webContents.on('did-finish-load', finishLoadHandler)
     // Why: the sweep handler is keyed by webContents, so drop it when this window goes.
-    mainWindow.once?.('closed', () =>
-      clearDidFinishLoadHandlerForWebContents(mainWindow.webContents)
-    )
+    clearDidFinishLoadHandlerOnWindowClosed(mainWindow, mainWindow.webContents)
   }
 
   const assertFolderWorkspacePtyPathUsable = (
