@@ -4,6 +4,7 @@ import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import SidebarWorkspaceOptionsMenu from './SidebarWorkspaceOptionsMenu'
+import SidebarWorkspaceSelector from './SidebarWorkspaceSelector'
 import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import { openWorkspaceCreationComposerWithTourHandoff } from '../contextual-tours/workspace-creation-tour-handoff'
 import { translate } from '@/i18n/i18n'
@@ -18,8 +19,6 @@ const SidebarHeader = React.memo(function SidebarHeader({
 }: SidebarHeaderProps) {
   const openModal = useAppStore((s) => s.openModal)
   const newWorktreeShortcutLabel = useShortcutLabel('workspace.create')
-  const groupBy = useAppStore((s) => s.groupBy)
-  const sidebarTitle = groupBy === 'repo' ? 'Projects' : 'Workspaces'
   const scopedProject = useWindowScopeProject()
 
   return (
@@ -52,12 +51,9 @@ const SidebarHeader = React.memo(function SidebarHeader({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <span
-            className="pl-2 pr-0.5 text-xs font-semibold text-muted-foreground/80 select-none"
-            data-sidebar-section-title={groupBy === 'repo' ? 'projects' : 'workspaces'}
-          >
-            {sidebarTitle}
-          </span>
+          // Why the selector replaces the title: "Workspaces" named the list, and the window is
+          // in one workspace at a time — the name of that one is the more useful label.
+          <SidebarWorkspaceSelector />
         )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">

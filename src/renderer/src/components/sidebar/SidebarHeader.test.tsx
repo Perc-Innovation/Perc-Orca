@@ -25,6 +25,8 @@ vi.mock('@/store', () => ({
 
 vi.mock('./SidebarWorkspaceOptionsMenu', () => ({ default: () => null }))
 
+vi.mock('./SidebarWorkspaceSelector', () => ({ default: () => null }))
+
 vi.mock('@/hooks/useShortcutLabel', () => ({ useShortcutLabel: () => '⌘N' }))
 
 vi.mock('@/components/ui/tooltip', () => ({

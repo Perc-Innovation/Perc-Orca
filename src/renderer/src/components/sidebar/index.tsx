@@ -12,6 +12,7 @@ import type { VirtualizedScrollAnchor } from '@/hooks/useVirtualizedScrollAnchor
 import { cn } from '@/lib/utils'
 import { FolderPlus, Loader2 } from 'lucide-react'
 import { useSidebarProjectDrop } from './useSidebarProjectDrop'
+import { useInitialWorkspaceSelection } from './use-initial-workspace-selection'
 import { useWorkspaceBoardPanel } from './useWorkspaceBoardPanel'
 import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { useSystemPrefersDark } from '@/components/terminal-pane/use-system-prefers-dark'
@@ -57,6 +58,7 @@ function Sidebar({
     [settings, systemPrefersDark]
   ) as React.CSSProperties | undefined
   const { nativeDropTarget, dropHandlers, affordance } = useSidebarProjectDrop()
+  useInitialWorkspaceSelection()
   const {
     workspaceBoardOpen,
     workspaceBoardRenderedOpen,
