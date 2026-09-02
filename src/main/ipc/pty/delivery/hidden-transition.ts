@@ -7,6 +7,7 @@ import {
 import { IMPLICIT_RENDERER_WINDOW_ID } from './renderer-pty-window-claims'
 import { invalidatePendingPtyDrainPolicy } from './visibility-state'
 import type { PtyIpcSession } from '../session'
+import { sendModelRestoreNeededMarker } from './payload'
 
 export function transitionHiddenRendererPtyDeliveryState(
   session: PtyIpcSession,
@@ -36,5 +37,29 @@ export function transitionSpawnHiddenRendererPtyDeliveryState(
   const transition = transitionHiddenRendererPtyDeliveryState(session, id, hidden)
   if (transition.policyChanged) {
     invalidatePendingPtyDrainPolicy(id)
+  }
+}
+
+/**
+ * One window clearing its hidden bit, with everything an unmark owes: the drain policy
+ * re-evaluated, backgrounded delivery re-synced, and — when bytes were dropped meanwhile —
+ * the restore marker that makes the pane refill from main's model. Shared by the renderer's
+ * own unmark and the input veto so the two paths cannot drift.
+ */
+export function unmarkHiddenRendererPtyForWindow(
+  session: PtyIpcSession,
+  id: string,
+  windowId: number,
+  caller: string
+): void {
+  const transition = transitionHiddenRendererPtyDeliveryState(session, id, false, windowId)
+  if (transition.policyChanged) {
+    invalidatePendingPtyDrainPolicy(id)
+  }
+  session.syncPtyBackgroundedDelivery(id, caller)
+  // Why re-emit on every unhide: a reload/remount may have replaced the view that latched
+  // restore-needed; a redundant replay is cheap and idempotent, a missed restore corrupts the pane.
+  if (transition.droppedWhileHidden) {
+    sendModelRestoreNeededMarker(session, id, 'unhide', session.runtime?.getPtyOutputSequence(id))
   }
 }

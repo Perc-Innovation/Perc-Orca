@@ -27,6 +27,14 @@ function describeRecovery(report: TerminalRecoveryReport): string {
       })
     )
   }
+  // Why first and loud: this is the one line that names the bug rather than a repair step.
+  if (report.staleHiddenMarkCount > 0) {
+    repairs.unshift(
+      translate('auto.terminal.recovery.staleHidden', 'cleared a stale hidden mark ({{value0}})', {
+        value0: report.staleHiddenMarkCount
+      })
+    )
+  }
   if (report.deliveryHealed) {
     repairs.push(translate('auto.terminal.recovery.delivery', 'healed output delivery'))
   }
@@ -74,6 +82,7 @@ export function useTerminalManualRecovery({
       }).then((report) => {
         recordTerminalFreezeBreadcrumb('manual-recovery', {
           revisiblePtyCount: report.revisiblePtyCount,
+          staleHiddenMarkCount: report.staleHiddenMarkCount,
           resizedPaneCount: report.resizedPaneCount,
           deliveryHealed: report.deliveryHealed,
           mobileLockedPtyCount: report.mobileLockedPtyCount,

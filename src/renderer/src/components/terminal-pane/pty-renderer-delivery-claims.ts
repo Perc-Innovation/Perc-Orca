@@ -54,6 +54,27 @@ export function declareRendererPtyDeliveryVisible(ptyId: string): void {
   }
 }
 
+/**
+ * User-invoked rescue: drops every hidden claim this renderer still holds on the PTY and
+ * tells main so, whoever held it. `declareRendererPtyDeliveryVisible` deliberately yields
+ * to a live claim, which is exactly what makes a *leaked* claim unrecoverable — a pane on
+ * screen with nobody left to release it. Returns whether a claim was actually held, so the
+ * rescue can report it: that count is the field evidence of the leak.
+ *
+ * Safe against a legitimate owner: its later release finds no count and re-sends the same
+ * unmark, and a re-acquire starts the count at one and re-marks — the normal transitions.
+ */
+export function forceRendererPtyDeliveryVisible(ptyId: string): boolean {
+  const held = hiddenClaimCounts.delete(ptyId)
+  if (held) {
+    recordTerminalFreezeBreadcrumb('renderer-gate-force-unmark', {
+      id: redactPtyIdForDiagnostics(ptyId)
+    })
+  }
+  sendHiddenState(ptyId, false)
+  return held
+}
+
 function removeVisibleClaim(claim: VisibilityClaim): boolean {
   if (!claim.visible) {
     return false

@@ -38,6 +38,7 @@ import { sendModelRestoreNeededMarker } from '../delivery/payload'
 import { isMainWindowPtyIpcEvent } from './write-input'
 import { getMainWindowForWebContents } from '../../../window/main-window-registry'
 import type { PtyIpcSession } from '../session'
+import { unmarkHiddenRendererPtyForWindow } from '../delivery/hidden-transition'
 
 export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
   const ipcMain = getPtyIpc()
@@ -198,54 +199,35 @@ export function installPtyResizeVisibilityIpc(session: PtyIpcSession): void {
       id: redactPtyIdForDiagnostics(args.id),
       windowId
     })
-    const transition = session.transitionHiddenRendererPtyDeliveryState(
-      args.id,
-      args.hidden === true,
-      windowId
-    )
-    if (args.hidden === true) {
-      closeStartupQueryAuthorityForPty(args.id)
-      // Why: drop bytes queued for a newly hidden PTY instead of holding them under ACK starvation; reveal restores from the snapshot.
-      const pending = session.pendingData.get(args.id)
-      if (pending && transition.droppable) {
-        session.pendingData.delete(args.id)
-        if (pending.projectionAdmissionIds) {
-          session.sshOutputIntake?.transferProjections(
-            pending.projectionAdmissionIds,
-            'hidden-drop'
-          )
-        }
-        session.updateProducerFlowControl(args.id)
-        session.pendingOverflowMarkedPtys.delete(args.id)
-        const drop = recordHiddenRendererPtyDataDrop(args.id, pending.data.length)
-        if (drop.shouldEmitRestoreMarker) {
-          sendModelRestoreNeededMarker(
-            session,
-            args.id,
-            'hidden-drop',
-            runtime?.getPtyOutputSequence(args.id)
-          )
-        }
-      }
-      if (transition.policyChanged) {
-        invalidatePendingPtyDrainPolicy(args.id)
-      }
-      session.syncPtyBackgroundedDelivery(args.id, 'gate-mark')
+    if (args.hidden !== true) {
+      unmarkHiddenRendererPtyForWindow(session, args.id, windowId, 'gate-unmark')
       return
+    }
+    const transition = session.transitionHiddenRendererPtyDeliveryState(args.id, true, windowId)
+    closeStartupQueryAuthorityForPty(args.id)
+    // Why: drop bytes queued for a newly hidden PTY instead of holding them under ACK starvation; reveal restores from the snapshot.
+    const pending = session.pendingData.get(args.id)
+    if (pending && transition.droppable) {
+      session.pendingData.delete(args.id)
+      if (pending.projectionAdmissionIds) {
+        session.sshOutputIntake?.transferProjections(pending.projectionAdmissionIds, 'hidden-drop')
+      }
+      session.updateProducerFlowControl(args.id)
+      session.pendingOverflowMarkedPtys.delete(args.id)
+      const drop = recordHiddenRendererPtyDataDrop(args.id, pending.data.length)
+      if (drop.shouldEmitRestoreMarker) {
+        sendModelRestoreNeededMarker(
+          session,
+          args.id,
+          'hidden-drop',
+          runtime?.getPtyOutputSequence(args.id)
+        )
+      }
     }
     if (transition.policyChanged) {
       invalidatePendingPtyDrainPolicy(args.id)
     }
-    session.syncPtyBackgroundedDelivery(args.id, 'gate-unmark')
-    // Why: a reload/remount may have replaced the view that latched restore-needed, so re-emit on unhide; a redundant replay is cheap/idempotent, a missed restore corrupts the pane.
-    if (transition.droppedWhileHidden) {
-      sendModelRestoreNeededMarker(
-        session,
-        args.id,
-        'unhide',
-        runtime?.getPtyOutputSequence(args.id)
-      )
-    }
+    session.syncPtyBackgroundedDelivery(args.id, 'gate-mark')
   })
 
   ipcMain.removeAllListeners('pty:terminalViewAttributes')
