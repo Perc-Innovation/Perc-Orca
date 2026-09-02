@@ -282,7 +282,8 @@ export function registerPtyHandlers(
   installPtyWriteIpcHandlers({
     mainWindow,
     runtime,
-    clearHiddenRendererResizeOutput: session.clearHiddenRendererResizeOutput
+    clearHiddenRendererResizeOutput: session.clearHiddenRendererResizeOutput,
+    session
   })
   installPtyResizeVisibilityIpc(session)
   installPtyAckCreditIpc(session)

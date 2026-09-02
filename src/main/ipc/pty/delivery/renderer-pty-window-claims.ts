@@ -130,6 +130,11 @@ export function isHiddenRendererPtyInAnyWindow(ptyId: string): boolean {
   return hiddenRendererPtysUnion.has(ptyId)
 }
 
+/** This one window's hidden bit — what its own input contradicts. */
+export function isHiddenRendererPtyInWindow(windowId: number, ptyId: string): boolean {
+  return claimsByWindow.get(windowId)?.hidden.has(ptyId) === true
+}
+
 export function getHiddenRendererPtyIdsAcrossWindows(): string[] {
   return [...hiddenRendererPtysUnion]
 }

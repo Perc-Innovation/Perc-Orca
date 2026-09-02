@@ -5,7 +5,7 @@ import type { PtyTransport } from './pty-transport'
 
 const recoverWake = vi.fn()
 const focusPane = vi.fn()
-const declareVisible = vi.fn()
+const forceVisible = vi.fn((_id: string) => false)
 const setVisibilityClaim = vi.fn()
 const forceHeal = vi.fn(async () => ({ healed: false }))
 const restoreFits = vi.fn(async (_ids: string[], _settings: unknown) => true)
@@ -18,7 +18,7 @@ vi.mock('./pane-helpers', () => ({
   focusActivePane: (manager: unknown, options?: unknown) => focusPane(manager, options)
 }))
 vi.mock('./pty-renderer-delivery-claims', () => ({
-  declareRendererPtyDeliveryVisible: (id: string) => declareVisible(id),
+  forceRendererPtyDeliveryVisible: (id: string) => forceVisible(id),
   setRendererPtyVisibilityClaim: (owner: unknown, id: string, visible: boolean) =>
     setVisibilityClaim(owner, id, visible)
 }))
@@ -68,10 +68,26 @@ describe('recoverTerminalManually', () => {
     // Why force: the user asked for this explicitly, so the editable-focus guard must not apply.
     expect(focusPane).toHaveBeenCalledWith(expect.anything(), { force: true })
     expect(setVisibilityClaim).toHaveBeenCalledWith(transport, 'pty-1', true)
-    expect(declareVisible).toHaveBeenCalledWith('pty-1')
+    expect(forceVisible).toHaveBeenCalledWith('pty-1')
     expect(report.revisiblePtyCount).toBe(1)
+    expect(report.staleHiddenMarkCount).toBe(0)
     expect(report.resizedPaneCount).toBe(1)
     expect(report.failedSteps).toEqual([])
+  })
+
+  // The wedge this rescue exists for: the pane is on screen and the renderer still holds a
+  // hidden claim nobody will release — main drops every byte until it is forced clear.
+  it('counts a leaked hidden mark it had to force clear', async () => {
+    forceVisible.mockReturnValueOnce(true)
+    const report = await recoverTerminalManually({
+      manager: makeManager([]),
+      isActive: true,
+      paneTransports: new Map([[1, makeTransport('pty-1')]]),
+      settings: undefined
+    })
+
+    expect(report.staleHiddenMarkCount).toBe(1)
+    expect(terminalRecoveryFoundNothing(report)).toBe(false)
   })
 
   it('skips remote ptys, which ride a relay outside main visibility registry', async () => {
@@ -82,7 +98,7 @@ describe('recoverTerminalManually', () => {
       settings: undefined
     })
 
-    expect(declareVisible).not.toHaveBeenCalled()
+    expect(forceVisible).not.toHaveBeenCalled()
     expect(report.revisiblePtyCount).toBe(0)
   })
 
@@ -125,7 +141,7 @@ describe('recoverTerminalManually', () => {
 
     expect(report.failedSteps).toEqual(['render'])
     expect(focusPane).toHaveBeenCalled()
-    expect(declareVisible).toHaveBeenCalledWith('pty-1')
+    expect(forceVisible).toHaveBeenCalledWith('pty-1')
     expect(report.resizedPaneCount).toBe(1)
   })
 

@@ -15,7 +15,7 @@ import { getDriverForPty } from '@/lib/pane-manager/mobile-driver-state'
 import { recoverVisibleTerminalWindowWake } from './terminal-visibility-resume'
 import { focusActivePane } from './pane-helpers'
 import {
-  declareRendererPtyDeliveryVisible,
+  forceRendererPtyDeliveryVisible,
   setRendererPtyVisibilityClaim
 } from './pty-renderer-delivery-claims'
 import { forceTerminalDeliveryHeal } from './terminal-delivery-watchdog'
@@ -26,6 +26,9 @@ import type { PtyTransport } from './pty-transport'
 export type TerminalRecoveryReport = {
   /** Panes whose visibility claim was re-declared to main. */
   revisiblePtyCount: number
+  /** PTYs on screen that this renderer still had marked hidden — a leaked claim, the state
+   *  that silently drops delivery while the pane is visible. Nonzero is the smoking gun. */
+  staleHiddenMarkCount: number
   /** Panes whose size was re-asserted to the PTY host. */
   resizedPaneCount: number
   /** True when the delivery heal actually ran (it needs a live report channel). */
@@ -46,6 +49,7 @@ export type TerminalManualRecoveryArgs = {
 function emptyReport(): TerminalRecoveryReport {
   return {
     revisiblePtyCount: 0,
+    staleHiddenMarkCount: 0,
     resizedPaneCount: 0,
     deliveryHealed: false,
     mobileLockedPtyCount: 0,
@@ -98,7 +102,9 @@ export async function recoverTerminalManually({
         continue
       }
       setRendererPtyVisibilityClaim(transport, ptyId, true)
-      declareRendererPtyDeliveryVisible(ptyId)
+      if (forceRendererPtyDeliveryVisible(ptyId)) {
+        report.staleHiddenMarkCount += 1
+      }
       report.revisiblePtyCount += 1
     }
   })
@@ -145,6 +151,7 @@ export async function recoverTerminalManually({
 export function terminalRecoveryFoundNothing(report: TerminalRecoveryReport): boolean {
   return (
     !report.deliveryHealed &&
+    report.staleHiddenMarkCount === 0 &&
     report.mobileLockedPtyCount === 0 &&
     report.resizedPaneCount === 0 &&
     report.revisiblePtyCount === 0
