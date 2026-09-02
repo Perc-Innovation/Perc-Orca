@@ -12,6 +12,7 @@ import {
 } from '../../../providers/ssh-git-dispatch'
 import type { HostedReviewExecutionOptions } from '../../../source-control/hosted-review-git-options'
 import { mapPRState } from '../../mappers'
+import type { HostedReviewSibling } from '../../../../shared/hosted-review'
 import {
   normalizePRMergeable,
   normalizeReviewDecision,
@@ -39,6 +40,8 @@ export type PullRequestLookupData = {
   headRefOid?: string
   stack?: GitHubPRStack
   stackMetadataChecked?: boolean
+  /** The branch's other PRs, as the same request returned them; an exact-number lookup has none. */
+  siblings?: RestPullRequest[]
 }
 
 export type RestPullRequest = {
@@ -182,5 +185,16 @@ export async function getCurrentHeadOid(
     return result.stdout.trim() || null
   } catch {
     return null
+  }
+}
+
+/** A sibling only needs to identify itself, say where it goes and whether it is still alive. */
+export function mapSiblingPullRequest(pr: RestPullRequest): HostedReviewSibling {
+  return {
+    number: pr.number,
+    url: pr.html_url ?? pr.url ?? '',
+    ...(pr.title ? { title: pr.title } : {}),
+    ...(pr.base?.ref ? { baseRef: pr.base.ref } : {}),
+    state: mapPRState(pr.merged_at ? 'MERGED' : pr.state, pr.draft)
   }
 }
