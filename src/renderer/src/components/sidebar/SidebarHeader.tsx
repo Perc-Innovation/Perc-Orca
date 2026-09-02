@@ -1,6 +1,7 @@
 import React, { useEffect, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
+import SidebarWorkspaceSelector from './SidebarWorkspaceSelector'
 import { translate } from '@/i18n/i18n'
 import { SidebarViewToggle } from './sidebar-view-toggle'
 import { SidebarHeaderActions } from './sidebar-header-actions'
@@ -219,6 +220,10 @@ const SidebarHeader = React.memo(function SidebarHeader({
               {translate('auto.components.sidebar.SidebarHeader.projectWindow', 'Project window')}
             </TooltipContent>
           </Tooltip>
+        ) : !agentsViewActive ? (
+          // Why the selector and not a title: the window is in one workspace at a time, so
+          // naming that one (and switching it) is the useful label.
+          <SidebarWorkspaceSelector />
         ) : null}
         {agentsViewActive ? (
           <div className="flex shrink-0 items-center gap-0.5">

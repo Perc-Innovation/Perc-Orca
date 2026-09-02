@@ -59,6 +59,8 @@ vi.mock('./SidebarAgentsList', () => ({
   )
 }))
 
+vi.mock('./use-initial-workspace-selection', () => ({ useInitialWorkspaceSelection: () => {} }))
+
 vi.mock('./SidebarNav', () => ({
   default: () => <div data-testid="sidebar-nav" />
 }))
