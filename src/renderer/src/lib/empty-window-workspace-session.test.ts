@@ -21,6 +21,10 @@ function fullyPopulatedSession(): WorkspaceSessionState {
     markdownFrontmatterVisible: { 'file.md': true },
     browserTabsByWorktree: { 'repo-1::/wt': [] },
     browserPagesByWorkspace: { 'browser-1': [] },
+    clientHostedBrowserPagesByWorktree: { 'repo-1::/wt': [] },
+    clientHostedBrowserCloseIntentsByEnvironment: {
+      'env-1': [{ browserPageId: 'browser-2', worktreeId: 'repo-1::/wt', closedAt: 1 }]
+    },
     activeBrowserTabIdByWorktree: { 'repo-1::/wt': 'browser-1' },
     activeTabTypeByWorktree: { 'repo-1::/wt': 'terminal' },
     activeTabIdByWorktree: { 'repo-1::/wt': 'tab-1' },
@@ -56,11 +60,22 @@ function fullyPopulatedSession(): WorkspaceSessionState {
         retiredAt: 3
       }
     },
+    closedTerminalTabTombstonesByTabId: {
+      'tab-2': { closedAt: 4, worktreeId: 'repo-1::/wt' }
+    },
     browserUrlHistory: [
       {
         url: 'https://example.test',
         normalizedUrl: 'example.test',
         title: 'Example',
+        lastVisitedAt: 1,
+        visitCount: 1
+      }
+    ],
+    workspaceDocHistory: [
+      {
+        docLocation: { kind: 'workspace-doc', worktreeId: 'repo-1::/wt', filePath: 'README.md' },
+        title: 'README',
         lastVisitedAt: 1,
         visitCount: 1
       }

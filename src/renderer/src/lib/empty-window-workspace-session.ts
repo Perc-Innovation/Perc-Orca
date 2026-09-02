@@ -1,6 +1,6 @@
 import type { WindowSessionAdoption } from '../../../shared/window-session-adoption'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
-import type { WorkspaceSessionHostRead } from './workspace-session-host-persistence'
+import type { WorkspaceSessionHostRead } from './workspace-session-host-hydration'
 
 type EmptyWindowSessionFieldPolicy = 'carry' | 'drop'
 
@@ -26,6 +26,7 @@ export const EMPTY_WINDOW_SESSION_FIELD_POLICY = {
   markdownFrontmatterVisible: 'drop',
   browserTabsByWorktree: 'drop',
   browserPagesByWorkspace: 'drop',
+  clientHostedBrowserPagesByWorktree: 'drop',
   activeBrowserTabIdByWorktree: 'drop',
   activeTabTypeByWorktree: 'drop',
   activeTabIdByWorktree: 'drop',
@@ -38,11 +39,16 @@ export const EMPTY_WINDOW_SESSION_FIELD_POLICY = {
   terminalPtyIncarnationsByPaneKey: 'drop',
   terminalTopologyRevisionByRepoId: 'drop',
   terminalSurfaceTombstonesByPaneKey: 'drop',
+  closedTerminalTabTombstonesByTabId: 'drop',
   // Why: a startup SSH restore would let the target's remote workspace snapshot land straight
   // back in the window that just opened empty. The connection is dialed on demand instead.
   activeConnectionIdsAtShutdown: 'drop',
   // Address-bar autocomplete, not an open page.
   browserUrlHistory: 'carry',
+  workspaceDocHistory: 'carry',
+  // Why: a close that never reached its runtime must survive an empty window, or reconnecting
+  // resurrects the tab the user closed while the host was down.
+  clientHostedBrowserCloseIntentsByEnvironment: 'carry',
   // Cmd+J empty-query ordering; recency is not an open workspace.
   lastVisitedAtByWorktreeId: 'carry',
   // Why: this ledger records that a repo's default tabs already ran. Dropping it re-runs the
@@ -66,6 +72,9 @@ export function emptyWindowWorkspaceSession(session: WorkspaceSessionState): Wor
     tabsByWorktree: {},
     terminalLayoutsByTabId: {},
     browserUrlHistory: session.browserUrlHistory,
+    workspaceDocHistory: session.workspaceDocHistory,
+    clientHostedBrowserCloseIntentsByEnvironment:
+      session.clientHostedBrowserCloseIntentsByEnvironment,
     lastVisitedAtByWorktreeId: session.lastVisitedAtByWorktreeId,
     defaultTerminalTabsAppliedByWorktreeId: session.defaultTerminalTabsAppliedByWorktreeId
   }

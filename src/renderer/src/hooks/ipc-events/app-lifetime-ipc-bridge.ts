@@ -1,4 +1,5 @@
 import { getTabIdsAwaitingHostHydrationRemount } from '@/lib/parked-terminal-host-hydration'
+import { emitAutomationsChangedWindowEvent } from '@/lib/automations-changed-window-event'
 import { createBackgroundSleepingAgentWakeDispatcher } from '@/lib/wake-sleeping-agents-in-background'
 import { attachMobileMarkdownBridge } from '@/runtime/mobile-markdown-bridge'
 import { resetAgentHookCompletionNotificationCoordinators } from '../agent-hook-completion-notifications'
@@ -12,6 +13,7 @@ import { registerDirectSshStateIpcBridge } from './direct-ssh-state-ipc-bridge'
 import { registerMobileAndTerminalCloseIpcBridge } from './mobile-terminal-close-ipc-bridge'
 import { registerMobileDriverIpcBridge } from './mobile-driver-ipc-bridge'
 import { registerPtyWindowOwnershipIpcBridge } from './pty-window-ownership-ipc-bridge'
+import { registerOsMarkdownFileOpenBridge } from './os-markdown-file-open-bridge'
 import { registerProjectCatalogIpcBridge } from './project-catalog-ipc-bridge'
 import { registerRateLimitIpcBridge } from './rate-limit-ipc-bridge'
 import { registerRemoteWorkspaceIpcBridge } from './remote-workspace-ipc-bridge'
@@ -56,8 +58,19 @@ export function installAppLifetimeIpcEvents(
   const backgroundWakeDispatcher = createBackgroundSleepingAgentWakeDispatcher()
   unsubs.push(backgroundWakeDispatcher.dispose)
   unsubs.push(attachMobileMarkdownBridge())
+  unsubs.push(
+    window.api.automations.onChanged((payload) => emitAutomationsChangedWindowEvent(payload))
+  )
 
   const worktreeRuntime = createWorktreeEventRuntime(unsubs, isRuntimeEnvironmentActive)
+  const onSharedControlDiagnostics = window.api.runtimeEnvironments?.onSharedControlDiagnostics
+  if (onSharedControlDiagnostics) {
+    unsubs.push(
+      onSharedControlDiagnostics((event) => {
+        useAppStore.getState().publishRuntimeEnvironmentDiagnostics(event)
+      })
+    )
+  }
   const unsubscribeRuntimeEnvironmentStore = registerRuntimeClientIpcBridge(unsubs, worktreeRuntime)
   registerProjectCatalogIpcBridge(
     unsubs,
@@ -67,6 +80,7 @@ export function installAppLifetimeIpcEvents(
   )
   registerSettingsAndSidebarIpcBridge(unsubs)
   registerWorkspaceShortcutIpcBridge(unsubs)
+  registerOsMarkdownFileOpenBridge(unsubs)
   unsubs.push(
     window.api.ui.onActivateWorktree(({ repoId, worktreeId, setup, startup, defaultTabs }) => {
       void worktreeRuntime

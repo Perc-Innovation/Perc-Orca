@@ -22,6 +22,7 @@ import type {
   WorktreeCardProperty
 } from './ui-chrome-types'
 import type { WorkspaceStatusDefinition } from './worktree/types'
+import type { PersistedAutomationHostFilter } from './automation-host-filter'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null
@@ -49,6 +50,8 @@ export type PersistedUIState = {
   visibleWorkspaceHostIds?: VisibleWorkspaceHostIds
   /** User-defined sidebar order for host sections; missing/new hosts append in discovered order. */
   workspaceHostOrder?: WorkspaceHostOrder
+  /** Automations page host filter. Stores only a canonical host key; invalid values degrade to all hosts. */
+  automationHostFilter?: PersistedAutomationHostFilter
   /** Desktop-owned all-host repo order; host-qualified identities keep a manual cross-host interleaving while each host owns its local permutation. */
   manualRepoOrder?: ManualRepoOrderEntry[]
   /** Deprecated legacy positive-form setting. Ignored on hydration. */
@@ -72,6 +75,14 @@ export type PersistedUIState = {
   filterRepoIds: string[]
   /** Project groups whose members (including nested subgroups) the sidebar shows. Absent in pre-feature state. */
   filterGroupIds?: string[]
+  /** Agents-view host scope; deliberately separate from visibleWorkspaceHostIds so a monitoring surface never inherits nav filters silently. `null` = all hosts. */
+  agentsVisibleHostIds?: VisibleWorkspaceHostIds
+  /** Agents-view project filter; empty = all projects. Separate from filterRepoIds (workspace nav). */
+  agentsFilterRepoIds?: string[]
+  /** Agents-view: include child (orchestration-dispatched) agent threads. Absent means off. */
+  agentsShowChildAgents?: boolean
+  /** Agents-view compact thread rows. Absent means on. */
+  agentsCompactMode?: boolean
   collapsedGroups: string[]
   uiZoomLevel: number
   editorFontZoomLevel: number
@@ -119,6 +130,10 @@ export type PersistedUIState = {
   updateReassuranceSeen?: boolean
   /** Per-paneKey "row visited" timestamps that mute seen inline-agent rows; persisted because rows survive restart, else acked rows return bold. Renderer-owned via ui:set. */
   acknowledgedAgentsByPaneKey?: Record<string, number>
+  /** Per-paneKey "Clear completed" cutoffs hiding activity events stamped at or before the cutoff; persisted so cleared rows stay cleared across restart. Renderer-owned via ui:set. */
+  activityClearedAtByPaneKey?: Record<string, number>
+  /** Per-paneKey turn stamps the user explicitly marked unread; persisted so a manual unread survives restart the way acks and cutoffs do. Renderer-owned via ui:set. */
+  manuallyUnreadTurnsByPaneKey?: Record<string, number>
   /** User-hidden setup-guide sidebar entry; a reversible declutter pref (Help menu stays available), not completion. */
   setupGuideSidebarDismissed?: boolean
   /** One-shot marker for the browser setup-guide milestone; profiles missing it are evaluated once in the renderer (completion needs runtime probes). */

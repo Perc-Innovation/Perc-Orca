@@ -13,6 +13,7 @@ import type { FileContent } from './editor-panel-content-types'
 import { translate } from '@/i18n/i18n'
 import { useEditorConflictNavigation } from './useEditorConflictNavigation'
 import { useMarkdownDocuments } from './useMarkdownDocuments'
+import type { MarkdownRenderState } from './markdown-render-mode'
 
 const noopCloseMarkdownTableOfContents = (): void => {}
 
@@ -48,6 +49,7 @@ export function EditorContent({
   isCsv,
   isNotebook,
   mdViewMode,
+  inlineMarkdownRenderState,
   isChangesMode,
   sideBySide,
   showMarkdownTableOfContents = false,
@@ -75,6 +77,7 @@ export function EditorContent({
   isCsv: boolean
   isNotebook: boolean
   mdViewMode: MarkdownViewMode
+  inlineMarkdownRenderState: MarkdownRenderState | null
   isChangesMode: boolean
   sideBySide: boolean
   showMarkdownTableOfContents?: boolean
@@ -243,6 +246,7 @@ export function EditorContent({
         isCsv={isCsv}
         isNotebook={isNotebook}
         mdViewMode={mdViewMode}
+        inlineMarkdownRenderState={inlineMarkdownRenderState}
         isChangesMode={isChangesMode}
         sideBySide={sideBySide}
         showMarkdownTableOfContents={showMarkdownTableOfContents}

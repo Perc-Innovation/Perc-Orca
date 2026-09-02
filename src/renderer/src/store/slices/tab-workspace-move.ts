@@ -9,7 +9,7 @@ import {
   pushRecentTabId,
   sanitizeRecentTabIds
 } from './tab-group-state'
-import { collapseGroupLayout } from './tab-group-layout-tree'
+import { collapseGroupLayout } from './tabs/tabs-layout'
 import {
   MOVABLE_TAB_CONTENT_TYPES,
   rehomeTabContentRecords,

@@ -131,7 +131,11 @@ export type DeleteProjectGroupWithContainedProjectsResult =
 
 export type FolderWorkspacePathStatusRouteOptions = { runtimeEnvironmentId?: string | null }
 
-export type AddRepoPathRouteOptions = { runtimeEnvironmentId?: string | null }
+export type AddRepoPathOptions = {
+  runtimeEnvironmentId?: string | null
+  /** Overrides the host's basename naming for the new project. */
+  displayName?: string
+}
 
 export type RuntimeCatalogFetchOptions = { runtimeEnvironmentId?: string | null }
 
@@ -159,7 +163,7 @@ export type RepoSlice = {
   addRepoPath: (
     path: string,
     kind?: 'git' | 'folder',
-    options?: AddRepoPathRouteOptions
+    options?: AddRepoPathOptions
   ) => Promise<Repo | null>
   setupProjectExistingFolder: (
     args: ProjectHostSetupExistingFolderArgs
@@ -174,7 +178,7 @@ export type RepoSlice = {
     args: ProjectHostSetupDeleteArgs
   ) => Promise<ProjectHostSetupDeleteResult | null>
   setupProjectClone: (args: ProjectHostSetupCloneArgs) => Promise<ProjectHostSetupResult | null>
-  addNonGitFolder: (path: string, options?: AddRepoPathRouteOptions) => Promise<Repo | null>
+  addNonGitFolder: (path: string, options?: AddRepoPathOptions) => Promise<Repo | null>
   scanNestedRepos: (
     path: string,
     connectionId?: string,

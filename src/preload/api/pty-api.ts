@@ -52,6 +52,8 @@ export type PtyApi = {
     telemetry?: { agent_kind: AgentKind; launch_source: LaunchSource; request_kind: RequestKind }
   }) => Promise<{
     id: string
+    /** Which lifetime of `id` this reply named; absent when the execution host predates the field. */
+    incarnationId?: string
     launchAgent?: TuiAgent
     launchConfig?: SleepingAgentLaunchConfig
     snapshot?: string
@@ -61,6 +63,7 @@ export type PtyApi = {
     snapshotFrameAnsi?: string
     snapshotFrameRestoreAnsi?: string
     snapshotKittyKeyboardFlags?: number
+    snapshotTerminalOwner?: 'shell'
     snapshotSeq?: number
     isReattach?: boolean
     isAlternateScreen?: boolean
@@ -155,6 +158,7 @@ export type PtyApi = {
     /** Effective kitty flags the snapshot owner proved at `seq`. Absent means
      *  unknown; consumers must not turn that into a known `0`. */
     kittyKeyboardFlags?: number
+    terminalOwner?: 'shell'
   } | null>
   getRendererDeliveryDebugSnapshot: () => Promise<{
     pendingPtyCount: number
@@ -206,7 +210,13 @@ export type PtyApi = {
   /** Title-only replay snapshot for (re)attach; attention facts never replay. */
   getSideEffectSnapshot: (id: string) => Promise<TerminalSideEffectBatch | null>
   onExit: (
-    callback: (data: { id: string; code: number; preserveRendererBinding?: boolean }) => void
+    callback: (data: {
+      id: string
+      code: number
+      preserveRendererBinding?: boolean
+      /** Which lifetime of `id` died; absent when the execution host predates the field. */
+      incarnationId?: string
+    }) => void
   ) => () => void
   onSpawned: (callback: (data: { id: string }) => void) => () => void
   onSerializeBufferRequest: (

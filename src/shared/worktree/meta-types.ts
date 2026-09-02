@@ -29,6 +29,8 @@ export type WorktreeMeta = {
   /** See Worktree.creatorProvenance. */
   creatorProvenance?: WorkspaceCreatorProvenance
   displayName: string
+  /** True when a user-authored label must survive branch changes. */
+  displayNameIsPinned?: boolean
   comment: string
   linkedIssue: number | null
   linkedPR: number | null
@@ -36,6 +38,8 @@ export type WorktreeMeta = {
   attachedReviews?: AttachedReview[]
   /** See Worktree.trackedBranches. */
   trackedBranches?: string[]
+  /** GitHub PR hidden from branch discovery after an explicit unlink. */
+  suppressedGitHubPR?: number | null
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null

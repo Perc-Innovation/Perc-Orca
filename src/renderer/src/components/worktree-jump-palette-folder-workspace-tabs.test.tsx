@@ -264,7 +264,7 @@ describe('WorktreeJumpPalette folder-workspace tabs', () => {
     )
     await search('ORCA-42')
 
-    const hostChip = getTabRow('tab-tasks')?.querySelector('[data-slot="palette-open-tab-host"]')
+    const hostChip = getTabRow('tab-tasks')?.querySelector('[data-slot="palette-host-badge"]')
     expect(hostChip?.textContent).toBe('build-box')
   })
 

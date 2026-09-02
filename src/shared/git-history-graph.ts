@@ -103,6 +103,7 @@ export function buildGitHistoryViewModels(
 ): GitHistoryItemViewModel[] {
   let colorIndex = -1
   const viewModels: GitHistoryItemViewModel[] = []
+  let historyItemsById: Map<string, GitHistoryItem> | undefined
 
   for (const historyItem of historyItems) {
     const kind = historyItem.id === currentRef?.revision ? 'HEAD' : 'node'
@@ -112,8 +113,9 @@ export function buildGitHistoryViewModels(
 
     // Why: root commits close only their own lane — copying the others keeps
     // unrelated histories (orphan branches, subtree merges) visually continuous.
+    const historyItemId = historyItem.id
     for (const node of inputSwimlanes) {
-      if (node.id === historyItem.id) {
+      if (node.id === historyItemId) {
         if (!firstParentAdded && historyItem.parentIds.length > 0) {
           outputSwimlanes.push({
             id: historyItem.parentIds[0]!,
@@ -131,7 +133,18 @@ export function buildGitHistoryViewModels(
       if (index === 0) {
         colorIdentifier = getLabelColorIdentifier(historyItem, colorMap)
       } else {
-        const parent = historyItems.find((item) => item.id === historyItem.parentIds[index])
+        // Side-parent colors need a lookup; defer indexing so linear histories pay no map cost.
+        if (!historyItemsById) {
+          historyItemsById = new Map()
+          for (const candidate of historyItems) {
+            // Array#find returns the first duplicate, so retain first-wins ordering here.
+            const candidateId = candidate.id
+            if (!historyItemsById.has(candidateId)) {
+              historyItemsById.set(candidateId, candidate)
+            }
+          }
+        }
+        const parent = historyItemsById.get(historyItem.parentIds[index]!)
         colorIdentifier = parent ? getLabelColorIdentifier(parent, colorMap) : undefined
       }
 

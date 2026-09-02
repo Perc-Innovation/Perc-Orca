@@ -40,16 +40,24 @@ function getProjectFilterVisibilityLabel(selection: ProjectFilterSelection): str
 
 type SidebarRepositoryFilterSectionProps = {
   preserveWorkspaceBoardOpen?: boolean
+  // Why: the Agents view reuses this section with its own persisted filter;
+  // absent props fall back to the workspace-nav filter state.
+  filterRepoIds?: readonly string[]
+  setFilterRepoIds?: (ids: readonly string[]) => void
 }
 
 const SidebarRepositoryFilterSection = React.memo(function SidebarRepositoryFilterSection({
-  preserveWorkspaceBoardOpen = false
+  preserveWorkspaceBoardOpen = false,
+  filterRepoIds: filterRepoIdsProp,
+  setFilterRepoIds: setFilterRepoIdsProp
 }: SidebarRepositoryFilterSectionProps) {
-  const filterRepoIds = useAppStore((s) => s.filterRepoIds)
-  const setFilterRepoIds = useAppStore((s) => s.setFilterRepoIds)
+  const workspaceFilterRepoIds = useAppStore((s) => s.filterRepoIds)
+  const setWorkspaceFilterRepoIds = useAppStore((s) => s.setFilterRepoIds)
   const filterGroupIds = useAppStore((s) => s.filterGroupIds)
   const setFilterGroupIds = useAppStore((s) => s.setFilterGroupIds)
   const repos = useAppStore((s) => s.repos)
+  const filterRepoIds = filterRepoIdsProp ?? workspaceFilterRepoIds
+  const setFilterRepoIds = setFilterRepoIdsProp ?? setWorkspaceFilterRepoIds
   const selection = useProjectFilterSelection()
   const scopedProject = useWindowScopeProject()
 

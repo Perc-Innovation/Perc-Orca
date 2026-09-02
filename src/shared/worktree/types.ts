@@ -6,6 +6,7 @@ import type { DiffComment, MobileDiffReviewState } from '../diff-comment-types'
 import type { AttachedReview } from '../attached-reviews'
 import type { EphemeralVmCheckoutMode } from '../orca-yaml-hook-types'
 import type { BuiltInWorktreeVisibilitySourceId } from '../repo-types'
+import type { WorktreeIdentity } from './identity'
 
 export type WorkspaceLinkedItem = {
   provider: 'github' | 'gitlab' | 'linear' | 'jira'
@@ -61,6 +62,8 @@ export type WorkspaceStatusDefinition = {
 export type Worktree = {
   id: string // `${repoId}::${path}`
   instanceId?: string
+  /** Immutable host/instance identity. Optional while legacy rows migrate. */
+  identity?: WorktreeIdentity
   repoId: string
   /** Durable project identity. Optional while legacy repo-only workspaces migrate. */
   projectId?: string
@@ -75,6 +78,8 @@ export type Worktree = {
   /** Checkout ownership for a recipe-provisioned main workspace. */
   ephemeralVmCheckoutMode?: EphemeralVmCheckoutMode
   displayName: string
+  /** Projection of persisted display-name provenance. */
+  displayNameMode?: 'fixed' | 'automatic'
   comment: string
   linkedIssue: number | null
   linkedPR: number | null
@@ -83,6 +88,8 @@ export type Worktree = {
   /** Sibling head branches whose reviews the card also surfaces (e.g. the
    *  `-v1.15.0` / `-stage` cherry-pick branches of this worktree's change). */
   trackedBranches?: string[]
+  /** GitHub PR hidden from branch discovery after an explicit unlink. */
+  suppressedGitHubPR?: number | null
   linkedLinearIssue: string | null
   linkedLinearIssueWorkspaceId?: string | null
   linkedLinearIssueOrganizationUrlKey?: string | null
