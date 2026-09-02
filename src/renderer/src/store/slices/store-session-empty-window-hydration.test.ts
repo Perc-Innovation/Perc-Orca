@@ -5,7 +5,7 @@ import {
   emptyWindowWorkspaceSession
 } from '@/lib/empty-window-workspace-session'
 import { partitionWorkspaceSessionByWorktrees } from '../../../../shared/workspace-session-window-rebase'
-import type { WorkspaceSessionHostRead } from '@/lib/workspace-session-host-persistence'
+import type { WorkspaceSessionHostRead } from '@/lib/workspace-session-host-hydration'
 import { worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
 import { createTestStore, makeWorktree, makeTab, makeLayout } from './store-test-helpers'
 import { createStoreSessionMockApi } from './store-session-test-harness'
@@ -43,7 +43,9 @@ function persistedSessionRead(): WorkspaceSessionHostRead {
       lastVisitedAtByWorktreeId: { [WORKTREE_ID]: 1_700_000_000_000 },
       defaultTerminalTabsAppliedByWorktreeId: { [WORKTREE_ID]: true }
     },
-    runtimeHostIdByWorkspaceSessionKey: {}
+    runtimeHostIdByWorkspaceSessionKey: {},
+    contestedHostWorkspaceSessions: {},
+    contestedPrimaryHostBySessionKey: {}
   }
 }
 

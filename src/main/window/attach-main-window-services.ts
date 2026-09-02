@@ -1,13 +1,6 @@
-/* eslint-disable max-lines -- Why: this file is the central main-window IPC wiring point; splitting it during the mobile release compatibility rebase would increase release risk. */
-import { randomUUID } from 'node:crypto'
-
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { Store } from '../persistence'
-import type { ReleaseBuildListResult, UpdateCheckOptions } from '../../shared/update-status-types'
-import type { CreateWorktreeResult } from '../../shared/worktree/create-types'
-import type { WorktreeStartupLaunch } from '../../shared/worktree/launch-types'
-import { RELEASE_CHANNELS, type ReleaseChannel } from '../../shared/release-channel'
 import {
   acknowledgePendingTccPromptNotice,
   consumePendingTccPromptNotice,
@@ -16,6 +9,7 @@ import {
 } from '../macos-tcc-prompt-notice'
 import { registerRepoHandlers } from '../ipc/repos'
 import { setRepoRemoteClientNotifier } from '../ipc/repos/repos-changed-notification'
+import { setWorktreeCatalogRemoteClientNotifier } from '../ipc/watched-worktree-catalog-notification'
 import { registerWorktreeHandlers } from '../ipc/worktrees'
 import { registerWorkspaceCleanupHandlers } from '../ipc/workspace-cleanup'
 import {
@@ -31,67 +25,26 @@ import { registerRemoteWorkspaceHandlers } from '../ipc/remote-workspace'
 import { browserManager } from '../browser/browser-manager'
 import { hasSystemMediaAccess, requestSystemMediaAccess } from '../browser/browser-media-access'
 import type { OrcaRuntimeService, RuntimeWorktreeLifecycleEvent } from '../runtime/orca-runtime'
-import {
-  checkForUpdatesFromMenu,
-  downloadUpdate,
-  getLinuxPackageInstallInstructions,
-  getUpdateStatus,
-  quitAndInstall,
-  setupAutoUpdater,
-  showLinuxPackage,
-  dismissAvailableUpdate,
-  dismissNudge,
-  listAvailableReleaseBuilds,
-  type UpdateInstallMode
-} from '../updater'
-import { isTrustedUIRenderer } from '../ipc/ui'
+import type { UpdateInstallMode } from '../updater'
 import { scheduleHistoryGc } from '../terminal-history-gc'
 import { hydrateLocalPtyRegistryAtBoot } from '../memory/hydrate-local-pty-registry'
 import type { ClaudeRuntimeAuthPreparation } from '../claude-accounts/runtime-auth-service'
 import { getKnownWorktreeIdsForHistoryGc } from './history-gc-worktree-ids'
-import type {
-  RuntimeMarkdownReadTabResult,
-  RuntimeMarkdownSaveTabResult
-} from '../../shared/mobile-markdown-document'
-import type { RuntimeMobileSessionTabMove } from '../../shared/runtime-types'
-import type { TerminalTabCreateReply } from '../../shared/terminal-reveal-identity'
 import { isNativeFileDropPayload, type NativeFileDropPayload } from '../../shared/native-file-drop'
-import { requestMobileMarkdownFromRenderer } from './mobile-markdown-request-relay'
-import { requestSessionTabCloseFromRenderer } from './session-tab-close-request-relay'
-import { requestTerminalTabCloseFromRenderer } from './terminal-tab-close-request-relay'
 import type { ClaudeAccountSelectionTarget } from '../claude-accounts/runtime-selection'
-import { runWorktreeChangeInvalidators } from '../ipc/worktree-change-invalidators'
 import {
   getFocusedOrLastActiveMainWindow,
-  getMainWindowById,
   getMainWindowForWebContents
 } from './main-window-registry'
-import {
-  broadcastRuntimeWindowNotification,
-  getPreferredRuntimeWindowNotifier,
-  getRuntimeWindowNotifierById,
-  hasRuntimeWindowNotifiers,
-  registerRuntimeWindowNotifier,
-  resolveRuntimeWindowNotifier,
-  unregisterRuntimeWindowNotifier
-} from './runtime-window-notifier-registry'
 import {
   scheduleWorktreeBaseDirectoryWatcherSync,
   setWorktreeBaseDirectoryWatcherSyncContext
 } from '../ipc/worktree-base-directory-watcher'
 import { startFolderRepoGitUpgradeWatch } from '../ipc/folder-repo-git-upgrade'
-import { logStartupMilestone } from '../startup/startup-diagnostics'
-import { createRuntimeRendererNotificationSender } from './runtime-renderer-notification-sender'
-import { registerRendererDocumentNavigation } from './renderer-document-navigation'
+import { scheduleMainWindowAutoUpdaterSetup } from './main-window-updater'
+import { registerRuntimeWindowLifecycle } from './runtime-window-lifecycle'
 
-const UPDATER_SETUP_FALLBACK_MS = 15_000
-
-// Why: a manual check can arrive before deferred setup runs, so entry points force this pending setup to configure the updater first.
-let pendingAutoUpdaterSetup: (() => void) | null = null
-
-export function ensureAutoUpdaterConfigured(): void {
-  pendingAutoUpdaterSetup?.()
-}
+export { ensureAutoUpdaterConfigured, registerUpdaterHandlers } from './main-window-updater'
 
 let onBeforeAppRendererReload:
   | ((args: { webContentsId: number; ignoreCache: boolean }) => void)
@@ -122,9 +75,10 @@ export function attachMainWindowServices(
   }
 ): void {
   registerAppReloadHandler(mainWindow, options?.onBeforeRendererReload)
-  registerRepoHandlers(mainWindow, store)
+  registerRepoHandlers(mainWindow, store, runtime)
   // Why: repo IPC mutations must also invalidate paired clients' catalogs (#11994).
   setRepoRemoteClientNotifier(runtime)
+  setWorktreeCatalogRemoteClientNotifier(runtime)
   registerWorktreeHandlers(mainWindow, store, runtime, {
     onWorktreeLifecycle: options?.onWorktreeLifecycle
   })
@@ -157,11 +111,9 @@ export function attachMainWindowServices(
   scheduleHistoryGc(async () => {
     return getKnownWorktreeIdsForHistoryGc(store)
   })
-  // Why: daemon PTYs survive renderer restarts, so at boot they're unregistered; hydrate so they aren't mislabeled REMOTE (idempotent, safe to re-run).
-  void hydrateLocalPtyRegistryAtBoot(store)
-  const localPtyStartupReady = options?.awaitLocalPtyStartup?.()
-  if (localPtyStartupReady) {
-    void localPtyStartupReady
+  const localPtyProviderStartupReady = options?.awaitLocalPtyProviderStartup?.()
+  if (localPtyProviderStartupReady) {
+    void localPtyProviderStartupReady
       .then(() => hydrateLocalPtyRegistryAtBoot(store))
       .catch((error) => {
         console.warn(
@@ -169,52 +121,14 @@ export function attachMainWindowServices(
           error instanceof Error ? error.message : String(error)
         )
       })
+  } else {
+    void hydrateLocalPtyRegistryAtBoot(store)
   }
   registerSshHandlers(store, getFocusedOrLastActiveMainWindow, runtime)
   registerRemoteWorkspaceHandlers(store, getFocusedOrLastActiveMainWindow)
-  registerFileDropRelay(mainWindow)
+  registerFileDropRelay()
   registerTccPromptNoticeHandlers(mainWindow)
-  // Why: setupAutoUpdater sync-require()s electron-updater (slow on cold Windows w/ Defender, #7225), so defer past first paint; timer fallback covers crash-looping renderers.
-  let updaterSetupDone = false
-  const setupAutoUpdaterDeferred = (): void => {
-    if (updaterSetupDone || mainWindow.isDestroyed()) {
-      return
-    }
-    updaterSetupDone = true
-    setupAutoUpdater(mainWindow, {
-      getLastUpdateCheckAt: () => store.getUI().lastUpdateCheckAt,
-      onBeforeQuit: async () => {
-        try {
-          await options?.onBeforeUpdateQuit?.()
-        } finally {
-          await store.flushPendingAsync()
-        }
-      },
-      setLastUpdateCheckAt: (timestamp) => {
-        store.updateUI({ lastUpdateCheckAt: timestamp })
-      },
-      getPendingUpdateNudgeId: () => store.getUI().pendingUpdateNudgeId ?? null,
-      getDismissedUpdateNudgeId: () => store.getUI().dismissedUpdateNudgeId ?? null,
-      setPendingUpdateNudgeId: (id) => {
-        // Why: only the apply branch also nulls dismissedUpdateVersion so relaunch can't resurrect the old hidden card; clearing must not, or it un-dismisses.
-        if (id) {
-          store.updateUI({ pendingUpdateNudgeId: id, dismissedUpdateVersion: null })
-        } else {
-          store.updateUI({ pendingUpdateNudgeId: null })
-        }
-      },
-      setDismissedUpdateNudgeId: (id) => {
-        store.updateUI({ dismissedUpdateNudgeId: id })
-      },
-      getReleaseChannelOverride: () => store.getUI().releaseChannelOverride ?? null,
-      installMode: options?.updateInstallMode
-    })
-    logStartupMilestone('updater-setup-done')
-  }
-  pendingAutoUpdaterSetup = setupAutoUpdaterDeferred
-  mainWindow.once('ready-to-show', () => setImmediate(setupAutoUpdaterDeferred))
-  const updaterSetupFallback = setTimeout(setupAutoUpdaterDeferred, UPDATER_SETUP_FALLBACK_MS)
-  updaterSetupFallback.unref?.()
+  scheduleMainWindowAutoUpdaterSetup(mainWindow, store, options)
   registerRuntimeWindowLifecycle(mainWindow, runtime)
 
   const allowedPermissions = new Set(['media', 'fullscreen', 'pointerLock'])
@@ -324,327 +238,7 @@ function registerAppReloadHandler(
   })
 }
 
-function registerRuntimeWindowLifecycle(
-  mainWindow: BrowserWindow,
-  runtime: OrcaRuntimeService
-): void {
-  runtime.attachWindow(mainWindow.id)
-  const mainWebContents = mainWindow.webContents
-  const rendererNotifications = createRuntimeRendererNotificationSender({
-    isWindowDestroyed: () => mainWindow.isDestroyed(),
-    webContents: mainWebContents,
-    onFailure: (reason) => runtime.markGraphReloadFailed(mainWindow.id, reason)
-  })
-  registerRuntimeWindowNotifier({ window: mainWindow, send: rendererNotifications.send })
-  // Why: the notifier is app-global while windows come and go, so every relay picks
-  // its target now: the window that owns the pane, the one in front, or all of them.
-  const sendToOwner = (
-    ownerWindowId: number | null,
-    channel: string,
-    ...values: unknown[]
-  ): boolean => getRuntimeWindowNotifierById(ownerWindowId)?.send(channel, ...values) ?? false
-  const sendToOwnerOrTarget = (
-    ownerWindowId: number | null,
-    channel: string,
-    ...values: unknown[]
-  ): boolean => resolveRuntimeWindowNotifier(ownerWindowId)?.send(channel, ...values) ?? false
-  const send = (channel: string, ...values: unknown[]): boolean =>
-    getPreferredRuntimeWindowNotifier()?.send(channel, ...values) ?? false
-  const broadcast = (channel: string, ...values: unknown[]): void =>
-    broadcastRuntimeWindowNotification(channel, ...values)
-  const ownerWindowOrPreferred = (ownerWindowId: number | null): BrowserWindow | null =>
-    (ownerWindowId === null ? null : getMainWindowById(ownerWindowId)) ??
-    getFocusedOrLastActiveMainWindow()
-  runtime.setNotifier({
-    worktreesChanged: (repoId, renamed) => {
-      // Why: clear scan caches before the renderer handles this event, so it can't read stale TTL entries after a mutation.
-      runWorktreeChangeInvalidators(repoId)
-      broadcast('worktrees:changed', renamed ? { repoId, renamed } : { repoId })
-    },
-    worktreeBaseStatus: (event) => broadcast('worktree:baseStatus', event),
-    worktreeRemoteBranchConflict: (event) => broadcast('worktree:remoteBranchConflict', event),
-    reposChanged: () => broadcast('repos:changed'),
-    activateWorktree: (
-      repoId,
-      worktreeId,
-      setup?: CreateWorktreeResult['setup'],
-      startup?: WorktreeStartupLaunch,
-      defaultTabs?: CreateWorktreeResult['defaultTabs']
-    ) => {
-      send('ui:activateWorktree', {
-        repoId,
-        worktreeId,
-        ...(setup ? { setup } : {}),
-        ...(startup ? { startup } : {}),
-        ...(defaultTabs ? { defaultTabs } : {})
-      })
-    },
-    createTerminal: (worktreeId, opts) =>
-      send('ui:createTerminal', {
-        worktreeId,
-        command: opts.command,
-        ...(opts.cwd ? { cwd: opts.cwd } : {}),
-        ...(opts.env ? { env: opts.env } : {}),
-        title: opts.title,
-        ...(opts.presentation ? { presentation: opts.presentation } : {})
-      }),
-    revealTerminalSession: (worktreeId, opts) =>
-      new Promise((resolve, reject) => {
-        const requestId = randomUUID()
-        const expectedIdentity = opts.expectedProcessIdentity
-          ? opts.tabId && opts.leafId
-            ? { worktreeId, tabId: opts.tabId, leafId: opts.leafId, ptyId: opts.ptyId }
-            : null
-          : undefined
-        if (expectedIdentity === null) {
-          reject(new Error('terminal_reveal_identity_required'))
-          return
-        }
-        // Why: a reveal belongs to whichever window already owns that tab/leaf/PTY;
-        // only a genuinely new session may land in the window the user is using.
-        const ownerWindowId =
-          opts.tabId && opts.splitFromLeafId
-            ? runtime.resolveOwnerWindowIdForLeaf(opts.tabId, opts.splitFromLeafId)
-            : opts.tabId
-              ? (runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, opts.tabId) ??
-                runtime.resolveOwnerWindowIdForTabId(opts.tabId))
-              : runtime.resolveOwnerWindowIdForPtyId(opts.ptyId)
-        const target = ownerWindowOrPreferred(ownerWindowId)
-        if (!target) {
-          reject(new Error('runtime_unavailable'))
-          return
-        }
-        const timer = setTimeout(() => {
-          ipcMain.removeListener('terminal:tabCreateReply', handler)
-          target.removeListener('closed', onTargetClosed)
-          reject(new Error('Terminal reveal timed out'))
-        }, 10_000)
-        const onTargetClosed = (): void => {
-          clearTimeout(timer)
-          ipcMain.removeListener('terminal:tabCreateReply', handler)
-          reject(new Error('runtime_unavailable'))
-        }
-        const handler = (event: Electron.IpcMainEvent, reply: TerminalTabCreateReply): void => {
-          // Why: requestId is renderer-supplied, so only the targeted main window may satisfy the reveal.
-          if (event.sender !== target.webContents || reply.requestId !== requestId) {
-            return
-          }
-          clearTimeout(timer)
-          ipcMain.removeListener('terminal:tabCreateReply', handler)
-          target.removeListener('closed', onTargetClosed)
-          if (reply.error) {
-            reject(new Error(reply.error))
-            return
-          }
-          if (
-            expectedIdentity &&
-            (!reply.identity ||
-              reply.identity.worktreeId !== expectedIdentity.worktreeId ||
-              reply.identity.tabId !== expectedIdentity.tabId ||
-              reply.identity.leafId !== expectedIdentity.leafId ||
-              reply.identity.ptyId !== expectedIdentity.ptyId)
-          ) {
-            reject(new Error('terminal_reveal_identity_mismatch'))
-            return
-          }
-          resolve({
-            tabId: reply.tabId!,
-            title: reply.title,
-            ...(reply.identity ? { identity: reply.identity } : {})
-          })
-        }
-        ipcMain.on('terminal:tabCreateReply', handler)
-        target.once('closed', onTargetClosed)
-        // Why: a runtime-created PTY can emit daemon output before the renderer
-        // publishes its graph, so stamp the chosen window before adoption.
-        runtime.registerPtyOwnerWindow(opts.ptyId, target.id)
-        const sent = sendToOwner(target.id, 'ui:createTerminal', {
-          requestId,
-          worktreeId,
-          ptyId: opts.ptyId,
-          title: opts.title ?? undefined,
-          ...(opts.cwd ? { cwd: opts.cwd } : {}),
-          ...(opts.launchConfig ? { launchConfig: opts.launchConfig } : {}),
-          ...(opts.launchToken ? { launchToken: opts.launchToken } : {}),
-          ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
-          ...(opts.viewMode ? { viewMode: opts.viewMode } : {}),
-          activate: opts.activate !== false,
-          ...(opts.presentation ? { presentation: opts.presentation } : {}),
-          ...(opts.surfaceOwner === false ? { surfaceOwner: false } : {}),
-          // Why: pre-minted tabId aligns the renderer tab id with the paneKey baked into the PTY env, so hook events route right.
-          ...(opts.tabId !== undefined ? { tabId: opts.tabId } : {}),
-          ...(opts.leafId !== undefined ? { leafId: opts.leafId } : {}),
-          ...(opts.splitFromLeafId !== undefined ? { splitFromLeafId: opts.splitFromLeafId } : {}),
-          ...(opts.splitDirection !== undefined ? { splitDirection: opts.splitDirection } : {}),
-          ...(opts.splitTelemetrySource !== undefined
-            ? { splitTelemetrySource: opts.splitTelemetrySource }
-            : {}),
-          ...(opts.focus !== undefined ? { focus: opts.focus } : {})
-        })
-        if (!sent) {
-          clearTimeout(timer)
-          ipcMain.removeListener('terminal:tabCreateReply', handler)
-          target.removeListener('closed', onTargetClosed)
-          reject(new Error('runtime_unavailable'))
-        }
-      }),
-    resolveLegacyWorkerTerminalRecovery: (paneKey, resolution, ptyId) =>
-      send('agentStatus:legacyWorkerTerminalRecovery', {
-        paneKey,
-        resolution,
-        ...(ptyId ? { ptyId } : {})
-      }),
-    splitTerminal: (tabId, paneRuntimeId, opts) => {
-      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:splitTerminal', {
-        tabId,
-        paneRuntimeId,
-        direction: opts.direction,
-        command: opts.command,
-        telemetrySource: opts.telemetrySource
-      })
-    },
-    renameTerminal: (tabId, title) =>
-      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:renameTerminal', {
-        tabId,
-        title
-      }),
-    focusTerminal: (tabId, worktreeId, leafId) =>
-      sendToOwner(
-        leafId
-          ? runtime.resolveOwnerWindowIdForLeaf(tabId, leafId)
-          : runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId),
-        'ui:focusTerminal',
-        { tabId, worktreeId, leafId }
-      ),
-    focusEditorTab: (tabId, worktreeId) =>
-      sendToOwner(
-        runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId),
-        'ui:focusEditorTab',
-        { tabId, worktreeId }
-      ),
-    closeSessionTab: (tabId, worktreeId) =>
-      requestSessionTabCloseFromRenderer(
-        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
-        tabId,
-        worktreeId
-      ),
-    moveSessionTab: (worktreeId: string, move: RuntimeMobileSessionTabMove) =>
-      sendToOwner(
-        runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, move.tabId),
-        'ui:moveSessionTab',
-        { worktreeId, ...move }
-      ),
-    openFile: (worktreeId, filePath, relativePath, runtimeEnvironmentId?) =>
-      send('ui:openFileFromMobile', {
-        worktreeId,
-        filePath,
-        relativePath,
-        runtimeEnvironmentId
-      }),
-    openDiff: (worktreeId, filePath, relativePath, staged, runtimeEnvironmentId?) =>
-      send('ui:openDiffFromMobile', {
-        worktreeId,
-        filePath,
-        relativePath,
-        staged,
-        runtimeEnvironmentId
-      }),
-    readMobileMarkdownTab: (worktreeId, tabId) =>
-      requestMobileMarkdownFromRenderer(
-        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
-        {
-          operation: 'read',
-          worktreeId,
-          tabId
-        }
-      ) as Promise<RuntimeMarkdownReadTabResult>,
-    saveMobileMarkdownTab: (worktreeId, tabId, baseVersion, content) =>
-      requestMobileMarkdownFromRenderer(
-        requireOwnerWindow(runtime.resolveOwnerWindowIdForWorktreeTab(worktreeId, tabId)),
-        {
-          operation: 'save',
-          worktreeId,
-          tabId,
-          baseVersion,
-          content
-        }
-      ) as Promise<RuntimeMarkdownSaveTabResult>,
-    closeTerminal: (tabId, paneRuntimeId) =>
-      sendToOwner(runtime.resolveOwnerWindowIdForTabId(tabId), 'ui:closeTerminal', {
-        tabId,
-        paneRuntimeId
-      }),
-    closeTerminalTab: (tabId, options) =>
-      requestTerminalTabCloseFromRenderer(
-        requireOwnerWindow(runtime.resolveOwnerWindowIdForTabId(tabId)),
-        tabId,
-        options
-      ),
-    sleepWorktree: (worktreeId) => send('ui:sleepWorktree', { worktreeId }),
-    resumeSleepingAgents: (worktreeId) => send('ui:resumeSleepingAgents', { worktreeId }),
-    terminalFitOverrideChanged: (ptyId, mode, cols, rows) =>
-      sendToOwnerOrTarget(
-        runtime.resolveOwnerWindowIdForPtyId(ptyId),
-        'runtime:terminalFitOverrideChanged',
-        { ptyId, mode, cols, rows }
-      ),
-    terminalDriverChanged: (ptyId, driver) =>
-      sendToOwnerOrTarget(
-        runtime.resolveOwnerWindowIdForPtyId(ptyId),
-        'runtime:terminalDriverChanged',
-        { ptyId, driver }
-      ),
-    nativeChatLaunchDraftResolved: (tabId, resolution) =>
-      sendToOwnerOrTarget(
-        runtime.resolveOwnerWindowIdForTabId(tabId),
-        'runtime:nativeChatLaunchDraftResolved',
-        { tabId, ...resolution }
-      ),
-    browserDriverChanged: (browserPageId, driver) =>
-      sendToOwnerOrTarget(
-        runtime.resolveOwnerWindowIdForBrowserPageId(browserPageId),
-        'runtime:browserDriverChanged',
-        { browserPageId, driver }
-      )
-  })
-  registerRendererDocumentNavigation(mainWebContents, () => {
-    rendererNotifications.onMainFrameReloadStarted()
-    const fence = runtime.markRendererReloading(mainWindow.id)
-    return () => {
-      if (fence && runtime.markRendererReloadCancelled(mainWindow.id, fence)) {
-        rendererNotifications.onMainFrameReloadCancelled()
-      }
-    }
-  })
-  mainWebContents.on('did-finish-load', () => {
-    rendererNotifications.onMainFrameLoadFinished()
-  })
-  mainWebContents.on('render-process-gone', () => {
-    rendererNotifications.onRendererProcessGone()
-  })
-  mainWindow.on('closed', () => {
-    rendererNotifications.close()
-    unregisterRuntimeWindowNotifier(mainWindow.id)
-    runtime.markGraphUnavailable(mainWindow.id)
-    if (!hasRuntimeWindowNotifiers()) {
-      // Why: the notifier routes through the live window registry; keep it installed
-      // while any window remains and clear it only during no-window gaps.
-      runtime.setNotifier(null)
-    }
-  })
-}
-
-// Why: a relay that must target one window has no meaningful fallback — reporting
-// the runtime as unavailable is better than acting on a different window's tab.
-function requireOwnerWindow(ownerWindowId: number | null): BrowserWindow {
-  const window = ownerWindowId === null ? null : getMainWindowById(ownerWindowId)
-  if (!window) {
-    throw new Error('runtime_unavailable')
-  }
-  return window
-}
-
-function registerFileDropRelay(_mainWindow: BrowserWindow): void {
+function registerFileDropRelay(): void {
   const channel = 'terminal:file-dropped-from-preload'
   ipcMain.removeAllListeners(channel)
   ipcMain.on(channel, (event: Electron.IpcMainEvent, args: NativeFileDropPayload) => {
@@ -662,59 +256,4 @@ function registerFileDropRelay(_mainWindow: BrowserWindow): void {
     // concurrent windows never receive each other's dropped paths.
     window.webContents.send('terminal:file-drop', args)
   })
-}
-
-export function registerUpdaterHandlers(_store: Store): void {
-  ipcMain.removeHandler('updater:getStatus')
-  ipcMain.removeHandler('updater:getVersion')
-  ipcMain.removeHandler('updater:check')
-  ipcMain.removeHandler('updater:download')
-  ipcMain.removeHandler('updater:quitAndInstall')
-  ipcMain.removeHandler('updater:dismissNudge')
-  ipcMain.removeHandler('updater:dismissAvailableUpdate')
-  ipcMain.removeHandler('updater:getLinuxPackageInstallInstructions')
-  ipcMain.removeHandler('updater:showLinuxPackage')
-  ipcMain.removeHandler('updater:listBuilds')
-
-  ipcMain.handle('updater:getStatus', () => getUpdateStatus())
-  ipcMain.handle('updater:getVersion', () => app.getVersion())
-  ipcMain.handle('updater:check', (_event, options?: UpdateCheckOptions) => {
-    ensureAutoUpdaterConfigured()
-    return checkForUpdatesFromMenu(options)
-  })
-  ipcMain.handle('updater:download', () => downloadUpdate())
-  ipcMain.handle('updater:quitAndInstall', () => quitAndInstall())
-  ipcMain.handle('updater:dismissNudge', () => dismissNudge())
-  ipcMain.handle('updater:dismissAvailableUpdate', () => dismissAvailableUpdate())
-  // Why: the response carries a local package path and the reveal touches the native desktop, so
-  // neither may be reached from a guest, dashboard popout, stale window, or utility renderer.
-  ipcMain.handle('updater:getLinuxPackageInstallInstructions', (event) => {
-    assertTrustedUpdaterRecoverySender(event)
-    return getLinuxPackageInstallInstructions()
-  })
-  ipcMain.handle('updater:showLinuxPackage', (event) => {
-    assertTrustedUpdaterRecoverySender(event)
-    return showLinuxPackage()
-  })
-  ipcMain.handle(
-    'updater:listBuilds',
-    async (_event, channel: ReleaseChannel): Promise<ReleaseBuildListResult> => {
-      if (!RELEASE_CHANNELS.includes(channel)) {
-        return { ok: false, channel, message: `Unknown release channel "${channel}".` }
-      }
-      try {
-        return { ok: true, channel, builds: await listAvailableReleaseBuilds(channel) }
-      } catch (error) {
-        // Why: a network/rate-limit failure is expected here; return it as data so
-        // the picker can render the reason instead of rejecting the invoke.
-        return { ok: false, channel, message: String((error as Error)?.message ?? error) }
-      }
-    }
-  )
-}
-
-function assertTrustedUpdaterRecoverySender(event: IpcMainInvokeEvent): void {
-  if (!isTrustedUIRenderer(event.sender)) {
-    throw new Error('Unauthorized updater package recovery sender')
-  }
 }

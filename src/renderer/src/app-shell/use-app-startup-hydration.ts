@@ -2,15 +2,16 @@ import { useEffect, useRef } from 'react'
 import { syncZoomCSSVar } from '@/lib/ui-zoom'
 import { installCodexDetachedPaneRestartExecutor } from '@/components/terminal-pane/codex-detached-pane-restart-scheduler'
 import { useAppStore } from '../store'
+import { reconcileHydratedWorkspaceTabModels } from './reconcile-hydrated-workspace-tab-models'
+import { useStartupActions } from './use-app-startup-actions'
 import { WORKTREE_REFRESH_CONCURRENCY } from '../store/slices/worktrees'
 import { sweepRestoredCodexPanesForStaleAccounts } from '../lib/codex-stale-pane-sweep'
-import { fetchWorkspaceSessionWithRuntimeHostOwners } from '../lib/workspace-session-host-persistence'
+import { fetchWorkspaceSessionWithRuntimeHostOwners } from '../lib/workspace-session-host-hydration'
 import {
   collectFolderWorkspaceKeysFromSession,
   collectWorktreeHydrationRepoIdsFromSession
 } from '../lib/workspace-session-hydration-keys'
 import { hydratePersistedUIAfterStartupRead } from '../lib/startup-ui-hydration'
-import { useStartupActions } from './use-app-startup-actions'
 import { adoptWorkspaceSessionRead } from '../lib/empty-window-workspace-session'
 import { getRendererWindowId, getRendererWindowSessionAdoption } from '../lib/window-identity'
 import {
@@ -29,23 +30,12 @@ import {
 import {
   getRepoExecutionHostId,
   isRuntimeOwnedSshTargetId,
-  parseExecutionHostId,
-  toRuntimeExecutionHostId,
-  type ExecutionHostId
+  parseExecutionHostId
 } from '../../../shared/execution-host'
 import { mapWithConcurrency } from '../../../shared/map-with-concurrency'
 import type { OnboardingState } from '../../../shared/onboarding-state-types'
-
-async function listRuntimeSessionHostIdsForStartup(): Promise<ExecutionHostId[]> {
-  try {
-    return (await window.api.runtimeEnvironments.list()).map((environment) =>
-      toRuntimeExecutionHostId(environment.id)
-    )
-  } catch (err) {
-    console.warn('Failed to list runtime session hosts for startup:', err)
-    return []
-  }
-}
+import { restoreLocalStructuredSessionTabsOnce } from '../runtime/local-structured-session-tabs-sync'
+import { listRuntimeSessionHostIdsForStartup } from './startup-runtime-session-hosts'
 
 /**
  * Runs the renderer's one-shot boot chain: settings, persisted UI, the local repo catalog,
@@ -206,12 +196,24 @@ export function useAppStartupHydration(onOnboardingLoaded: (state: OnboardingSta
           timeRendererStartupSyncStep('hydrate-session-stores', () => {
             actions.hydrateWorkspaceSession(sessionRead.session, {
               ...sessionHydrationOptions,
-              runtimeHostIdByWorkspaceSessionKey: sessionRead.runtimeHostIdByWorkspaceSessionKey
+              runtimeHostIdByWorkspaceSessionKey: sessionRead.runtimeHostIdByWorkspaceSessionKey,
+              contestedHostWorkspaceSessions: sessionRead.contestedHostWorkspaceSessions,
+              contestedPrimaryHostBySessionKey: sessionRead.contestedPrimaryHostBySessionKey
             })
             actions.hydrateTabsSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
+            reconcileHydratedWorkspaceTabModels(
+              sessionRead.session,
+              useAppStore.getState().reconcileWorktreeTabModel
+            )
           })
+          await timeRendererStartupStep('prepare-terminal-startup-restoration', () =>
+            window.api.app.prepareTerminalStartupRestoration()
+          )
+          if (cancelled) {
+            return
+          }
           // Why: prune visit timestamps AFTER hydration (earlier, worktreesByRepo may be empty and prune would drop entries for worktrees about to appear); seed the active worktree if missing.
           // See docs/cmd-j-empty-query-ordering.md.
           timeRendererStartupSyncStep('visit-timestamp-prune', () => {
@@ -261,12 +263,29 @@ export function useAppStartupHydration(onOnboardingLoaded: (state: OnboardingSta
           await timeRendererStartupStep('recover-legacy-worker-terminals-post-reconnect', () =>
             window.api.app.recoverLegacyWorkerTerminalsForRendererStartup()
           )
+          await timeRendererStartupStep('project-structured-session-tabs', () =>
+            restoreLocalStructuredSessionTabsOnce()
+          )
+          if (cancelled) {
+            return
+          }
           // Why here: reconnect just published restored PTY ids; sweeping them now
           // re-offers stale Codex panes whose tabs never mount this session.
           sweepRestoredCodexPanesForStaleAccounts(useAppStore.getState())
           syncZoomCSSVar()
           // Why (issue #1158): unlock the session writer only after hydration and all dependent steps succeeded, so a mid-startup throw can't serialize partially-mutated state to disk.
           actions.setHydrationSucceeded(true)
+          actions.setTerminalStartupRestorationReady(true)
+          // Why the explicit opt-in: unconditional seeding hijacks every empty dev
+          // profile's active workspace, making onboarding/empty-state flows untestable.
+          if (
+            import.meta.env.DEV &&
+            String(import.meta.env.VITE_ACTIVITY_DEV_FIXTURE).toLowerCase() === 'true'
+          ) {
+            const { seedDevActivityFixture } =
+              await import('../components/activity/dev-activity-fixture')
+            seedDevActivityFixture()
+          }
           logRendererStartupDiagnostic('startup-hydration-done', {
             durationMs: Math.round(performance.now() - startupStartedAt)
           })

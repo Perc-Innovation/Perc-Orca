@@ -3,6 +3,8 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'node:path'
 import { getAppIconPath } from '../app-icon'
 import { browserManager } from '../browser/browser-manager'
+import { getBrowserClientHostId } from '../browser/browser-client-host-id'
+import { formatBrowserClientHostIdArgument } from '../../shared/browser-client-host-id-argument'
 import { markSystemSessionEnding } from '../crash-reporting/expected-teardown-state'
 import { recordDurableCrashBreadcrumb } from '../crash-reporting/durable-crash-breadcrumb'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
@@ -168,9 +170,13 @@ export function createMainWindow(
       webviewTag: true,
       // Why argv: the sandboxed preload still sees process.argv, so the renderer learns its
       // window id synchronously and without an IPC round-trip (see shared/window-identity).
+      // Why the browser-client host id is an argument too: this is the window whose webviews
+      // host browser guests, and it has to know that before it interprets its first session
+      // snapshot — earlier than any handler registration it could wait on.
       additionalArguments: [
         formatWindowIdArgument(windowId),
-        formatWindowSessionAdoptionArgument(sessionAdoption)
+        formatWindowSessionAdoptionArgument(sessionAdoption),
+        formatBrowserClientHostIdArgument(getBrowserClientHostId())
       ]
     }
   })

@@ -1,23 +1,25 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useAppStore } from '@/store'
 import { useShallow } from 'zustand/react/shallow'
 import type { DashboardBucket } from '../../../../shared/dashboard-snapshot'
-import { buildDashboardSnapshot } from './build-dashboard-snapshot'
+import {
+  buildDashboardBucketCounts,
+  createDashboardBucketCountsCache
+} from './build-dashboard-bucket-counts'
 
 export type AgentBucketCounts = Record<DashboardBucket, number>
 
-const EMPTY_COUNTS: AgentBucketCounts = { attention: 0, working: 0, done: 0, idle: 0 }
-
 /**
- * Per-state agent counts for the sidebar dashboard entry, derived from the same
- * builder that feeds the pop-out board so the numbers always agree. Recomputes
- * only when an input slice changes (mirrors useDashboardData's cost profile).
+ * Per-state agent counts for the sidebar dashboard entry, using the same row
+ * and bucket derivation as the pop-out board without allocating its cards.
+ * Recomputes only when an input slice changes.
  */
 export function useAgentBucketCounts(): AgentBucketCounts {
   const {
     repos,
     worktreesByRepo,
     tabsByWorktree,
+    unifiedTabsByWorktree,
     agentStatusByPaneKey,
     retainedAgentsByPaneKey,
     migrationUnsupportedByPtyId,
@@ -33,6 +35,7 @@ export function useAgentBucketCounts(): AgentBucketCounts {
       repos: s.repos,
       worktreesByRepo: s.worktreesByRepo,
       tabsByWorktree: s.tabsByWorktree,
+      unifiedTabsByWorktree: s.unifiedTabsByWorktree,
       agentStatusByPaneKey: s.agentStatusByPaneKey,
       retainedAgentsByPaneKey: s.retainedAgentsByPaneKey,
       migrationUnsupportedByPtyId: s.migrationUnsupportedByPtyId,
@@ -46,12 +49,16 @@ export function useAgentBucketCounts(): AgentBucketCounts {
     }))
   )
 
+  // Why a per-hook cache: unrelated status/title writes change one worktree's inputs;
+  // the cache keeps every other worktree's counts without rerunning its row pipeline.
+  const cacheRef = useRef(createDashboardBucketCountsCache())
   return useMemo(() => {
-    const snapshot = buildDashboardSnapshot(
+    return buildDashboardBucketCounts(
       {
         repos,
         worktreesByRepo,
         tabsByWorktree,
+        unifiedTabsByWorktree,
         agentStatusByPaneKey,
         retainedAgentsByPaneKey,
         migrationUnsupportedByPtyId,
@@ -66,16 +73,11 @@ export function useAgentBucketCounts(): AgentBucketCounts {
         settings: null
       },
       Date.now(),
-      { includeCardDetails: false, includeFilterOptions: false }
+      cacheRef.current,
+      // Why: time-based freshness decay is signaled by agentStatusEpoch; it invalidates
+      // every cached worktree so stale-decayed buckets recount.
+      agentStatusEpoch
     )
-    if (snapshot.cards.length === 0) {
-      return EMPTY_COUNTS
-    }
-    const counts: AgentBucketCounts = { attention: 0, working: 0, done: 0, idle: 0 }
-    for (const card of snapshot.cards) {
-      counts[card.bucket] += 1
-    }
-    return counts
     // Why: Date.now() is read inside the memo (not a dep) so idle-decay tracks
     // agentStatusEpoch ticks, matching useDashboardData.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,6 +85,7 @@ export function useAgentBucketCounts(): AgentBucketCounts {
     repos,
     worktreesByRepo,
     tabsByWorktree,
+    unifiedTabsByWorktree,
     agentStatusByPaneKey,
     retainedAgentsByPaneKey,
     migrationUnsupportedByPtyId,
