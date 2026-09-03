@@ -2,6 +2,7 @@ import React from 'react'
 import {
   FilePlus,
   FileText,
+  GitBranch,
   GitCompare,
   Globe,
   Loader2,
@@ -165,6 +166,8 @@ function getActionPresentation(option: ActiveOption): {
         <FilePlus className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'open-markdown' ? (
         <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : option.option.kind === 'open-git-graph' ? (
+        <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'new-simulator' || option.option.kind === 'go-to-simulator' ? (
         <Smartphone className="size-3.5 shrink-0" aria-hidden="true" />
       ) : (

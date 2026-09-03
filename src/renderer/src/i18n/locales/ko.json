@@ -3034,7 +3034,8 @@
             "2148f65e04": "PowerShell",
             "ab589350e5": "{{value0}}에 대한 실행 명령을 작성할 수 없습니다.",
             "7a9b4af2af": "탭을 왼쪽으로 스크롤",
-            "232e075b07": "탭을 오른쪽으로 스크롤"
+            "232e075b07": "탭을 오른쪽으로 스크롤",
+            "openGitGraph": "Git 그래프 열기"
           },
           "TabBarCreateEntry": {
             "d62d63b807": "파일 생성",
@@ -3117,7 +3118,14 @@
                   "1baeb07c17": "iOS 시뮬레이터",
                   "8a580f88cf": "iPhone",
                   "7ecdc5ef08": "iPad",
-                  "14965cc123": "모바일"
+                  "14965cc123": "모바일",
+                  "gitKeyword": "git",
+                  "graphKeyword": "그래프",
+                  "gitGraphKeyword": "git 그래프",
+                  "branchesKeyword": "브랜치",
+                  "historyKeyword": "기록",
+                  "commitsKeyword": "커밋",
+                  "logKeyword": "로그"
                 }
               }
             }

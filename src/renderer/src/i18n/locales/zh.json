@@ -3044,7 +3044,8 @@
             "2148f65e04": "PowerShell",
             "ab589350e5": "无法为 {{value0}} 构建启动命令。",
             "7a9b4af2af": "向左滚动标签页",
-            "232e075b07": "向右滚动标签页"
+            "232e075b07": "向右滚动标签页",
+            "openGitGraph": "打开 Git 图"
           },
           "TabBarCreateEntry": {
             "d62d63b807": "创建文件",
@@ -3127,7 +3128,14 @@
                   "1baeb07c17": "iOS 模拟器",
                   "8a580f88cf": "iPhone",
                   "7ecdc5ef08": "iPad",
-                  "14965cc123": "移动端"
+                  "14965cc123": "移动端",
+                  "gitKeyword": "git",
+                  "graphKeyword": "图",
+                  "gitGraphKeyword": "git 图",
+                  "branchesKeyword": "分支",
+                  "historyKeyword": "历史",
+                  "commitsKeyword": "提交",
+                  "logKeyword": "日志"
                 }
               }
             }
