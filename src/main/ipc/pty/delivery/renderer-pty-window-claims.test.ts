@@ -52,13 +52,35 @@ describe('renderer pty window claims', () => {
     expect(shouldDropHiddenRendererPtyData(PTY_ID, {})).toBe(true)
   })
 
-  it('keeps single-window behavior: a hidden mark wins over this window own visible claim', () => {
-    // A pane can report visible while a watcher holds the hidden claim; main still drops and
-    // the reveal restores from the model snapshot.
+  it('keeps delivering when one window holds both marks for the same PTY', () => {
+    // Field report (3.4M chars dropped, one PTY at hidden+visible+active): the claim sets are keyed
+    // by window, not by pane, so a split — or the instant a moved tab re-mounts — leaves the same
+    // window holding a hidden mark from the background pane and a visible one from the pane on
+    // screen. Reading hidden first let the background pane outvote the user, which is the whole
+    // failure this gate is supposed to prevent. A visible claim is the veto its own contract
+    // promises: "droppable only when every window says hidden, and none reports it visible".
     recordVisibleRendererPtyWindowClaim(IMPLICIT_RENDERER_WINDOW_ID, PTY_ID, true)
     markHiddenRendererPty(PTY_ID)
 
+    expect(isHiddenForEveryClaimingWindow(PTY_ID)).toBe(false)
+    expect(shouldDropHiddenRendererPtyData(PTY_ID, {})).toBe(false)
+  })
+
+  it('still drops once the visible pane of that window goes away', () => {
+    // The veto is the live claim, not a latch: closing the foreground pane must re-arm the gate,
+    // or a background window would keep paying for bytes nothing renders.
+    recordVisibleRendererPtyWindowClaim(IMPLICIT_RENDERER_WINDOW_ID, PTY_ID, true)
+    markHiddenRendererPty(PTY_ID)
+    recordVisibleRendererPtyWindowClaim(IMPLICIT_RENDERER_WINDOW_ID, PTY_ID, false)
+
     expect(shouldDropHiddenRendererPtyData(PTY_ID, {})).toBe(true)
+  })
+
+  it('an active pane in the hiding window vetoes the drop too', () => {
+    recordActiveRendererPtyWindowClaim(FOREGROUND_WINDOW, PTY_ID, true)
+    markHiddenRendererPty(PTY_ID, FOREGROUND_WINDOW)
+
+    expect(shouldDropHiddenRendererPtyData(PTY_ID, {})).toBe(false)
   })
 
   it('never drops a PTY no window has called hidden', () => {

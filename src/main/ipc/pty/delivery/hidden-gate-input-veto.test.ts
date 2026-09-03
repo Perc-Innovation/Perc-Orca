@@ -14,7 +14,6 @@ import {
 import { mainDeliveryBreadcrumbs } from './debug'
 import { revealHiddenRendererPtyOnInput } from './hidden-gate-input-veto'
 import { transitionHiddenRendererPtyDeliveryState } from './hidden-transition'
-import { recordVisibleRendererPtyWindowClaim } from './renderer-pty-window-claims'
 import type { PtyIpcSession } from '../session'
 
 const PTY = 'pty-frozen'
@@ -48,7 +47,8 @@ describe('revealHiddenRendererPtyOnInput', () => {
   // The wedge: the window said hidden, never said otherwise, and the user is typing into it.
   it('clears the typing window hidden mark and resumes delivery', () => {
     const session = makeSession()
-    recordVisibleRendererPtyWindowClaim(WINDOW, PTY, true)
+    // No visible claim on purpose: this is the wedge the veto exists for — the window marked the
+    // PTY hidden and never took it back, so nothing else can un-gate it.
     markHiddenRendererPty(PTY, WINDOW)
     expect(shouldDropHiddenRendererPtyData(PTY, {})).toBe(true)
 
