@@ -149,6 +149,14 @@ export function isHiddenForEveryClaimingWindow(ptyId: string): boolean {
     if (!claims.touched.has(ptyId)) {
       continue
     }
+    // Why visible/active is read BEFORE hidden, and not as an `else`: the claim sets are keyed by
+    // window, not by pane, so one window showing the same PTY in two panes — a split, a mirror, or
+    // the moment a moved tab re-mounts — holds both marks at once. Reading hidden first made the
+    // background pane silently outvote the one the user is looking at, and the gate then dropped
+    // that pane's output while `warnIfDroppingHiddenBytesForVisiblePty` recorded the contradiction.
+    if (claims.visible.has(ptyId) || claims.active.has(ptyId)) {
+      return false
+    }
     if (claims.hidden.has(ptyId)) {
       markedHidden = true
       continue
