@@ -7,6 +7,7 @@ import { withTerminalCloseAttribution } from '../../terminal-close-attribution'
 import {
   AgentTeamsPrepareLaunch,
   AgentTeamsTmuxCompat,
+  TerminalCloseAll,
   TerminalCreateParams,
   TerminalFocus,
   TerminalHandle,
@@ -98,6 +99,11 @@ export const TERMINAL_LIFECYCLE_METHODS: RpcAnyMethod[] = [
     params: TerminalStop,
     handler: async (params, { runtime, senderWindowId }) =>
       runtime.stopTerminalsForWorktree(params.worktree, { senderWindowId })
+  }),
+  defineMethod({
+    name: 'terminal.closeAll',
+    params: TerminalCloseAll,
+    handler: async (params, { runtime }) => runtime.closeTerminalsForWorktree(params.worktree)
   }),
   defineMethod({
     name: 'terminal.sleep',
