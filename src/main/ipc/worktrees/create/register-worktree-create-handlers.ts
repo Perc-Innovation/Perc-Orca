@@ -62,10 +62,12 @@ export function registerWorktreeCreateHandlers(context: WorktreeIpcContext): voi
           automationProvenance
         }
 
+        // A terminal group shares the project checkout, so a git repo takes the folder path too.
+        const sharesCheckout = isFolderRepo(repo) || args.terminalGroup === true
         let result: CreateWorktreeResult
         try {
           // Why: wrap only the helpers; the pre-validation throws above are IPC-shape bugs, not the git/filesystem failures the funnel tracks.
-          result = isFolderRepo(repo)
+          result = sharesCheckout
             ? createFolderWorkspace(createArgs, repo, store)
             : repo.connectionId
               ? await createRemoteWorktree(createArgs, repo, store, targetWindow)
@@ -88,13 +90,11 @@ export function registerWorktreeCreateHandlers(context: WorktreeIpcContext): voi
         track('workspace_created', {
           source,
           from_existing_branch:
-            !isFolderRepo(repo) &&
-            typeof args.baseBranch === 'string' &&
-            args.baseBranch.length > 0,
+            !sharesCheckout && typeof args.baseBranch === 'string' && args.baseBranch.length > 0,
           ...getCohortAtEmit()
         })
 
-        if (isFolderRepo(repo)) {
+        if (sharesCheckout) {
           notifyWorktreesChanged(mainWindow, repo.id)
         }
 

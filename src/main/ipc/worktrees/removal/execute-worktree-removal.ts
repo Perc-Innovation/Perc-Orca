@@ -2,6 +2,7 @@ import type { Repo } from '../../../../shared/repo-types'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { RemoveWorktreeResult } from '../../../../shared/worktree/create-types'
 import { isFolderRepo } from '../../../../shared/repo-kind'
+import { isWorkspaceInstanceWorktreeId } from '../../../../shared/worktree/id'
 import { assertWorktreeUnlockedForRemoval } from '../../../../shared/worktree/removal'
 import { isWindowsAbsolutePathLike } from '../../../../shared/cross-platform-path'
 import { getLocalProjectWorktreeGitOptions } from '../../../project-runtime-git-options'
@@ -38,7 +39,9 @@ export async function executeWorktreeRemoval(
   removalHostId: ExecutionHostId
 ): Promise<RemoveWorktreeResult> {
   const { mainWindow, store, runtime } = context
-  if (isFolderRepo(repo)) {
+  // A git project's terminal groups share its checkout, so they take the same metadata-only
+  // teardown — never `git worktree remove` against the main checkout.
+  if (isFolderRepo(repo) || isWorkspaceInstanceWorktreeId(args.worktreeId)) {
     return removeFolderWorkspace(context, args, repo, repoId, removalHostId)
   }
   const provider = repo.connectionId ? requireSshGitProvider(repo.connectionId) : null
