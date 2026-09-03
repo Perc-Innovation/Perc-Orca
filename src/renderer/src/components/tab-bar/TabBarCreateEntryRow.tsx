@@ -2,6 +2,7 @@ import React from 'react'
 import {
   FilePlus,
   FileText,
+  GitBranch,
   GitCompare,
   Globe,
   Loader2,
@@ -44,6 +45,7 @@ export function EntryStatusRow({
 export function EntryActionRow({
   disabled = false,
   id,
+  labelOverride,
   loading = false,
   onClick,
   option,
@@ -51,12 +53,13 @@ export function EntryActionRow({
 }: {
   disabled?: boolean
   id: string
+  labelOverride?: string
   loading?: boolean
   onClick: () => void
   option: ActiveOption
   selected: boolean
 }): React.JSX.Element {
-  const presentation = getActionPresentation(option)
+  const presentation = getActionPresentation(option, labelOverride)
 
   const row = (
     <button
@@ -150,7 +153,10 @@ function getOpenTabIcon(option: Extract<ActiveOption, { kind: 'tab' }>['option']
   return <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
 }
 
-function getActionPresentation(option: ActiveOption): {
+function getActionPresentation(
+  option: ActiveOption,
+  labelOverride?: string
+): {
   detail: string
   icon: React.ReactNode
   label: string
@@ -165,6 +171,8 @@ function getActionPresentation(option: ActiveOption): {
         <FilePlus className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'open-markdown' ? (
         <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : option.option.kind === 'open-git-graph' ? (
+        <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'new-simulator' || option.option.kind === 'go-to-simulator' ? (
         <Smartphone className="size-3.5 shrink-0" aria-hidden="true" />
       ) : (
@@ -201,7 +209,9 @@ function getActionPresentation(option: ActiveOption): {
     return {
       detail: option.option.label,
       icon: <AgentIcon agent={option.option.agent} size={14} />,
-      label: translate('auto.components.tab.bar.TabBarCreateEntry.b27864279e', 'Launch agent'),
+      label:
+        labelOverride ??
+        translate('auto.components.tab.bar.TabBarCreateEntry.b27864279e', 'Launch agent'),
       showDetail: true
     }
   }

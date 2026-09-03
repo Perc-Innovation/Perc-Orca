@@ -84,7 +84,7 @@ export function installPtySerializeBufferIpc(session: PtyIpcSession): void {
 export function requestSerializedBuffer(
   session: PtyIpcSession,
   ptyId: string,
-  opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
+  opts?: { scrollbackRows?: number }
 ): Promise<SerializeResult> {
   // Why the owner window and not the session's: the buffer lives in the renderer that renders
   // this pane, so asking any other window returns nothing and the request just times out.
@@ -102,7 +102,7 @@ export function requestSerializedBuffer(
     const payload: {
       requestId: string
       ptyId: string
-      opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
+      opts?: { scrollbackRows?: number }
     } = { requestId, ptyId }
     if (opts) {
       payload.opts = opts

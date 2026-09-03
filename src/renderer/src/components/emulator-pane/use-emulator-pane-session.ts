@@ -36,10 +36,13 @@ export function useEmulatorPaneSession({
   autoAttachOnMount
 }: UseEmulatorPaneSessionArgs) {
   const [devices, setDevices] = useState<SimulatorDeviceRow[]>([])
-  const prelaunchedSessionRef = useRef<EmulatorPaneSession['info'] | null>(
+  // Why the lazy initializer: the consume deletes the handoff entry, and a `useRef(expr)` argument
+  // re-runs every render — so a prelaunch registered after mount was consumed and then discarded.
+  // No default device here: main picks one per worktree (emulator-default-attach-device.ts).
+  const [prelaunchedSession] = useState<EmulatorPaneSession['info'] | null>(() =>
     consumePrelaunchedSimulatorSession(worktreeId)
   )
-  const prelaunchedState = buildPrelaunchedEmulatorSessionState(prelaunchedSessionRef.current)
+  const prelaunchedState = buildPrelaunchedEmulatorSessionState(prelaunchedSession)
   const [selectedUdid, setSelectedUdid] = useState<string | null>(prelaunchedState.selectedUdid)
   const [session, setSession] = useState<EmulatorPaneSession | null>(prelaunchedState.session)
   const [loading, setLoading] = useState(

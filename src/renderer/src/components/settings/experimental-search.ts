@@ -9,7 +9,6 @@ import {
   getMultiWindowSearchEntry,
   MULTI_WINDOW_SEARCH_TITLE_KEY
 } from './multi-window-search-entry'
-import { getAgentsSidebarEntry } from './appearance-sidebar-search'
 
 export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
   (): SettingsSearchEntry[] => [
@@ -52,7 +51,6 @@ export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
       ]
     },
     getNativeChatExperimentalSearchEntry(),
-    getAgentsSidebarEntry(),
     {
       title: translate(
         'auto.components.settings.experimental.search.agentDashboard.title',
@@ -208,7 +206,6 @@ export function getExperimentalSearchEntry() {
     nativeChat: findEntry(
       translate('auto.components.settings.experimental.search.nativeChat.title', 'Chat UI')
     ),
-    agentsSidebar: getAgentsSidebarEntry(),
     agentDashboard: findEntry(
       translate(
         'auto.components.settings.experimental.search.agentDashboard.title',

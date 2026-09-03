@@ -2919,7 +2919,7 @@
           "TerminalRemoteRuntimeReconnectBanner": {
             "retryingTitle": "正在重新连接到远程运行时",
             "disconnectedTitle": "远程运行时已断开连接",
-            "retryingBody": "Orca 将重试最多一分钟。如果连接恢复，此终端将恢复。",
+            "retryingBody": "Orca 正在自动重试。如果连接恢复，此终端将恢复。",
             "disconnectedBody": "自动重试已停止。重新连接以恢复此终端会话。",
             "reconnectButton": "重新连接"
           }
@@ -3044,7 +3044,8 @@
             "2148f65e04": "PowerShell",
             "ab589350e5": "无法为 {{value0}} 构建启动命令。",
             "7a9b4af2af": "向左滚动标签页",
-            "232e075b07": "向右滚动标签页"
+            "232e075b07": "向右滚动标签页",
+            "openGitGraph": "打开 Git 图"
           },
           "TabBarCreateEntry": {
             "d62d63b807": "创建文件",
@@ -3127,7 +3128,14 @@
                   "1baeb07c17": "iOS 模拟器",
                   "8a580f88cf": "iPhone",
                   "7ecdc5ef08": "iPad",
-                  "14965cc123": "移动端"
+                  "14965cc123": "移动端",
+                  "gitKeyword": "git",
+                  "graphKeyword": "图",
+                  "gitGraphKeyword": "git 图",
+                  "branchesKeyword": "分支",
+                  "historyKeyword": "历史",
+                  "commitsKeyword": "提交",
+                  "logKeyword": "日志"
                 }
               }
             }
@@ -13827,6 +13835,35 @@
         }
       },
       "automations": {
+        "AutomationListToolbar": {
+          "runs": "运行"
+        },
+        "AutomationRunsDashboard": {
+          "search": "搜索运行…",
+          "filters": "筛选条件",
+          "host": "主机",
+          "status": "状态",
+          "refresh": "刷新运行",
+          "successful24h": "成功 · 24 小时",
+          "failed24h": "失败 · 24 小时",
+          "successful7d": "成功 · 7 天",
+          "failed7d": "失败 · 7 天",
+          "historyUnavailableOne": "1 个自动化的运行历史不可用。计数仅包含可用的历史记录。",
+          "historyUnavailableMany": "{{count}} 个自动化的运行历史不可用。计数仅包含可用的历史记录。",
+          "automation": "自动化",
+          "triggered": "已触发",
+          "trigger": "触发",
+          "loading": "正在加载运行…",
+          "noRuns": "尚无运行",
+          "emptyDescription": "触发自动化后，运行记录会显示在这里。",
+          "runs": "运行",
+          "local": "本地",
+          "remote": "远程"
+        },
+        "AutomationsPageBreadcrumb": {
+          "ariaLabel": "自动化面包屑导航",
+          "runDetails": "运行详情"
+        },
         "AutomationCustomCronPanel": {
           "3e3b2c369f": "cron",
           "e81a02d61b": "保存前输入有效的五字段 cron。",
@@ -14760,10 +14797,7 @@
         "SortableTabContextMenu": {
           "switchToTerminalView": "切换到终端视图",
           "switchToChatView": "切换到聊天视图",
-          "closeTabsToLeft": "关闭左侧的选项卡",
-          "copySessionId": "复制会话 ID",
-          "copySessionIdSuccess": "已复制会话 ID",
-          "copySessionIdError": "复制会话 ID 失败"
+          "closeTabsToLeft": "关闭左侧的选项卡"
         },
         "BrowserTab": {
           "closeOthers": "关闭其他",
@@ -14879,6 +14913,13 @@
       "sent": "已将会话上下文发送到新的 {{agent}} 会话。",
       "deliveryFailed": "新的 {{agent}} 会话已启动，但无法发送上下文。",
       "launchFailed": "无法启动新的 {{agent}} 会话。"
+    },
+    "terminalPane": {
+      "TerminalContextMenu": {
+        "copySessionId": "复制会话 ID",
+        "copySessionIdSuccess": "已复制会话 ID",
+        "copySessionIdError": "复制会话 ID 失败"
+      }
     }
   },
   "dashboardPopout": {

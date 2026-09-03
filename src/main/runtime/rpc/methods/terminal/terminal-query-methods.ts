@@ -68,7 +68,12 @@ export const TERMINAL_QUERY_METHODS: RpcAnyMethod[] = [
     name: 'terminal.inspectProcess',
     params: TerminalHandle,
     handler: async (params, { runtime }) => ({
-      process: await runtime.inspectTerminalProcess(params.terminal)
+      process: await runtime.inspectTerminalProcess(
+        params.terminal,
+        params.expectedIncarnationId
+          ? { expectedIncarnationId: params.expectedIncarnationId }
+          : undefined
+      )
     })
   }),
   defineMethod({

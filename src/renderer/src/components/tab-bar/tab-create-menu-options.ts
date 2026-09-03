@@ -10,6 +10,7 @@ export type TabCreateMenuOptionKind =
   | 'new-simulator'
   | 'new-terminal'
   | 'new-terminal-shell'
+  | 'open-git-graph'
   | 'open-markdown'
 
 export type TabCreateMenuOption = {
@@ -24,6 +25,7 @@ export type TabCreateMenuOptionsContext = {
   hasNewBrowser: boolean
   hasNewMarkdown: boolean
   hasOpenMarkdown: boolean
+  hasGitGraph: boolean
   hasSimulator: boolean
   simulatorIsGoTo: boolean
   terminalOnly: boolean
@@ -141,6 +143,24 @@ export function buildTabCreateMenuOptions(
         translate('auto.components.tab.bar.tab.create.menu.options.5f17fb9d0c', 'markdown'),
         translate('auto.components.tab.bar.tab.create.menu.options.44caaf7b36', 'md'),
         translate('auto.components.tab.bar.tab.create.menu.options.164c394bab', 'open file')
+      ]
+    })
+  }
+
+  if (context.hasGitGraph) {
+    const label = translate('auto.components.tab.bar.TabBar.openGitGraph', 'Open Git Graph')
+    options.push({
+      id: 'open-git-graph',
+      kind: 'open-git-graph',
+      label,
+      keywords: [
+        translate('auto.components.tab.bar.tab.create.menu.options.gitKeyword', 'git'),
+        translate('auto.components.tab.bar.tab.create.menu.options.graphKeyword', 'graph'),
+        translate('auto.components.tab.bar.tab.create.menu.options.gitGraphKeyword', 'git graph'),
+        translate('auto.components.tab.bar.tab.create.menu.options.branchesKeyword', 'branches'),
+        translate('auto.components.tab.bar.tab.create.menu.options.historyKeyword', 'history'),
+        translate('auto.components.tab.bar.tab.create.menu.options.commitsKeyword', 'commits'),
+        translate('auto.components.tab.bar.tab.create.menu.options.logKeyword', 'log')
       ]
     })
   }

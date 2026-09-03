@@ -14,7 +14,7 @@
 import {
   WORKSPACE_SESSION_FIELD_OWNERSHIP,
   type WorkspaceSessionFieldOwnership
-} from './workspace-session-field-ownership'
+} from './workspace-session-host-field-ownership'
 import {
   buildWorktreeIdByFileId,
   buildWorktreeIdByTabId,

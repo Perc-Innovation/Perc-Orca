@@ -17,8 +17,18 @@ describe('tab create menu options', () => {
     hasNewBrowser: true,
     hasNewMarkdown: true,
     hasOpenMarkdown: true,
+    hasGitGraph: true,
     hasSimulator: true,
     simulatorIsGoTo: false
+  })
+
+  it('matches git graph aliases to the open-git-graph action', () => {
+    expect(
+      findMatchingTabCreateMenuOptions('git graph', defaultOptions).map((option) => option.kind)
+    ).toEqual(['open-git-graph'])
+    expect(
+      findMatchingTabCreateMenuOptions('branches', defaultOptions).map((option) => option.kind)
+    ).toEqual(['open-git-graph'])
   })
 
   it('matches mobile emulator aliases to the simulator menu action', () => {
@@ -35,6 +45,7 @@ describe('tab create menu options', () => {
       hasNewBrowser: true,
       hasNewMarkdown: true,
       hasOpenMarkdown: false,
+      hasGitGraph: false,
       hasSimulator: true,
       simulatorIsGoTo: true
     })
@@ -59,6 +70,7 @@ describe('tab create menu options', () => {
       hasNewBrowser: false,
       hasNewMarkdown: true,
       hasOpenMarkdown: true,
+      hasGitGraph: false,
       hasSimulator: false,
       simulatorIsGoTo: false
     })
@@ -78,6 +90,7 @@ describe('tab create menu options', () => {
       hasNewBrowser: false,
       hasNewMarkdown: false,
       hasOpenMarkdown: false,
+      hasGitGraph: false,
       hasSimulator: false,
       simulatorIsGoTo: false,
       windowsShellEntries: [
