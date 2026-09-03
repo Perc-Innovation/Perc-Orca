@@ -31,8 +31,16 @@ export async function getRestPRForBranch(
     ],
     { ...ghOptions, ...githubHostExecOptions(prRepo) }
   )
-  const pr = pickPrimaryPRForBranch(JSON.parse(stdout) as RestPullRequest[])
-  return pr ? mapRestPullRequest(pr) : null
+  const list = JSON.parse(stdout) as RestPullRequest[]
+  const pr = pickPrimaryPRForBranch(list)
+  if (!pr) {
+    return null
+  }
+  const others = list.filter((candidate) => candidate.number !== pr.number)
+  return {
+    ...mapRestPullRequest(pr),
+    ...(others.length > 0 ? { siblings: others } : {})
+  }
 }
 
 /**
@@ -82,10 +90,19 @@ export async function hydrateBranchLookupWithExactPR(
     return null
   }
   try {
-    return (
-      (await getPRByNumber(ownerRepo, branchData.number, ghOptions, executionScope, branchData)) ??
+    const exact = await getPRByNumber(
+      ownerRepo,
+      branchData.number,
+      ghOptions,
+      executionScope,
       branchData
     )
+    if (!exact) {
+      return branchData
+    }
+    // Why: the exact detail knows nothing about the branch, so the siblings only exist on the
+    // branch lookup and have to be carried over or they are lost here.
+    return branchData.siblings ? { ...exact, siblings: branchData.siblings } : exact
   } catch {
     return branchData
   }

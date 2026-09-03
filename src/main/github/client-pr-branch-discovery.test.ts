@@ -99,6 +99,18 @@ describe('getPRForBranch', () => {
 
     expect(pr?.number).toBe(292)
     expect(pr?.state).toBe('open')
+    // Why asserted here: the exact-number hydration knows nothing about the branch, so the
+    // siblings only reach the card if the branch lookup carries them across it.
+    expect(pr?.siblings).toEqual([
+      {
+        number: 294,
+        url: 'u/294',
+        title: 'to development',
+        baseRef: 'development',
+        state: 'closed'
+      },
+      { number: 293, url: 'u/293', title: 'to stage', baseRef: 'stage', state: 'closed' }
+    ])
   })
 
   it('resolves fork PRs from the upstream PR repo with the origin head owner', async () => {
