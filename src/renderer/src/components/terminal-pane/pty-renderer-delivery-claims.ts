@@ -124,6 +124,29 @@ export function setRendererPtyVisibilityClaim(
   }
 }
 
+/**
+ * Re-states a claim main may have discarded on its own (a window lifecycle reset clears the
+ * per-window claim sets). The ref count only emits on 0<->1 transitions, so a renderer that
+ * survived the reset would otherwise never say "visible" again, and main would keep stamping
+ * `background: true` on output the user is looking at.
+ */
+export function restateRendererPtyVisibilityClaim(ptyId: string): boolean {
+  if (!visibleClaimCounts.has(ptyId)) {
+    return false
+  }
+  sendVisibility(ptyId, true)
+  return true
+}
+
+/** Every live visibility claim, re-stated at once: what a surviving page owes main after a
+ *  lifecycle reset threw the per-window claim sets away. Returns how many it re-sent. */
+export function restateAllRendererPtyVisibilityClaims(): number {
+  for (const ptyId of visibleClaimCounts.keys()) {
+    sendVisibility(ptyId, true)
+  }
+  return visibleClaimCounts.size
+}
+
 export function releaseRendererPtyVisibilityClaim(owner: object): void {
   const previous = visibilityClaimsByOwner.get(owner)
   if (!previous) {

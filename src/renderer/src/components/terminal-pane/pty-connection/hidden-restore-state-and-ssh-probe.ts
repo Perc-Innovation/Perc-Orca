@@ -18,6 +18,7 @@ import {
 } from './hidden-output-restore-limits'
 import { shouldWritePtyOutputForeground } from './foreground-output-scan'
 import { recordHiddenRendererSkip } from './e2e-terminal-pty-harness'
+import { restateRendererPtyVisibilityClaim } from '../pty-renderer-delivery-claims'
 import { isRemoteRuntimePtyId } from './paired-parked-terminal-restore'
 
 import type { ConnectPanePtySession } from './connect-pane-pty-session'
@@ -125,6 +126,10 @@ export function bindHiddenRestoreStateAndSshProbe(session: ConnectPanePtySession
     if (!ptyId || session.alternateScreenBackgroundRepaintTimer !== null) {
       return
     }
+    // Why before the pulse (same IPC channel keeps the order): main only retires the
+    // hidden-resize flag on a resize it sees as visible, so re-stating the claim first is what
+    // makes this pulse the LAST dropped frame instead of re-arming the flag for the next one.
+    restateRendererPtyVisibilityClaim(ptyId)
     session.pulseVisibleLocalPtySizeForTuiRepaint(ptyId)
     session.alternateScreenBackgroundRepaintTimer = setTimeout(() => {
       session.alternateScreenBackgroundRepaintTimer = null

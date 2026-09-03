@@ -171,8 +171,11 @@ describe('registerPtyHandlers', () => {
         vi.useRealTimers()
       }
     })
-    it('surfaces the hidden-yet-visible contradiction in the snapshot and warns on drop', async () => {
-      // Why: field snapshot v1.4.124-rc.2.perf — aggregates couldn't tell if the visible pane was hidden-gated; overlap counter + warn makes it decisive.
+    it('delivers to a pane that reports visible even while the same window holds the hidden mark', async () => {
+      // Why: field snapshot v1.4.178 — one PTY sat at hidden+visible+active with millions of chars
+      // dropped, because the claim sets are per window, not per pane: a split (or a moved tab
+      // mid-remount) leaves the background pane's hidden mark next to the foreground pane's visible
+      // one. The overlap counter stays as the zero-means-healthy signal; it must never leave zero.
       vi.useFakeTimers()
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const daemon = installObservableDaemonTestProvider()
@@ -186,26 +189,29 @@ describe('registerPtyHandlers', () => {
         const setHidden = getPtySetHiddenRendererPtyListener()
         const setVisible = getPtySetRendererPtyVisibleListener()
 
-        // The two visibility signals contradict: pane reports visible while the hidden-delivery gate still holds it.
+        // Both marks at once, from one window: the visible pane wins and the bytes go through.
         setVisible(null, { id: result.id, visible: true })
         setHidden(null, { id: result.id, hidden: true })
         daemon.emitData(result.id, 'starved visible output')
         vi.advanceTimersByTime(50)
 
         expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
-          hiddenDeliveryGatedPtyCount: 1,
-          hiddenDeliveryGatedVisiblePtyCount: 1,
-          hiddenDeliveryDroppedChars: 'starved visible output'.length
+          hiddenDeliveryGatedVisiblePtyCount: 0,
+          hiddenDeliveryDroppedChars: 0
         })
-        expect(warnSpy).toHaveBeenCalledWith(
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+          'pty:data',
+          expect.objectContaining({ id: result.id, data: 'starved visible output' })
+        )
+        expect(warnSpy).not.toHaveBeenCalledWith(
           '[pty] hidden-delivery gate is dropping bytes for a visible/active pty',
-          expect.objectContaining({ id: redactPtyIdForDiagnostics(result.id), visible: true })
+          expect.anything()
         )
 
-        // Unhiding resolves the contradiction.
-        setHidden(null, { id: result.id, hidden: false })
+        // And once the visible pane goes away, the gate re-arms for the background one.
+        setVisible(null, { id: result.id, visible: false })
         expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
-          hiddenDeliveryGatedPtyCount: 0,
+          hiddenDeliveryGatedPtyCount: 1,
           hiddenDeliveryGatedVisiblePtyCount: 0
         })
       } finally {
@@ -293,14 +299,20 @@ describe('registerPtyHandlers', () => {
         expect(entry).toMatchObject({
           hidden: true,
           visible: true,
-          inFlightChars: 0,
+          // The mark is still there, but the visible pane vetoes it: the bytes went out and are
+          // in flight, not dropped. `backgroundStamped` is the other way a visible pane goes mute —
+          // main telling the renderer these frames are background, which an alt-screen pane drops.
+          droppable: false,
+          backgroundStamped: false,
+          knownHidden: false,
+          inFlightChars: 'starved visible output'.length,
           pendingChars: 0
         })
         // Why redaction is pinned: daemon session ids embed worktree paths, so the report must never carry the raw id.
         expect(diagnostics.perPty.some((candidate) => candidate.id === result.id)).toBe(false)
         const breadcrumbKinds = diagnostics.breadcrumbs.map((crumb) => crumb.kind)
         expect(breadcrumbKinds).toContain('gate-mark')
-        expect(breadcrumbKinds).toContain('hidden-drop-visible')
+        expect(breadcrumbKinds).not.toContain('hidden-drop-visible')
       } finally {
         warnSpy.mockRestore()
         vi.useRealTimers()

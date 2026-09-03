@@ -17,6 +17,7 @@ import {
   type PtyRendererDeliveryDebugSnapshot
 } from './debug'
 import { activeRendererPtys, visibleRendererPtys } from './visibility-state'
+import { ptyHasHiddenRendererResizeOutput, rendererPtyIsKnownHidden } from './accept'
 import { DELIVERY_DIAGNOSTICS_MAX_PTYS } from './constants'
 import type { PtyIpcSession } from '../session'
 
@@ -44,6 +45,10 @@ export function buildMainDeliveryDiagnostics(session: PtyIpcSession): PtyMainDel
       droppable: shouldDropHiddenRendererPtyData(id, settings),
       visible: visibleRendererPtys.has(id),
       active: activeRendererPtys.has(id),
+      // Why both: this pair — not `droppable` — is what stamps `background: true` on a chunk, and a
+      // visible alt-screen pane silently drops those frames. True here next to visible:true is the wedge.
+      backgroundStamped: rendererPtyIsKnownHidden(id) || ptyHasHiddenRendererResizeOutput(id),
+      knownHidden: rendererPtyIsKnownHidden(id),
       msSinceLastSend: accounting ? now - accounting.lastSendAtMs : null,
       msSinceLastAck: accounting?.lastAckAtMs == null ? null : now - accounting.lastAckAtMs
     })
