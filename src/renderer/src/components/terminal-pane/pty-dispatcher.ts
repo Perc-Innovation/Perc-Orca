@@ -21,6 +21,7 @@ import {
   startTerminalDeliveryWatchdog
 } from './terminal-delivery-watchdog'
 import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
+import { restateAllRendererPtyVisibilityClaims } from './pty-renderer-delivery-claims'
 import { installTerminalFreezeReport } from './terminal-freeze-report'
 import {
   bufferPtyShutdownData,
@@ -223,6 +224,10 @@ function attachPtySecondaryPushListeners(unsubscribes: (() => void)[]): void {
   }
   // Why: tell main the pty:data listener is live; until it fires, bytes to a listener-less page are dropped-but-counted and pin the delivery gate.
   window.api.pty.rendererDispatcherReady?.()
+  // Why right after the handshake: a reattach means main may have reset this window's claims,
+  // and the ref counts only emit on 0<->1 transitions — so a surviving page would never say
+  // "visible" again and main would stamp `background: true` on panes still on screen.
+  restateAllRendererPtyVisibilityClaims()
 }
 
 export function subscribeToPtyExit(

@@ -5,6 +5,8 @@ import {
   declareRendererPtyDeliveryVisible,
   forceRendererPtyDeliveryVisible,
   releaseRendererPtyVisibilityClaim,
+  restateAllRendererPtyVisibilityClaims,
+  restateRendererPtyVisibilityClaim,
   setRendererPtyVisibilityClaim
 } from './pty-renderer-delivery-claims'
 
@@ -21,6 +23,36 @@ describe('renderer PTY delivery claims', () => {
     ;(globalThis as { window: Window }).window = {
       api: { pty: { setHiddenRendererPty, setRendererPtyVisible } }
     } as unknown as Window
+  })
+
+  it('re-states live visibility claims main may have thrown away', () => {
+    // Why: a window lifecycle reset clears main's per-window claim sets, but the ref count only
+    // emits on 0<->1 transitions, so a page that survived the reset never says "visible" again.
+    // Main is then left at `known && !visible`, stamps `background: true` on every chunk, and the
+    // visible alt-screen pane drops those frames: output dead, input alive.
+    const pane = {}
+    setRendererPtyVisibilityClaim(pane, PTY_ID, true)
+    expect(setRendererPtyVisible).toHaveBeenCalledTimes(1)
+
+    // A second report from the same owner is still deduped — this must not become a byte-path chatterer.
+    setRendererPtyVisibilityClaim(pane, PTY_ID, true)
+    expect(setRendererPtyVisible).toHaveBeenCalledTimes(1)
+
+    expect(restateAllRendererPtyVisibilityClaims()).toBe(1)
+    expect(setRendererPtyVisible).toHaveBeenLastCalledWith(PTY_ID, true)
+    expect(restateRendererPtyVisibilityClaim(PTY_ID)).toBe(true)
+    expect(setRendererPtyVisible).toHaveBeenCalledTimes(3)
+  })
+
+  it('re-states nothing for a PTY no pane currently shows', () => {
+    const pane = {}
+    setRendererPtyVisibilityClaim(pane, PTY_ID, true)
+    releaseRendererPtyVisibilityClaim(pane)
+    setRendererPtyVisible.mockReset()
+
+    expect(restateRendererPtyVisibilityClaim(PTY_ID)).toBe(false)
+    expect(restateAllRendererPtyVisibilityClaims()).toBe(0)
+    expect(setRendererPtyVisible).not.toHaveBeenCalled()
   })
 
   it('keeps a PTY hidden across an overlapping pane-to-watcher handoff', () => {
