@@ -21,6 +21,7 @@ import {
   startTerminalDeliveryWatchdog
 } from './terminal-delivery-watchdog'
 import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
+import { restateAllRendererPtyVisibilityClaims } from './pty-renderer-delivery-claims'
 import { installTerminalFreezeReport } from './terminal-freeze-report'
 import {
   bufferPtyShutdownData,
@@ -203,6 +204,9 @@ function attachPtySecondaryPushListeners(unsubscribes: (() => void)[]): void {
       deliverPtyExitToHandlers({
         ptyId: payload.id,
         code: payload.code,
+        // Why forwarded: pty ids are reused, so a buffered exit needs the lifetime it describes to
+        // tell "this pane's shell died" from "the id's previous owner died" (#16970).
+        ...(payload.incarnationId ? { incarnationId: payload.incarnationId } : {}),
         ...(primary ? { primary } : {}),
         sidecars: sidecars ? Array.from(sidecars) : []
       })
@@ -220,6 +224,10 @@ function attachPtySecondaryPushListeners(unsubscribes: (() => void)[]): void {
   }
   // Why: tell main the pty:data listener is live; until it fires, bytes to a listener-less page are dropped-but-counted and pin the delivery gate.
   window.api.pty.rendererDispatcherReady?.()
+  // Why right after the handshake: a reattach means main may have reset this window's claims,
+  // and the ref counts only emit on 0<->1 transitions — so a surviving page would never say
+  // "visible" again and main would stamp `background: true` on panes still on screen.
+  restateAllRendererPtyVisibilityClaims()
 }
 
 export function subscribeToPtyExit(
@@ -258,9 +266,13 @@ export function getEagerPtyBufferHandle(ptyId: string): EagerPtyHandle | undefin
 // Why: cap matches TerminalPane's scrollback serialization limit so a restored shell (e.g. tail -f) can't grow unbounded.
 const EAGER_BUFFER_MAX_BYTES = TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT
 
+/** `incarnationId` names the lifetime the caller just spawned. Without it a background launch that
+ *  is handed a relay-recycled id drains whatever the id's PREVIOUS owner left here and tears its own
+ *  freshly started agent session down seconds after launch. */
 export function registerEagerPtyBuffer(
   ptyId: string,
-  onExit: (ptyId: string, code: number) => void
+  onExit: (ptyId: string, code: number) => void,
+  incarnationId?: string
 ): EagerPtyHandle {
   ensurePtyDispatcher()
   // Why: head index instead of Array.shift() (O(n)) so pre-attach buffering isn't quadratic under many small chunks.
@@ -328,7 +340,7 @@ export function registerEagerPtyBuffer(
   // Why: defer the pre-handler exit one microtask so the caller receives the returned handle before onExit fires.
   queueMicrotask(() => {
     if (ptyExitHandlers.get(ptyId) === exitHandler) {
-      drainPreHandlerPtyExit(ptyId, exitHandler)
+      drainPreHandlerPtyExit(ptyId, exitHandler, incarnationId)
     } else {
       clearPreHandlerPtyState(ptyId)
     }

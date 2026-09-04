@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import type { Mock } from 'vitest'
+import { _resetWindowControlIpcHandlersForTests } from './window-control-registration-latch'
 
 /** Loose spy signature: these stand in for electron APIs the suites only assert calls on. */
 export type MainWindowSpy = Mock<(...args: unknown[]) => unknown>
@@ -12,6 +13,10 @@ export const browserWindowMock: Mock<
 > = vi.fn()
 export const openExternalMock: MainWindowSpy = vi.fn()
 export const attachGuestPoliciesMock: MainWindowSpy = vi.fn()
+export const attachRouteGuestMock: MainWindowSpy = vi.fn(() => false)
+export const retireRouteRendererMock: MainWindowSpy = vi.fn()
+export const attachClientPageRendererMock: MainWindowSpy = vi.fn()
+export const retireClientPageRendererMock: MainWindowSpy = vi.fn()
 export const buildFromTemplateMock: Mock<(...args: unknown[]) => { popup: MainWindowSpy }> = vi.fn(
   () => ({ popup: menuPopupMock })
 )
@@ -22,6 +27,11 @@ export const notificationMock: Mock<(...args: unknown[]) => { show: MainWindowSp
 )
 export const powerMonitorOnMock: MainWindowSpy = vi.fn()
 export const powerMonitorRemoveListenerMock: MainWindowSpy = vi.fn()
+export const getMainWindowForWebContentsMock: MainWindowSpy = vi.fn()
+export const getLastActiveMainWindowMock: Mock<() => unknown> = vi.fn(() => null)
+export const sendToWindowMock: MainWindowSpy = vi.fn()
+export const hasLiveMainWindowsMock: Mock<() => boolean> = vi.fn(() => false)
+export const routePartitionAllowedMock: Mock<(partition: string) => boolean> = vi.fn(() => false)
 export const isMock = { dev: false }
 export const macosTahoeMock = { value: false }
 
@@ -98,6 +108,17 @@ export function appIconMock() {
   }
 }
 
+// Why: the window-control channels are routed by sender through the registry, so suites
+// that drive them must stub the registry instead of the real Electron lookup.
+export function mainWindowRegistryMock() {
+  return {
+    getLastActiveMainWindow: getLastActiveMainWindowMock,
+    getMainWindowForWebContents: getMainWindowForWebContentsMock,
+    hasLiveMainWindows: hasLiveMainWindowsMock,
+    sendToWindow: sendToWindowMock
+  }
+}
+
 export function browserManagerMock(): BrowserManagerModuleMock {
   return {
     browserManager: {
@@ -108,15 +129,29 @@ export function browserManagerMock(): BrowserManagerModuleMock {
 }
 
 export function resetMainWindowMocks(): void {
+  _resetWindowControlIpcHandlersForTests()
+  getMainWindowForWebContentsMock.mockReset()
+  getLastActiveMainWindowMock.mockReset()
+  getLastActiveMainWindowMock.mockReturnValue(null)
+  sendToWindowMock.mockReset()
+  hasLiveMainWindowsMock.mockReset()
+  hasLiveMainWindowsMock.mockReturnValue(false)
   browserWindowMock.mockReset()
   openExternalMock.mockReset()
   attachGuestPoliciesMock.mockReset()
+  attachRouteGuestMock.mockReset()
+  attachRouteGuestMock.mockReturnValue(false)
+  retireRouteRendererMock.mockReset()
+  attachClientPageRendererMock.mockReset()
+  retireClientPageRendererMock.mockReset()
   buildFromTemplateMock.mockClear()
   menuPopupMock.mockClear()
   notificationMock.mockClear()
   notificationShowMock.mockClear()
   powerMonitorOnMock.mockReset()
   powerMonitorRemoveListenerMock.mockReset()
+  routePartitionAllowedMock.mockReset()
+  routePartitionAllowedMock.mockReturnValue(false)
   isMock.dev = false
   macosTahoeMock.value = false
   ipcMainMock.on.mockReset()

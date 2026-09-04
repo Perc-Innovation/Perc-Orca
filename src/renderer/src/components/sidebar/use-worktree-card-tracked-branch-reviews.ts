@@ -4,7 +4,7 @@ import { useAppStore } from '@/store'
 import {
   getHostedReviewCacheKey,
   withAcceptedMergedBranchReview
-} from '@/store/slices/hosted-review'
+} from '@/store/slices/hosted-review-cache-identity'
 import { isMacAppDataPath } from '@/lib/passive-macos-app-data-access'
 import { isWebClient, type WorktreeCardProps } from './worktree-card-model'
 import { getTrackedBranchReviewRows } from './worktree-card-tracked-branch-reviews'

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import {
-  Globe,
   X,
   ExternalLink,
   Copy,
@@ -36,11 +35,13 @@ import { preventMiddleButtonDefault } from './middle-button-default-guard'
 import { translate } from '@/i18n/i18n'
 import { TAB_CONTAINER_WIDTH_CLASSES, TAB_LABEL_WIDTH_CLASSES } from './tab-width-rules'
 import { TabWorkspaceLayoutMenuSection } from './TabWorkspaceLayoutMenuSection'
+import { TabMoveToWorkspaceMenuSection } from './TabMoveToWorkspaceMenuSection'
 import { useTabStripPointerActivation } from './tab-strip-pointer-activation'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
 import { cn } from '@/lib/utils'
+import { BrowserFavicon } from '@/components/browser-favicon'
 
-function formatBrowserTabUrlLabel(url: string): string {
+export function formatBrowserTabUrlLabel(url: string): string {
   if (url === ORCA_BROWSER_BLANK_URL || url === 'about:blank') {
     return 'New Tab'
   }
@@ -66,51 +67,6 @@ export function getBrowserTabLabel(tab: BrowserTabState): string {
 
 function isBlankBrowserTab(tab: BrowserTabState): boolean {
   return tab.url === ORCA_BROWSER_BLANK_URL || tab.url === 'about:blank'
-}
-
-type FailedFavicon = {
-  tabId: string
-  faviconUrl: string
-}
-
-function BrowserTabFavicon({
-  tabId,
-  faviconUrl
-}: {
-  tabId: string
-  faviconUrl: string | null
-}): React.JSX.Element {
-  const displayFaviconUrl = faviconUrl?.trim() ? faviconUrl : null
-  const [failedFavicon, setFailedFavicon] = useState<FailedFavicon | null>(null)
-
-  // Why: reset during render so a new favicon identity retries before the tab
-  // commits one frame with the stale fallback icon.
-  if (
-    failedFavicon &&
-    (failedFavicon.tabId !== tabId || failedFavicon.faviconUrl !== displayFaviconUrl)
-  ) {
-    setFailedFavicon(null)
-  }
-
-  const currentFaviconFailed =
-    failedFavicon?.tabId === tabId && failedFavicon.faviconUrl === displayFaviconUrl
-
-  if (displayFaviconUrl && !currentFaviconFailed) {
-    return (
-      <img
-        src={displayFaviconUrl}
-        alt=""
-        aria-hidden
-        draggable={false}
-        // Why: transparent dark/light-mode favicons can disappear against tab
-        // chrome; a token-colored 1px shadow keeps the 12px mark legible.
-        className="size-3 mr-1 shrink-0 rounded-sm object-contain drop-shadow-[0_0_1px_var(--foreground)]"
-        onError={() => setFailedFavicon({ tabId, faviconUrl: displayFaviconUrl })}
-      />
-    )
-  }
-
-  return <Globe className="size-3 mr-1 shrink-0 text-blue-500" />
 }
 
 export default function BrowserTab({
@@ -198,6 +154,7 @@ export default function BrowserTab({
     <div
       ref={setNodeRef}
       data-tab-id={tab.id}
+      data-active={isActive ? 'true' : 'false'}
       data-pinned={isPinned ? 'true' : 'false'}
       {...attributes}
       {...listeners}
@@ -233,7 +190,11 @@ export default function BrowserTab({
           browser tabs at a glance even when the strip is saturated. We
           keep full color on both active and inactive tabs — dimming to
           muted-foreground made the icon read as "disabled" in practice. */}
-      <BrowserTabFavicon tabId={tab.id} faviconUrl={tab.faviconUrl} />
+      <BrowserFavicon
+        faviconUrl={tab.faviconUrl}
+        className="size-3 mr-1"
+        fallbackClassName="text-blue-500"
+      />
       {isPinned && <Pin className="mr-1 size-3 shrink-0 text-muted-foreground" aria-hidden />}
       <span className={`${TAB_LABEL_WIDTH_CLASSES} mr-1`}>{tabLabel}</span>
       {tab.loading && !tab.loadError && !isBlankBrowserTab(tab) && (
@@ -305,8 +266,8 @@ export default function BrowserTab({
           <TabWorkspaceLayoutMenuSection
             unifiedTabId={dragData.unifiedTabId}
             groupId={dragData.groupId}
-            trailingSeparator
           />
+          <TabMoveToWorkspaceMenuSection unifiedTabId={dragData.unifiedTabId} trailingSeparator />
           {onDuplicate ? (
             <>
               <DropdownMenuItem onSelect={onDuplicate}>

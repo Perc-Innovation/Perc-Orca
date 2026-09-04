@@ -1,16 +1,20 @@
 import type { PersistedState } from '../../../shared/persisted-state-types'
-import type { ProjectGroup } from '../../../shared/project-group-types'
+import type { ProjectGroup, ProjectGroupUpdates } from '../../../shared/project-group-types'
+import {
+  describeProjectGroupReparentRejection,
+  getProjectGroupCreateChildRejection,
+  getProjectGroupReparentRejection
+} from '../../../shared/project-group-reparent'
 import {
   createProjectGroup,
   getProjectGroupSubtreeIds,
   normalizeProjectGroupName
 } from '../../../shared/project-groups'
 import { folderWorkspaceKey } from '../../../shared/workspace-scope'
-import type { StoreOwnedPersistedState } from '../loading-store/store-owned-state'
 import { removeWorkspaceSessionOwner } from '../restoring-sessions/session-owner-removal'
 
 export type ProjectGroupMutationOperations = {
-  state: StoreOwnedPersistedState
+  state: PersistedState
   scheduleSave: () => void
   removeWorkspaceLineageForFolderParent: (folderWorkspaceId: string) => void
   pruneMobileClientTabSelections: (matchesWorktreeId: (worktreeId: string) => boolean) => void
@@ -48,27 +52,50 @@ export class ProjectGroupPersistenceOperations {
     parentGroupId?: string | null
     createdFrom: ProjectGroup['createdFrom']
   }): ProjectGroup {
-    let maxOrder = -1
-    // Why: persisted group lists can be large enough to exceed spread limits.
-    for (const existingGroup of this.state.projectGroups ?? []) {
-      maxOrder = Math.max(maxOrder, existingGroup.tabOrder)
+    // Why: folder-scan imports mirror the on-disk tree and may legitimately exceed the manual nesting cap.
+    if (input.parentGroupId && input.createdFrom === 'manual') {
+      const rejection = getProjectGroupCreateChildRejection(
+        this.state.projectGroups ?? [],
+        input.parentGroupId
+      )
+      if (rejection) {
+        throw new Error(describeProjectGroupReparentRejection(rejection))
+      }
     }
     const group = createProjectGroup({
       ...input,
-      tabOrder: maxOrder + 1
+      tabOrder: this.nextProjectGroupTabOrder()
     })
     this.state.projectGroups = [...(this.state.projectGroups ?? []), group]
     this.scheduleSave()
     return group
   }
 
-  updateProjectGroup(
-    groupId: string,
-    updates: Partial<Pick<ProjectGroup, 'name' | 'isCollapsed' | 'tabOrder' | 'color'>>
-  ): ProjectGroup | null {
-    const group = (this.state.projectGroups ?? []).find((entry) => entry.id === groupId)
+  private nextProjectGroupTabOrder(): number {
+    let maxOrder = -1
+    // Why: persisted group lists can be large enough to exceed spread limits.
+    for (const existingGroup of this.state.projectGroups ?? []) {
+      maxOrder = Math.max(maxOrder, existingGroup.tabOrder)
+    }
+    return maxOrder + 1
+  }
+
+  updateProjectGroup(groupId: string, updates: ProjectGroupUpdates): ProjectGroup | null {
+    const groups = this.state.projectGroups ?? []
+    const group = groups.find((entry) => entry.id === groupId)
     if (!group) {
       return null
+    }
+    if (updates.parentGroupId !== undefined) {
+      const rejection = getProjectGroupReparentRejection(groups, groupId, updates.parentGroupId)
+      if (rejection) {
+        throw new Error(describeProjectGroupReparentRejection(rejection))
+      }
+      if (updates.parentGroupId !== group.parentGroupId && updates.tabOrder === undefined) {
+        // Why: a re-parented group lands last among its new siblings, like a freshly created one.
+        group.tabOrder = this.nextProjectGroupTabOrder()
+      }
+      group.parentGroupId = updates.parentGroupId
     }
     if (updates.name !== undefined) {
       group.name = normalizeProjectGroupName(updates.name, group.name)

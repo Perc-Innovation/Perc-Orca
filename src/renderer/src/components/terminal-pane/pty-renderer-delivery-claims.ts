@@ -54,6 +54,27 @@ export function declareRendererPtyDeliveryVisible(ptyId: string): void {
   }
 }
 
+/**
+ * User-invoked rescue: drops every hidden claim this renderer still holds on the PTY and
+ * tells main so, whoever held it. `declareRendererPtyDeliveryVisible` deliberately yields
+ * to a live claim, which is exactly what makes a *leaked* claim unrecoverable — a pane on
+ * screen with nobody left to release it. Returns whether a claim was actually held, so the
+ * rescue can report it: that count is the field evidence of the leak.
+ *
+ * Safe against a legitimate owner: its later release finds no count and re-sends the same
+ * unmark, and a re-acquire starts the count at one and re-marks — the normal transitions.
+ */
+export function forceRendererPtyDeliveryVisible(ptyId: string): boolean {
+  const held = hiddenClaimCounts.delete(ptyId)
+  if (held) {
+    recordTerminalFreezeBreadcrumb('renderer-gate-force-unmark', {
+      id: redactPtyIdForDiagnostics(ptyId)
+    })
+  }
+  sendHiddenState(ptyId, false)
+  return held
+}
+
 function removeVisibleClaim(claim: VisibilityClaim): boolean {
   if (!claim.visible) {
     return false
@@ -101,6 +122,29 @@ export function setRendererPtyVisibilityClaim(
   if (!visibleClaimCounts.has(ptyId)) {
     sendVisibility(ptyId, false)
   }
+}
+
+/**
+ * Re-states a claim main may have discarded on its own (a window lifecycle reset clears the
+ * per-window claim sets). The ref count only emits on 0<->1 transitions, so a renderer that
+ * survived the reset would otherwise never say "visible" again, and main would keep stamping
+ * `background: true` on output the user is looking at.
+ */
+export function restateRendererPtyVisibilityClaim(ptyId: string): boolean {
+  if (!visibleClaimCounts.has(ptyId)) {
+    return false
+  }
+  sendVisibility(ptyId, true)
+  return true
+}
+
+/** Every live visibility claim, re-stated at once: what a surviving page owes main after a
+ *  lifecycle reset threw the per-window claim sets away. Returns how many it re-sent. */
+export function restateAllRendererPtyVisibilityClaims(): number {
+  for (const ptyId of visibleClaimCounts.keys()) {
+    sendVisibility(ptyId, true)
+  }
+  return visibleClaimCounts.size
 }
 
 export function releaseRendererPtyVisibilityClaim(owner: object): void {

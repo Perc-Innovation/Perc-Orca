@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { defineMethod, type RpcMethod } from '../core'
 import { requiredString } from '../schemas'
+import { OptionalGitAdmissionTier } from './git-admission-tier-schema'
 
 const HostedReviewForBranch = z.object({
   repo: requiredString('Missing repo selector'),
   branch: requiredString('Missing branch'),
+  admissionTier: OptionalGitAdmissionTier,
   currentHeadOid: z.string().nullable().optional(),
   // Tracked sibling branches: merged reviews stay visible (no reused-branch guard).
   acceptMergedBranchReview: z.boolean().optional(),
@@ -57,6 +59,7 @@ export const HOSTED_REVIEW_METHODS: RpcMethod[] = [
       return runtime.getHostedReviewForBranch({
         repoSelector: params.repo,
         branch: params.branch,
+        ...(params.admissionTier ? { admissionTier: params.admissionTier } : {}),
         currentHeadOid: params.currentHeadOid ?? null,
         ...(params.acceptMergedBranchReview === true ? { acceptMergedBranchReview: true } : {}),
         ...(params.active === true ? { active: true } : {}),

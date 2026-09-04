@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { setPtyHostBindings } from '../ipc/pty-host-bindings'
 
 const { handleMock, onMock, removeHandlerMock, removeAllListenersMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
@@ -61,18 +62,27 @@ import {
   setPtyOwnership,
   unregisterSshPtyProvider
 } from '../ipc/pty'
+import { createPtyIpcTestWindowRegistry } from '../ipc/pty-ipc-test-window-registry'
 import type { IPtyProvider } from './types'
 import { LEGACY_TERMINAL_SHIM_REMOTE_ENV_KEYS } from '../pty/legacy-terminal-shim-dir'
 
 describe('PTY provider dispatch', () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
+  // Why: registerPtyHandlers now resolves the owning window through the registry and
+  // installs a per-window close listener, so the stub needs a window identity.
   const mainWindow = {
+    id: 1,
     isDestroyed: () => false,
-    webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+    on: vi.fn(),
+    once: vi.fn(),
+    removeListener: vi.fn(),
+    webContents: { isDestroyed: () => false, on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
   }
   const mainWindowIpcEvent = { sender: mainWindow.webContents }
+  const testWindowRegistry = createPtyIpcTestWindowRegistry()
 
   function setup(): void {
+    testWindowRegistry.install(mainWindow)
     handlers.clear()
     handleMock.mockReset()
     onMock.mockReset()
@@ -81,6 +91,16 @@ describe('PTY provider dispatch', () => {
     })
     onMock.mockImplementation((channel: string, handler: (...a: unknown[]) => unknown) => {
       handlers.set(channel, handler)
+    })
+    // Why: pty.ts registers against an injected surface now, so the mocked ipcMain must
+    // be installed for this suite's own `handlers` map to capture registrations.
+    setPtyHostBindings({
+      ipc: {
+        handle: handleMock,
+        on: onMock,
+        removeHandler: removeHandlerMock,
+        removeAllListeners: removeAllListenersMock
+      }
     })
     registerPtyHandlers(mainWindow as never)
   }

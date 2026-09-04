@@ -22,6 +22,7 @@ import {
   type TerminalHiddenReason
 } from './terminal-visibility-resume'
 import { useTerminalWindowWakeRecovery } from './use-terminal-window-wake-recovery'
+import { useTerminalManualRecovery } from './use-terminal-manual-recovery'
 import {
   releaseRendererPtyVisibilityClaim,
   setRendererPtyVisibilityClaim
@@ -126,6 +127,7 @@ export function useTerminalPaneGlobalEffects({
     isVisibleRef,
     panePtyBindingsRef
   })
+  useTerminalManualRecovery({ managerRef, paneTransportsRef, isActiveRef, isVisibleRef })
 
   useEffect(() => {
     const paneTransports = paneTransportsRef.current

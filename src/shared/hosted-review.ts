@@ -73,6 +73,9 @@ export type HostedReviewSibling = {
 export type HostedReviewForBranchArgs = {
   repoPath: string
   repoId?: string
+  admissionTier?: 'interactive' | 'status' | 'background'
+  /** Desktop IPC-only owner guard; runtime RPC callers omit this field. */
+  repoOwnerExecutionHostId?: string
   branch: string
   linkedGitHubPR?: number | null
   fallbackGitHubPR?: number | null

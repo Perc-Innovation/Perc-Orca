@@ -61,7 +61,8 @@ describe('registerPtyHandlers', () => {
     getPtySetRendererPtyVisibleListener,
     getMainFrameNavigationListener,
     getPtySetHiddenRendererPtyListener,
-    getPtySetDeliveryInterestListener
+    getPtySetDeliveryInterestListener,
+    trackTestMainWindow
   } = setupPtyIpcSuite()
 
   describe('hidden renderer delivery gate', () => {
@@ -170,8 +171,11 @@ describe('registerPtyHandlers', () => {
         vi.useRealTimers()
       }
     })
-    it('surfaces the hidden-yet-visible contradiction in the snapshot and warns on drop', async () => {
-      // Why: field snapshot v1.4.124-rc.2.perf — aggregates couldn't tell if the visible pane was hidden-gated; overlap counter + warn makes it decisive.
+    it('delivers to a pane that reports visible even while the same window holds the hidden mark', async () => {
+      // Why: field snapshot v1.4.178 — one PTY sat at hidden+visible+active with millions of chars
+      // dropped, because the claim sets are per window, not per pane: a split (or a moved tab
+      // mid-remount) leaves the background pane's hidden mark next to the foreground pane's visible
+      // one. The overlap counter stays as the zero-means-healthy signal; it must never leave zero.
       vi.useFakeTimers()
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const daemon = installObservableDaemonTestProvider()
@@ -185,30 +189,85 @@ describe('registerPtyHandlers', () => {
         const setHidden = getPtySetHiddenRendererPtyListener()
         const setVisible = getPtySetRendererPtyVisibleListener()
 
-        // The two visibility signals contradict: pane reports visible while the hidden-delivery gate still holds it.
+        // Both marks at once, from one window: the visible pane wins and the bytes go through.
         setVisible(null, { id: result.id, visible: true })
         setHidden(null, { id: result.id, hidden: true })
         daemon.emitData(result.id, 'starved visible output')
         vi.advanceTimersByTime(50)
 
         expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
-          hiddenDeliveryGatedPtyCount: 1,
-          hiddenDeliveryGatedVisiblePtyCount: 1,
-          hiddenDeliveryDroppedChars: 'starved visible output'.length
+          hiddenDeliveryGatedVisiblePtyCount: 0,
+          hiddenDeliveryDroppedChars: 0
         })
-        expect(warnSpy).toHaveBeenCalledWith(
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+          'pty:data',
+          expect.objectContaining({ id: result.id, data: 'starved visible output' })
+        )
+        expect(warnSpy).not.toHaveBeenCalledWith(
           '[pty] hidden-delivery gate is dropping bytes for a visible/active pty',
-          expect.objectContaining({ id: result.id, visible: true })
+          expect.anything()
         )
 
-        // Unhiding resolves the contradiction.
-        setHidden(null, { id: result.id, hidden: false })
+        // And once the visible pane goes away, the gate re-arms for the background one.
+        setVisible(null, { id: result.id, visible: false })
         expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
-          hiddenDeliveryGatedPtyCount: 0,
+          hiddenDeliveryGatedPtyCount: 1,
           hiddenDeliveryGatedVisiblePtyCount: 0
         })
       } finally {
         warnSpy.mockRestore()
+        vi.useRealTimers()
+      }
+    })
+    it('lets a foreground window veto a second window hiding the same PTY', async () => {
+      vi.useFakeTimers()
+      const daemon = installObservableDaemonTestProvider()
+      try {
+        registerPtyHandlers(mainWindow as never)
+        const result = (await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          sessionId: 'daemon-session'
+        })) as { id: string }
+        // A project window opens and mounts the shared session's panes offscreen. Its hidden
+        // report used to overwrite a process-wide set and starve the window showing the pane.
+        const secondWindow = {
+          id: 2,
+          isDestroyed: () => false,
+          on: vi.fn(),
+          once: vi.fn(),
+          webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+        }
+        trackTestMainWindow(secondWindow)
+        const setHidden = getPtySetHiddenRendererPtyListener()
+        const setVisible = getPtySetRendererPtyVisibleListener()
+
+        setVisible(mainWindowIpcEvent, { id: result.id, visible: true })
+        setHidden(mainWindowIpcEvent, { id: result.id, hidden: false })
+        setHidden({ sender: secondWindow.webContents }, { id: result.id, hidden: true })
+
+        daemon.emitData(result.id, 'foreground output')
+        vi.advanceTimersByTime(50)
+
+        expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+          hiddenDeliveryGatedVisiblePtyCount: 0,
+          hiddenDeliveryDroppedChars: 0
+        })
+        expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+          'pty:data',
+          expect.objectContaining({ id: result.id, data: 'foreground output' })
+        )
+
+        // Once the window showing it also reports hidden, every claiming window agrees and the gate closes.
+        setVisible(mainWindowIpcEvent, { id: result.id, visible: false })
+        setHidden(mainWindowIpcEvent, { id: result.id, hidden: true })
+        daemon.emitData(result.id, 'background output')
+        vi.advanceTimersByTime(50)
+
+        expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+          hiddenDeliveryDroppedChars: 'background output'.length
+        })
+      } finally {
         vi.useRealTimers()
       }
     })
@@ -240,14 +299,20 @@ describe('registerPtyHandlers', () => {
         expect(entry).toMatchObject({
           hidden: true,
           visible: true,
-          inFlightChars: 0,
+          // The mark is still there, but the visible pane vetoes it: the bytes went out and are
+          // in flight, not dropped. `backgroundStamped` is the other way a visible pane goes mute —
+          // main telling the renderer these frames are background, which an alt-screen pane drops.
+          droppable: false,
+          backgroundStamped: false,
+          knownHidden: false,
+          inFlightChars: 'starved visible output'.length,
           pendingChars: 0
         })
         // Why redaction is pinned: daemon session ids embed worktree paths, so the report must never carry the raw id.
         expect(diagnostics.perPty.some((candidate) => candidate.id === result.id)).toBe(false)
         const breadcrumbKinds = diagnostics.breadcrumbs.map((crumb) => crumb.kind)
         expect(breadcrumbKinds).toContain('gate-mark')
-        expect(breadcrumbKinds).toContain('hidden-drop-visible')
+        expect(breadcrumbKinds).not.toContain('hidden-drop-visible')
       } finally {
         warnSpy.mockRestore()
         vi.useRealTimers()

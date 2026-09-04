@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { pruneEmptyProjectGroupHeaders } from '../grouping/prune-empty-project-group-headers'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import type { AppState } from '@/store/types'
@@ -19,6 +20,7 @@ import { getEmptyProjectPlaceholderRepoIds } from '../../empty-project-placehold
 import { addHostSectionRows } from '../../host-section-rows'
 import { orderHostSectionOptions } from '../../host-section-order'
 import { buildSidebarHostOptions } from '../../sidebar-host-options'
+import { selectPendingWorktreeCreationKeys } from './pending-worktree-creation-keys'
 
 type SectionRowsArgs = {
   groupBy: WorktreeGroupBy
@@ -96,19 +98,17 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
   )
 
   // Why: subscribe on a flat key array (useShallow) so progress ticks don't rebuild the whole row model.
-  // Split on first space — creationId is a UUID (no space) so a space-containing repoId stays intact.
   const pendingCreationKeys = useAppStore(
-    useShallow((s) =>
-      Object.values(s.pendingWorktreeCreations ?? {}).map(
-        (creation) => `${creation.creationId} ${creation.request.repoId}`
-      )
-    )
+    useShallow((s) => selectPendingWorktreeCreationKeys(s.pendingWorktreeCreations))
   )
   const pendingCreations = useMemo(
     () =>
       pendingCreationKeys.map((key) => {
         const separator = key.indexOf(' ')
-        return { creationId: key.slice(0, separator), repoId: key.slice(separator + 1) }
+        return {
+          creationId: key.slice(0, separator),
+          repoId: key.slice(separator + 1)
+        }
       }),
     [pendingCreationKeys]
   )
@@ -142,7 +142,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
     [hostOptions]
   )
 
-  const rows: Row[] = useMemo(
+  const builtRows: Row[] = useMemo(
     () =>
       buildRows(
         args.groupBy,
@@ -192,6 +192,13 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.pinnedDisplayPolicy
     ]
   )
+  // Why: a group the filter emptied still emits its header, so narrowing to one
+  // group left every other group's title on screen with nothing under it.
+  const rows = useMemo(
+    () => pruneEmptyProjectGroupHeaders(builtRows, args.filterRepoIds.length > 0),
+    [builtRows, args.filterRepoIds]
+  )
+
   const orderedHostOptions = useMemo(
     () => orderHostSectionOptions(hostOptions, workspaceHostOrder),
     [hostOptions, workspaceHostOrder]

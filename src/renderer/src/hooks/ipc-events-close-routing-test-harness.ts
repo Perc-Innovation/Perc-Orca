@@ -6,7 +6,7 @@ export type RequestTabCloseListener = (data: {
   tabId: string | null
   worktreeId?: string
 }) => void
-export type CloseActiveTabListener = () => void
+export type CloseActiveTabListener = (payload?: { sourceId: string }) => void
 export type CloseFloatingItemListener = (payload: { sourceId: string }) => void
 export type SelectFloatingIndexListener = (payload: { index: number }) => void
 export type CloseTerminalListener = (data: { tabId: string; paneRuntimeId?: number | null }) => void
@@ -21,6 +21,7 @@ export type TerminalTabCloseRequestListener = (data: {
   requestId: string
   tabId: string
   localPtyTeardownOwnedExternally?: boolean
+  force?: boolean
 }) => void
 
 export async function useIpcEventsForCloseRouting({
@@ -36,7 +37,8 @@ export async function useIpcEventsForCloseRouting({
   replyTabClose = vi.fn(),
   terminalTabCloseRequestListenerRef,
   respondTerminalTabClose = vi.fn(),
-  persistWorkspaceSession = vi.fn().mockResolvedValue(undefined)
+  persistWorkspaceSession = vi.fn().mockResolvedValue(undefined),
+  shouldPersistWorkspaceSession = vi.fn(() => true)
 }: {
   closeActiveTabListenerRef?: { current: CloseActiveTabListener | null }
   closeFloatingItemListenerRef?: { current: CloseFloatingItemListener | null }
@@ -51,6 +53,8 @@ export async function useIpcEventsForCloseRouting({
   terminalTabCloseRequestListenerRef?: { current: TerminalTabCloseRequestListener | null }
   respondTerminalTabClose?: ReturnType<typeof vi.fn>
   persistWorkspaceSession?: ReturnType<typeof vi.fn>
+  /** Defaults to an ordinary window; a window that opened empty answers false. */
+  shouldPersistWorkspaceSession?: ReturnType<typeof vi.fn>
 }): Promise<void> {
   vi.doMock('react', async () => {
     const actual = await vi.importActual<typeof ReactModule>('react')
@@ -137,11 +141,15 @@ export async function useIpcEventsForCloseRouting({
   vi.doMock('@/lib/workspace-session', () => ({
     buildWorkspaceSessionPayload: vi.fn(() => ({}))
   }))
+  vi.doMock('@/lib/workspace-session-persistence-gate', () => ({
+    shouldPersistWorkspaceSession
+  }))
 
   vi.stubGlobal('window', {
     dispatchEvent: vi.fn(),
     api: {
       repos: { onChanged: () => () => {} },
+      automations: { onChanged: () => () => {} },
       worktrees: {
         onChanged: () => () => {},
         onBaseStatus: () => () => {},
@@ -281,7 +289,9 @@ export async function useIpcEventsForCloseRouting({
         getBrowserDrivers: () => Promise.resolve([]),
         onTerminalFitOverrideChanged: () => () => {},
         onTerminalDriverChanged: () => () => {},
-        onBrowserDriverChanged: () => {}
+        onBrowserDriverChanged: () => {},
+        onClientHostedBrowserRowsChanged: () => {},
+        getClientHostedBrowserRows: async () => []
       },
       agentStatus: { onSet: () => () => {} }
     }

@@ -9,6 +9,10 @@ import {
   getSshPtyProvider,
   getPtyIdsForConnection
 } from './pty'
+import {
+  _resetMainWindowRegistryForTests,
+  registerMainWindow
+} from '../window/main-window-registry'
 import type { SshIpcMocks } from './ssh-ipc-module-mocks'
 import type {
   SshConnectionManagerMock,
@@ -31,9 +35,21 @@ export type SshLeaseStoreMock = {
   markSshRemotePtyLeasesForShutdown: Mock
   markSshRemotePtyLeasesAttachedAsync: Mock
   removeSshRemotePtyLeases: Mock
+  getSshRemotePtyKillIntents: Mock
+  pruneExpiredSshRemotePtyKillIntents: Mock
+  recordSshRemotePtyKillIntent: Mock
+  clearSshRemotePtyKillIntent: Mock
+  noteSshRemotePtyKillReplayAttempt: Mock
 }
 
-export type MockBrowserWindow = { isDestroyed: () => boolean; webContents: { send: Mock } }
+export type MockBrowserWindow = {
+  id: number
+  isDestroyed: () => boolean
+  on: Mock
+  once: Mock
+  removeListener: Mock
+  webContents: { send: Mock }
+}
 
 export type RelayLaunchResultMock = {
   transport: { write: Mock; onData: Mock; onClose: Mock }
@@ -102,16 +118,25 @@ export function createSshIpcHarness(mocks: SshIpcMocks): SshIpcHarness {
     markSshRemotePtyLeasesAsync: vi.fn(),
     markSshRemotePtyLeasesForShutdown: vi.fn(),
     markSshRemotePtyLeasesAttachedAsync: vi.fn(),
-    removeSshRemotePtyLeases: vi.fn()
+    removeSshRemotePtyLeases: vi.fn(),
+    getSshRemotePtyKillIntents: vi.fn().mockReturnValue([]),
+    pruneExpiredSshRemotePtyKillIntents: vi.fn(),
+    recordSshRemotePtyKillIntent: vi.fn(),
+    clearSshRemotePtyKillIntent: vi.fn(),
+    noteSshRemotePtyKillReplayAttempt: vi.fn()
   }
-  const mockWindow = {
+  // Why: SSH renderer broadcasts now fan out through the main-window registry, so the
+  // stub needs a window identity the registry can hold.
+  let nextMockWindowId = 1
+  const createMockWindow = (): MockBrowserWindow => ({
+    id: nextMockWindowId++,
     isDestroyed: () => false,
-    webContents: { send: vi.fn() }
-  }
-  const createMockWindow = () => ({
-    isDestroyed: () => false,
+    on: vi.fn(),
+    once: vi.fn(),
+    removeListener: vi.fn(),
     webContents: { send: vi.fn() }
   })
+  const mockWindow = createMockWindow()
   const createConnectionManagerMock = () => ({
     connect: vi.fn(),
     disconnect: vi.fn(),
@@ -174,6 +199,8 @@ export function createSshIpcHarness(mocks: SshIpcMocks): SshIpcHarness {
     mockSshStore.importFromSshConfig.mockReset().mockReturnValue([])
     mockSshStore.lastRepoReadoptions = []
     mockWindow.webContents.send.mockReset()
+    _resetMainWindowRegistryForTests()
+    registerMainWindow(mockWindow as never)
     mockStore.getSshRemotePtyLeases.mockReset().mockReturnValue([])
     mockStore.markSshRemotePtyLease.mockReset()
     mockStore.markSshRemotePtyLeases.mockReset()

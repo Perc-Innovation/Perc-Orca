@@ -1,9 +1,15 @@
 import {
   splitWorktreeId,
   splitWorktreeIdForFilesystem,
-  isWorkspaceInstanceWorktreeId
+  isWorkspaceInstanceWorktreeId,
+  worktreeIdComparisonKey
 } from '../../shared/worktree/id'
 import { getRepoExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
+import {
+  readAllWorktreeMetaForHost,
+  readWorktreeMetaForHost,
+  writeWorktreeMetaForHost
+} from '../persistence/host-qualified-worktree-meta'
 import { isFolderRepo } from '../../shared/repo-kind'
 import { projectResolvedWorktreeLineage } from '../../shared/resolved-worktree-lineage'
 import { withTimeout } from '../../shared/promise-timeout-fallback'
@@ -18,6 +24,7 @@ import { pruneLineageForMissingRepoWorktrees } from '../worktree-lineage-pruning
 import { getRepoOwnedWorktreeMeta } from '../worktree-metadata-ownership'
 import { resolveLocalProjectRuntimesForRepos } from '../project-runtime-git-options'
 import type { RuntimeWorktreeScanResult } from './repo-worktree-resolution-scan'
+import { listRuntimeTerminalGroups } from './runtime-terminal-groups'
 
 /**
  * Per-repo budget for one resolution pass. Why: mobile startup shares this path, so one slow repo
@@ -62,7 +69,9 @@ export function listStoredWorktreeRowsForRepo(
 ): GitWorktreeInfo[] {
   const expectedHostId = getRepoExecutionHostId(repo)
   const byWorktreeId = new Map<string, GitWorktreeInfo>()
-  for (const [worktreeId, meta] of Object.entries(store.getAllWorktreeMeta())) {
+  for (const [worktreeId, meta] of Object.entries(
+    readAllWorktreeMetaForHost(store, expectedHostId)
+  )) {
     const parsed = splitWorktreeId(worktreeId)
     if (!parsed || parsed.repoId !== repo.id) {
       continue
@@ -101,23 +110,53 @@ export async function resolveRepoWorktreeRows(
 ): Promise<RepoWorktreeRow[]> {
   const { store } = deps
   if (isFolderRepo(repo)) {
-    return deps.listFolderWorkspaces(repo, repoOwnerCount).map((worktree) => ({
-      ...worktree,
-      hostId: worktree.hostId ?? getRepoExecutionHostId(repo),
-      parentWorktreeId: null,
-      childWorktreeIds: [],
-      lineage: null,
-      git: {
-        path: worktree.path,
-        head: worktree.head,
-        branch: worktree.branch,
-        isBare: worktree.isBare,
-        isMainWorktree: worktree.isMainWorktree
-      },
-      displayName: worktree.displayName,
-      comment: worktree.comment
-    }))
+    return deps
+      .listFolderWorkspaces(repo, repoOwnerCount)
+      .map((worktree) => toWorkspaceInstanceRow(repo, worktree))
   }
+  const rows = await resolveGitWorktreeRows(
+    deps,
+    repo,
+    metaById,
+    projectRuntimeByRepoId,
+    repoOwnerCount
+  )
+  // Why: a git project's terminal groups live on its main checkout, so `git worktree list`
+  // never reports them — they are appended from meta, mirroring the folder-workspace rows.
+  const terminalGroups = listRuntimeTerminalGroups(store, repo, metaById).map((worktree) =>
+    toWorkspaceInstanceRow(repo, worktree)
+  )
+  return terminalGroups.length > 0 ? [...rows, ...terminalGroups] : rows
+}
+
+/** A folder workspace or terminal group: no git scan behind it, so its row is the worktree as stored. */
+function toWorkspaceInstanceRow(repo: Repo, worktree: Worktree): RepoWorktreeRow {
+  return {
+    ...worktree,
+    hostId: worktree.hostId ?? getRepoExecutionHostId(repo),
+    parentWorktreeId: null,
+    childWorktreeIds: [],
+    lineage: null,
+    git: {
+      path: worktree.path,
+      head: worktree.head,
+      branch: worktree.branch,
+      isBare: worktree.isBare,
+      isMainWorktree: worktree.isMainWorktree
+    },
+    displayName: worktree.displayName,
+    comment: worktree.comment
+  }
+}
+
+async function resolveGitWorktreeRows(
+  deps: RepoWorktreeRowDeps,
+  repo: Repo,
+  metaById: Record<string, WorktreeMeta>,
+  projectRuntimeByRepoId: ReadonlyMap<string, ProjectExecutionRuntimeResolution>,
+  repoOwnerCount: number
+): Promise<RepoWorktreeRow[]> {
+  const { store } = deps
   // Why the catch: `withTimeout` resolves its fallback on rejection too, so the rejection must be absorbed
   // first for `null` to mean "timed out" only. A stall never reached a verdict, so restore persisted rows
   // instead of publishing a healthy-looking empty catalog; a rejection is a real answer and keeps its
@@ -138,15 +177,18 @@ export async function resolveRepoWorktreeRows(
     const worktreeId = `${repo.id}::${gitWorktree.path}`
     // Why: lineage validation needs a durable instance ID even when the runtime sees a workspace before renderer discovery-stamp.
     const existingMeta = metaById[worktreeId]
-    const ownedExistingMeta = getRepoOwnedWorktreeMeta(repo, worktreeId, metaById, repoOwnerCount)
+    // A host-qualified row is exact; the locator-keyed one is only trustworthy when this repo owns it.
+    const ownedExistingMeta =
+      readWorktreeMetaForHost(store, worktreeId, expectedHostId) ??
+      getRepoOwnedWorktreeMeta(repo, worktreeId, metaById, repoOwnerCount)
     const meta = ownedExistingMeta?.instanceId
       ? ownedExistingMeta
       : ownedExistingMeta || (!existingMeta && repoOwnerCount === 1)
-        ? store.setWorktreeMeta(worktreeId, {})
+        ? writeWorktreeMetaForHost(store, worktreeId, expectedHostId, {})
         : undefined
     const merged = {
       ...mergeWorktree(repo.id, gitWorktree, meta, repo.displayName),
-      hostId: repoOwnerCount === 1 ? (existingMeta?.hostId ?? expectedHostId) : expectedHostId
+      hostId: meta?.hostId ?? expectedHostId
     }
     return {
       ...merged,
@@ -203,5 +245,18 @@ export async function resolveScopedWorktreeIdRow(
     resolveLocalProjectRuntimesForRepos(store, [repo])
   )
   const projected = projectResolvedWorktreeLineage(rows, store.getAllWorktreeLineage?.() ?? {})
-  return projected.find((worktree) => worktree.id === worktreeId) ?? null
+  const exact = projected.find((worktree) => worktree.id === worktreeId)
+  if (exact) {
+    return exact
+  }
+  // Why (#16243): the scan can spell this id's path differently — the divergence `path:` absorbs.
+  // One equivalent row may stand in; two is an ambiguity a scoped lookup must refuse, not guess.
+  const comparisonKey = worktreeIdComparisonKey(worktreeId)
+  if (comparisonKey === null) {
+    return null
+  }
+  const equivalent = projected.filter(
+    (worktree) => worktreeIdComparisonKey(worktree.id) === comparisonKey
+  )
+  return equivalent.length === 1 ? equivalent[0] : null
 }

@@ -34,6 +34,31 @@ export function withAcceptedMergedBranchReview(cacheKey: string): string {
   return `${cacheKey}::merged-ok`
 }
 
+/** The cache entry a branch fetch reads and writes, keyed apart when merged reviews are accepted. */
+export function getHostedReviewFetchCacheKey(
+  repoPath: string,
+  branch: string,
+  settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
+  repo:
+    | { id: string; connectionId?: string | null; executionHostId?: string | null }
+    | null
+    | undefined,
+  options: { repoId?: string | null; acceptMergedBranchReview?: boolean } | undefined
+): string {
+  const baseCacheKey = getHostedReviewCacheKey(
+    repoPath,
+    branch,
+    settings,
+    options?.repoId ?? repo?.id,
+    repo?.connectionId,
+    repo?.executionHostId,
+    repo !== undefined
+  )
+  return options?.acceptMergedBranchReview === true
+    ? withAcceptedMergedBranchReview(baseCacheKey)
+    : baseCacheKey
+}
+
 function getHostedReviewCacheHostScope(
   settings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null,
   connectionId?: string | null,

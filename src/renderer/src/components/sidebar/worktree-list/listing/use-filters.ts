@@ -2,13 +2,22 @@ import { useCallback, useMemo } from 'react'
 import { useAppStore } from '@/store'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../../../shared/constants'
 import { computeClearFilterActions, sidebarHasActiveFilters } from '../../visible-worktrees'
+import { selectEffectiveFilterRepoIds } from '../../project-filter-resolution'
+import {
+  isProjectFilterActive,
+  resetProjectFilterToWindowBaseline
+} from '../../window-scope-project-filter'
 
 export type SidebarWorktreeFilters = ReturnType<typeof useSidebarWorktreeFilters>
 
 // Every sidebar filter, plus the single escape hatch that resets all of them.
 export function useSidebarWorktreeFilters() {
   const showSleepingWorkspaces = useAppStore((s) => s.showSleepingWorkspaces)
-  const filterRepoIds = useAppStore((s) => s.filterRepoIds)
+  // Why: explicit picks plus project-group members; the row pipeline never sees the two halves.
+  const filterRepoIds = useAppStore(selectEffectiveFilterRepoIds)
+  const pickedRepoIds = useAppStore((s) => s.filterRepoIds)
+  const filterGroupIds = useAppStore((s) => s.filterGroupIds)
+  const windowScope = useAppStore((s) => s.windowScope)
   const hideDefaultBranchWorkspace = useAppStore((s) => s.hideDefaultBranchWorkspace)
   const hideAutomationGeneratedWorkspaces = useAppStore((s) => s.hideAutomationGeneratedWorkspaces)
   const hideCliCreatedWorkspaces = useAppStore((s) => s.hideCliCreatedWorkspaces)
@@ -30,6 +39,7 @@ export function useSidebarWorktreeFilters() {
     (s) => s.setAlwaysShowDefaultBranchWorkspace
   )
   const setFilterRepoIds = useAppStore((s) => s.setFilterRepoIds)
+  const setFilterGroupIds = useAppStore((s) => s.setFilterGroupIds)
   const setVisibleWorkspaceHostIds = useAppStore((s) => s.setVisibleWorkspaceHostIds)
 
   // Why: count hideDefaultBranchWorkspace as a filter so the Clear Filters escape hatch stays reachable when it alone empties the list.
@@ -37,6 +47,11 @@ export function useSidebarWorktreeFilters() {
     () => ({
       showSleepingWorkspaces,
       filterRepoIds,
+      projectFilterActive: isProjectFilterActive({
+        windowScope,
+        filterRepoIds: pickedRepoIds,
+        filterGroupIds
+      }),
       hideDefaultBranchWorkspace,
       hideAutomationGeneratedWorkspaces,
       hideCliCreatedWorkspaces,
@@ -49,6 +64,9 @@ export function useSidebarWorktreeFilters() {
     [
       showSleepingWorkspaces,
       filterRepoIds,
+      pickedRepoIds,
+      filterGroupIds,
+      windowScope,
       hideDefaultBranchWorkspace,
       hideAutomationGeneratedWorkspaces,
       hideCliCreatedWorkspaces,
@@ -66,7 +84,13 @@ export function useSidebarWorktreeFilters() {
       setShowSleepingWorkspaces(DEFAULT_SHOW_SLEEPING_WORKSPACES)
     }
     if (actions.resetFilterRepoIds) {
-      setFilterRepoIds([])
+      resetProjectFilterToWindowBaseline({
+        windowScope,
+        filterRepoIds: pickedRepoIds,
+        filterGroupIds,
+        setFilterRepoIds,
+        setFilterGroupIds
+      })
     }
     if (actions.resetHideDefaultBranchWorkspace) {
       setHideDefaultBranchWorkspace(false)
@@ -92,6 +116,10 @@ export function useSidebarWorktreeFilters() {
   }, [
     setShowSleepingWorkspaces,
     setFilterRepoIds,
+    setFilterGroupIds,
+    pickedRepoIds,
+    filterGroupIds,
+    windowScope,
     setHideDefaultBranchWorkspace,
     setHideAutomationGeneratedWorkspaces,
     setHideCliCreatedWorkspaces,

@@ -2,6 +2,7 @@ import React from 'react'
 import {
   FilePlus,
   FileText,
+  GitBranch,
   GitCompare,
   Globe,
   Loader2,
@@ -14,7 +15,9 @@ import { cn } from '@/lib/utils'
 import { FilePathCursorTooltip, splitTrailingSegment } from '@/components/file-path-cursor-tooltip'
 import { translate } from '@/i18n/i18n'
 import { SEARCH_ENGINE_LABELS } from '../../../../shared/browser-url'
+import { formatBrowserHistoryUrl } from '@/lib/browser-history-match'
 import type { ActiveOption } from './tab-create-entry-active-option'
+import { BrowserFavicon } from '@/components/browser-favicon'
 
 export const RESULT_LISTBOX_ID = 'tab-create-entry-results'
 
@@ -42,6 +45,7 @@ export function EntryStatusRow({
 export function EntryActionRow({
   disabled = false,
   id,
+  labelOverride,
   loading = false,
   onClick,
   option,
@@ -49,12 +53,13 @@ export function EntryActionRow({
 }: {
   disabled?: boolean
   id: string
+  labelOverride?: string
   loading?: boolean
   onClick: () => void
   option: ActiveOption
   selected: boolean
 }): React.JSX.Element {
-  const presentation = getActionPresentation(option)
+  const presentation = getActionPresentation(option, labelOverride)
 
   const row = (
     <button
@@ -137,7 +142,7 @@ function getOpenTabIcon(option: Extract<ActiveOption, { kind: 'tab' }>['option']
     return <TerminalSquare className="size-3.5 shrink-0" aria-hidden="true" />
   }
   if (contentType === 'browser') {
-    return <Globe className="size-3.5 shrink-0" aria-hidden="true" />
+    return <BrowserFavicon faviconUrl={option.faviconUrl} className="size-3.5" />
   }
   if (contentType === 'simulator') {
     return <Smartphone className="size-3.5 shrink-0" aria-hidden="true" />
@@ -148,7 +153,10 @@ function getOpenTabIcon(option: Extract<ActiveOption, { kind: 'tab' }>['option']
   return <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
 }
 
-function getActionPresentation(option: ActiveOption): {
+function getActionPresentation(
+  option: ActiveOption,
+  labelOverride?: string
+): {
   detail: string
   icon: React.ReactNode
   label: string
@@ -163,6 +171,8 @@ function getActionPresentation(option: ActiveOption): {
         <FilePlus className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'open-markdown' ? (
         <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : option.option.kind === 'open-git-graph' ? (
+        <GitBranch className="size-3.5 shrink-0" aria-hidden="true" />
       ) : option.option.kind === 'new-simulator' || option.option.kind === 'go-to-simulator' ? (
         <Smartphone className="size-3.5 shrink-0" aria-hidden="true" />
       ) : (
@@ -183,11 +193,25 @@ function getActionPresentation(option: ActiveOption): {
       showDetail: true
     }
   }
+  if (option.kind === 'history') {
+    const { entry } = option.option
+    const url = formatBrowserHistoryUrl(entry.url)
+    return {
+      // Why the title is detail, not label: the label span is shrink-0 whenever a
+      // detail shows, so a variable-length title there would refuse to truncate.
+      detail: entry.title ? `${entry.title} · ${url}` : url,
+      icon: <BrowserFavicon faviconUrl={entry.faviconUrl} className="size-3.5" />,
+      label: translate('auto.components.tab.bar.TabBarCreateEntry.openPage', 'Open page'),
+      showDetail: true
+    }
+  }
   if (option.kind === 'agent') {
     return {
       detail: option.option.label,
       icon: <AgentIcon agent={option.option.agent} size={14} />,
-      label: translate('auto.components.tab.bar.TabBarCreateEntry.b27864279e', 'Launch agent'),
+      label:
+        labelOverride ??
+        translate('auto.components.tab.bar.TabBarCreateEntry.b27864279e', 'Launch agent'),
       showDetail: true
     }
   }

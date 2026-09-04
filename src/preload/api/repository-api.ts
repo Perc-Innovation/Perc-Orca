@@ -7,7 +7,8 @@ import type {
   NestedRepoScanResult,
   ProjectGroup,
   ProjectGroupImportMode,
-  ProjectGroupImportResult
+  ProjectGroupImportResult,
+  ProjectGroupUpdates
 } from '../../shared/project-group-types'
 import type {
   Project,
@@ -31,6 +32,7 @@ export type RepositoryApi = {
   add: (args: {
     path: string
     kind?: 'git' | 'folder'
+    displayName?: string
   }) => Promise<{ repo: Repo } | { error: string }>
   remove: (args: { repoId: string }) => Promise<void>
   // Forget a project on one execution host only, leaving the same repo id on other hosts intact.
@@ -138,10 +140,7 @@ export type ProjectGroupsApi = {
     parentGroupId?: string | null
     createdFrom?: ProjectGroup['createdFrom']
   }) => Promise<ProjectGroup>
-  update: (args: {
-    groupId: string
-    updates: Partial<Pick<ProjectGroup, 'name' | 'isCollapsed' | 'tabOrder' | 'color'>>
-  }) => Promise<ProjectGroup | null>
+  update: (args: { groupId: string; updates: ProjectGroupUpdates }) => Promise<ProjectGroup | null>
   delete: (args: { groupId: string }) => Promise<boolean>
   moveProject: (args: {
     projectId: string

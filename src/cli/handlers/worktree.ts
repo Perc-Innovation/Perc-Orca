@@ -190,9 +190,12 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
     const branchNameOverride = getOptionalStringFlag(flags, 'branch')
     const activate = flags.get('activate') === true || flags.get('run-hooks') === true
+    const name = getRequiredStringFlag(flags, 'name')
     const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
-      name: getRequiredStringFlag(flags, 'name'),
+      name,
+      displayName: name,
+      displayNameKind: 'user',
       baseBranch: getOptionalStringFlag(flags, 'base-branch'),
       // Why: --name is slugified into the branch, which collapses slashes, so
       // the CLI could not produce the `type/scope` branch names many teams

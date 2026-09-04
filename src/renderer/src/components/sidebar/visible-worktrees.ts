@@ -1,4 +1,14 @@
 import type { Repo } from '../../../../shared/repo-types'
+import {
+  getPublishedVisibleWorktreeIds,
+  getPublishedVisibleWorktreeShortcutTargets,
+  type VisibleWorktreeShortcutTarget
+} from './rendered-sidebar-worktree-publication'
+export {
+  setVisibleWorktreeIds,
+  setVisibleWorktreeShortcutTargets,
+  type VisibleWorktreeShortcutTarget
+} from './rendered-sidebar-worktree-publication'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import type { WorktreeLineage } from '../../../../shared/worktree/lineage-types'
 export type { SidebarFilterState } from './visible-worktree-kinds'
@@ -24,6 +34,7 @@ import {
 import type { Worktree } from '../../../../shared/worktree/types'
 import { buildWorktreeComparator, sortWorktreesSmart } from './smart-sort'
 import { getWorktreeIdsWithLiveAgent, isInactiveWorkspace } from '@/lib/worktree-activity-state'
+import { selectEffectiveFilterRepoIds } from './project-filter-resolution'
 import { useAppStore } from '@/store'
 import { getAllWorktreesFromState, getRepoMapFromState } from '@/store/selectors'
 import {
@@ -47,6 +58,7 @@ import {
   isWorkspaceFromOtherDevice
 } from './workspace-creator-visibility'
 import { isDefaultBranchWorkspace } from './default-branch-workspace'
+import { getLineageAncestorIndex, getSortedWorktreeRankIndex } from './visible-worktree-indexes'
 import { getWorktreeHostIdentity } from '../../../../shared/worktree/host-qualified-identity'
 
 /**
@@ -96,7 +108,7 @@ export function computeVisibleWorktrees(
 
   // Why: sidebar lineage is structural. Archived workspaces stay hidden, but
   // every other valid ancestor can bypass filters so children never orphan.
-  const lineageAncestorById = new Map(all.map((w) => [w.id, w]))
+  const lineageAncestorById = getLineageAncestorIndex(worktreesByRepo)
 
   if (opts.hideWorkspacesFromOtherDevices) {
     all = all.filter(
@@ -170,7 +182,7 @@ export function computeVisibleWorktrees(
 
   // Apply cached sort order. Items not yet in the cache (e.g. brand-new
   // worktrees before the next sortEpoch bump) are appended at the end.
-  const orderIndex = new Map(sortedIds.map((id, i) => [id, i]))
+  const orderIndex = getSortedWorktreeRankIndex(sortedIds)
   all.sort((a, b) => {
     const ai = orderIndex.get(a.id) ?? Infinity
     const bi = orderIndex.get(b.id) ?? Infinity
@@ -226,37 +238,6 @@ export function computeVisibleWorktreeIds(
 }
 
 /**
- * Module-level cache of the visible worktree IDs as last computed by
- * WorktreeList's render pipeline.
- *
- * Why: WorktreeList freezes its sort order via sortedIds / sortEpoch useMemo
- * and only re-sorts when sortEpoch bumps. If getVisibleWorktreeIds()
- * recomputes sort order from a live Zustand snapshot, the Cmd+1–9 shortcut
- * could target a different worktree than what's rendered at that sidebar
- * position. By caching the IDs that WorktreeList actually rendered, the
- * shortcut numbering always matches the sidebar card order.
- *
- * Why null vs []: [] is a real rendered order (everything collapsed/filtered);
- * null means WorktreeList is unmounted.
- */
-let _publishedVisibleIds: string[] | null = null
-export type VisibleWorktreeShortcutTarget = {
-  id: string
-  executionHostId?: Worktree['hostId']
-}
-let _publishedVisibleShortcutTargets: VisibleWorktreeShortcutTarget[] | null = null
-
-export function setVisibleWorktreeIds(ids: string[] | null): void {
-  _publishedVisibleIds = ids
-}
-
-export function setVisibleWorktreeShortcutTargets(
-  targets: VisibleWorktreeShortcutTarget[] | null
-): void {
-  _publishedVisibleShortcutTargets = targets
-}
-
-/**
  * Compute the visible worktree IDs on-demand from the current Zustand store
  * state. Called by the App-level Cmd+1–9 handler (not a React hook — reads
  * store snapshot at call time).
@@ -265,10 +246,47 @@ export function setVisibleWorktreeShortcutTargets(
  * recomputes the order the sidebar *would* render from the same row pipeline,
  * so a closed sidebar numbers workspaces the same way an open one does (#9497).
  */
+export function buildVisibleWorktreeOptionsFromState(
+  state: ReturnType<typeof useAppStore.getState>,
+  repoMap: Map<string, Repo>
+): VisibleWorktreeOptions {
+  return {
+    // Why: explicit picks plus project-group members; the row pipeline never sees the two halves.
+    filterRepoIds: selectEffectiveFilterRepoIds(state),
+    showSleepingWorkspaces: state.showSleepingWorkspaces,
+    tabsByWorktree: state.tabsByWorktree,
+    ptyIdsByTabId: state.ptyIdsByTabId,
+    browserTabsByWorktree: state.browserTabsByWorktree,
+    worktreeIdsWithLiveAgent: getWorktreeIdsWithLiveAgent(
+      state.agentStatusByPaneKey,
+      state.tabsByWorktree,
+      Date.now()
+    ),
+    hideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
+    hideAutomationGeneratedWorkspaces: state.hideAutomationGeneratedWorkspaces,
+    hideCliCreatedWorkspaces: state.hideCliCreatedWorkspaces,
+    hideDetachedHeadWorkspaces: state.hideDetachedHeadWorkspaces,
+    hideWorkspacesFromOtherDevices: state.hideWorkspacesFromOtherDevices,
+    pairedDeviceIdsByEnvironment: state.hideWorkspacesFromOtherDevices
+      ? getPairedDeviceIdsByEnvironment(
+          state.runtimeEnvironments,
+          state.runtimeStatusByEnvironmentId
+        )
+      : EMPTY_PAIRED_DEVICE_IDS_BY_ENVIRONMENT,
+    alwaysShowDefaultBranchWorkspace: state.alwaysShowDefaultBranchWorkspace,
+    repoMap,
+    workspaceHostScope: state.workspaceHostScope,
+    visibleWorkspaceHostIds: state.visibleWorkspaceHostIds,
+    defaultHostId: getSettingsFocusedExecutionHostId(state.settings),
+    worktreeLineageById: state.worktreeLineageById
+  }
+}
+
 export function getVisibleWorktreeIds(): string[] {
   // Prefer the published IDs that mirror the rendered sidebar order.
-  if (_publishedVisibleIds) {
-    return _publishedVisibleIds
+  const published = getPublishedVisibleWorktreeIds()
+  if (published) {
+    return published
   }
 
   const state = useAppStore.getState()
@@ -299,35 +317,11 @@ export function getVisibleWorktreeIds(): string[] {
     sortedIds = sorted.map((w) => w.id)
   }
 
-  const visibleIds = computeVisibleWorktreeIds(state.worktreesByRepo, sortedIds, {
-    filterRepoIds: state.filterRepoIds,
-    showSleepingWorkspaces: state.showSleepingWorkspaces,
-    tabsByWorktree: state.tabsByWorktree,
-    ptyIdsByTabId: state.ptyIdsByTabId,
-    browserTabsByWorktree: state.browserTabsByWorktree,
-    worktreeIdsWithLiveAgent: getWorktreeIdsWithLiveAgent(
-      state.agentStatusByPaneKey,
-      state.tabsByWorktree,
-      Date.now()
-    ),
-    hideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
-    hideAutomationGeneratedWorkspaces: state.hideAutomationGeneratedWorkspaces,
-    hideCliCreatedWorkspaces: state.hideCliCreatedWorkspaces,
-    hideDetachedHeadWorkspaces: state.hideDetachedHeadWorkspaces,
-    hideWorkspacesFromOtherDevices: state.hideWorkspacesFromOtherDevices,
-    pairedDeviceIdsByEnvironment: state.hideWorkspacesFromOtherDevices
-      ? getPairedDeviceIdsByEnvironment(
-          state.runtimeEnvironments,
-          state.runtimeStatusByEnvironmentId
-        )
-      : EMPTY_PAIRED_DEVICE_IDS_BY_ENVIRONMENT,
-    alwaysShowDefaultBranchWorkspace: state.alwaysShowDefaultBranchWorkspace,
-    repoMap,
-    workspaceHostScope: state.workspaceHostScope,
-    visibleWorkspaceHostIds: state.visibleWorkspaceHostIds,
-    defaultHostId: getSettingsFocusedExecutionHostId(state.settings),
-    worktreeLineageById: state.worktreeLineageById
-  })
+  const visibleIds = computeVisibleWorktreeIds(
+    state.worktreesByRepo,
+    sortedIds,
+    buildVisibleWorktreeOptionsFromState(state, repoMap)
+  )
 
   const visibleIdRank = new Map(visibleIds.map((id, index) => [id, index]))
   const visibleHostIds = getVisibleWorkspaceHostIdSet(state)
@@ -344,8 +338,9 @@ export function getVisibleWorktreeIds(): string[] {
 }
 
 export function getVisibleWorktreeShortcutTargets(): VisibleWorktreeShortcutTarget[] {
-  if (_publishedVisibleShortcutTargets) {
-    return _publishedVisibleShortcutTargets
+  const publishedTargets = getPublishedVisibleWorktreeShortcutTargets()
+  if (publishedTargets) {
+    return publishedTargets
   }
   const state = useAppStore.getState()
   const visibleIds = getVisibleWorktreeIds()

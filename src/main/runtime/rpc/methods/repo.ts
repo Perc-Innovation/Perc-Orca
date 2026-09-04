@@ -15,7 +15,8 @@ const RepoSelector = z.object({
 
 const RepoPath = z.object({
   path: requiredString('Missing repo path'),
-  kind: z.enum(['git', 'folder']).optional()
+  kind: z.enum(['git', 'folder']).optional(),
+  displayName: OptionalString
 })
 
 const RepoCreate = z.object({
@@ -63,7 +64,9 @@ const ProjectGroupUpdate = z.object({
     name: OptionalString,
     isCollapsed: z.boolean().optional(),
     tabOrder: OptionalFiniteNumber,
-    color: OptionalString.nullable().optional()
+    color: OptionalString.nullable().optional(),
+    // Why: optional so older hosts strip it and older clients never send it (wire compat).
+    parentGroupId: OptionalString.nullable().optional()
   })
 })
 
@@ -190,7 +193,7 @@ export const REPO_METHODS: RpcMethod[] = [
     params: RepoPath,
     handler: async (params, context) => ({
       repo: projectRepoVisibilityForClient(
-        await context.runtime.addRepo(params.path, params.kind),
+        await context.runtime.addRepo(params.path, params.kind, undefined, params.displayName),
         context
       )
     })

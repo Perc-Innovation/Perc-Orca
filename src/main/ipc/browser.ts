@@ -2,6 +2,8 @@ import { ipcMain, webContents } from 'electron'
 import { browserCertificateTrustController, browserManager } from '../browser/browser-manager'
 import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
+import { ownsBrowserPage } from './browser-page-ownership'
+import { isWorkspaceDocPageId } from '../browser/doc-preview-guest-policy'
 import { isTrustedBrowserRenderer } from './browser-renderer-trust'
 import {
   isLiveBrowserWebContentsId,
@@ -74,6 +76,18 @@ export function registerBrowserHandlers(): void {
       }
       browserManager.attachGuestPolicies(guest)
     }
+    // Why: a second window must not steal a page another window's renderer still
+    // owns; only take over once the previous owner's guest is gone.
+    const existingRendererWebContentsId = browserManager.getRendererWebContentsId(
+      args.browserPageId
+    )
+    if (
+      existingRendererWebContentsId !== null &&
+      existingRendererWebContentsId !== event.sender.id &&
+      isLiveBrowserWebContentsId(browserManager.getGuestWebContentsId(args.browserPageId))
+    ) {
+      return false
+    }
     // Why: when Chromium swaps a guest's renderer process (navigation,
     // crash recovery), the renderer re-registers the same browserPageId
     // with a new webContentsId. The bridge must destroy the old session's
@@ -99,6 +113,42 @@ export function registerBrowserHandlers(): void {
     registerGuest(event, args, false)
   )
 
+  // Why: an SSH workspace's page may only mount on a proxy-verified partition,
+  // so the renderer asks main to prepare it and blocks the webview until then.
+  ipcMain.handle(
+    'browser:prepareSshWorkspacePartition',
+    async (
+      event,
+      args: { targetId?: unknown; browserProfileId?: unknown; skipProbe?: unknown }
+    ) => {
+      // Why (review P1-2): preparing mints bindings whose LRU eviction destroys
+      // cookie jars; only the trusted renderer naming a REGISTERED target may.
+      if (!isTrustedBrowserRenderer(event.sender)) {
+        throw new Error('browser_local_route_renderer_untrusted')
+      }
+      if (typeof args?.targetId !== 'string' || args.targetId.length === 0) {
+        throw new Error('browser_local_route_target_invalid')
+      }
+      const { getSshConnectionStore } = await import('./ssh')
+      const registered = getSshConnectionStore()
+        ?.listTargets()
+        .some((target) => target.id === args.targetId)
+      if (!registered) {
+        throw new Error('browser_local_route_target_invalid')
+      }
+      const { prepareLocalSshBrowserPartition } =
+        await import('../browser/local-ssh-browser-partitions')
+      return prepareLocalSshBrowserPartition({
+        targetId: args.targetId,
+        browserProfileId:
+          typeof args.browserProfileId === 'string' && args.browserProfileId.length > 0
+            ? args.browserProfileId
+            : 'default',
+        skipProbe: args.skipProbe === true
+      })
+    }
+  )
+
   ipcMain.handle('browser:repairGuestRegistration', (event, args: BrowserGuestRegistrationArgs) =>
     registerGuest(event, args, true)
   )
@@ -122,6 +172,19 @@ export function registerBrowserHandlers(): void {
 
   ipcMain.handle('browser:unregisterGuest', (event, args: { browserPageId: string }) => {
     if (!isTrustedBrowserRenderer(event.sender)) {
+      return false
+    }
+    // Why the whole door and not just the manager call: a document page shares this renderer, and
+    // the grab disposal below drops the intent an in-flight preview grab compares by identity —
+    // that grab would then answer ok without ever arming. A document page withdraws by revoking
+    // its grant, so its id arriving here is misaddressed however it got here.
+    if (
+      typeof args?.browserPageId !== 'string' ||
+      isWorkspaceDocPageId(args.browserPageId) ||
+      // Why the owner check: with several windows a page belongs to one renderer, and another
+      // window's unregister must not tear down a guest it never registered.
+      !ownsBrowserPage(event.sender, args.browserPageId)
+    ) {
       return false
     }
     // Why: notify bridge before unregistering so it can destroy the session
@@ -168,6 +231,9 @@ export function registerBrowserHandlers(): void {
   // on the previous tab, which is confusing.
   ipcMain.handle('browser:activeTabChanged', (event, args: { browserPageId: string }) => {
     if (!isTrustedBrowserRenderer(event.sender)) {
+      return false
+    }
+    if (!ownsBrowserPage(event.sender, args.browserPageId)) {
       return false
     }
     if (!agentBrowserBridgeRef) {

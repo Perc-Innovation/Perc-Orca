@@ -13,7 +13,8 @@ const storeMock = vi.hoisted(() => ({
   state: {
     keybindings: {},
     unifiedTabsByWorktree: {},
-    groupsByWorktree: {}
+    groupsByWorktree: {},
+    worktreesByRepo: {}
   } as Record<string, unknown>
 }))
 
@@ -49,27 +50,13 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: { children?: ReactNode }) => children
 }))
 
-vi.mock('lucide-react', () => ({
-  ArrowDown: () => null,
-  ArrowLeft: () => null,
-  ArrowRight: () => null,
-  ArrowUp: () => null,
-  Columns2: () => null,
-  ListX: () => null,
-  MessageSquare: () => null,
-  PanelBottomClose: () => null,
-  PanelLeftClose: () => null,
-  PanelRightClose: () => null,
-  Pencil: () => null,
-  Pin: () => null,
-  PinOff: () => null,
-  SquareTerminal: () => null,
-  X: () => null
-}))
+vi.mock('lucide-react', async () => (await import('./lucide-icon-stub-fixture')).stubEveryIcon())
 
 vi.mock('@/i18n/i18n', () => ({
   translate: (_key: string, fallback: string) => fallback
 }))
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('../../store', () => ({
   useAppStore: Object.assign(
@@ -151,6 +138,7 @@ function getLastSplitEvent(spy: ReturnType<typeof vi.spyOn>): CustomEvent {
 beforeEach(() => {
   storeMock.dropUnifiedTab.mockReset()
   storeMock.state = {
+    worktreesByRepo: {},
     keybindings: {},
     dropUnifiedTab: storeMock.dropUnifiedTab,
     groupsByWorktree: {
@@ -207,6 +195,13 @@ describe('requestActiveTerminalPaneSplit', () => {
 })
 
 describe('SortableTabContextMenu', () => {
+  it('does not expose a native/terminal view switch', () => {
+    const { container } = renderMenu()
+
+    expect(container.textContent).not.toContain('Switch to terminal view')
+    expect(container.textContent).not.toContain('Switch to chat view')
+  })
+
   it('dispatches split requests and activates inactive terminal tabs first', () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
     const { container, onActivate } = renderMenu({ isActive: false })
@@ -265,6 +260,7 @@ describe('SortableTabContextMenu', () => {
 
   it('hides move-tab split actions for a single-tab group', () => {
     storeMock.state = {
+      worktreesByRepo: {},
       ...storeMock.state,
       groupsByWorktree: {
         'wt-1': [

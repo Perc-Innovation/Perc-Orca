@@ -76,8 +76,14 @@ export type PtyPerPtyDeliveryDiagnostics = {
   inFlightChars: number
   pendingChars: number
   hidden: boolean
+  /** Effective drop policy: `hidden` is only "some window marked it", this is what main acts on. */
+  droppable?: boolean
   visible: boolean
   active: boolean
+  /** Whether main is stamping `background: true` on this PTY's chunks — a visible alt-screen pane drops those. */
+  backgroundStamped?: boolean
+  /** `known && !visible`: main believes no renderer can see it. The other half of `backgroundStamped`. */
+  knownHidden?: boolean
   msSinceLastSend: number | null
   msSinceLastAck: number | null
 }

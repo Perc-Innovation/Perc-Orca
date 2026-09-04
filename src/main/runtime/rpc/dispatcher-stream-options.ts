@@ -7,6 +7,8 @@ export type RpcDispatchStreamingOptions = {
   connectionId?: string
   signal?: AbortSignal
   clientId?: string
+  /** Desktop IPC originates in one renderer window; mutators reuse it for owner checks. */
+  senderWindowId?: number
   pairedDeviceId?: string
   clientKind?: 'mobile' | 'runtime'
   clientCapabilities?: readonly RuntimeCapability[]
@@ -15,5 +17,8 @@ export type RpcDispatchStreamingOptions = {
   registerBinaryStreamHandler?: (
     streamId: number,
     handler: (frame: TerminalStreamFrame) => void
+  ) => () => void
+  registerBinaryMessageHandler?: (
+    handler: (bytes: Uint8Array<ArrayBufferLike>) => void
   ) => () => void
 }

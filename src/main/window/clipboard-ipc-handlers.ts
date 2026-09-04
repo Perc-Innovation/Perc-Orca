@@ -23,7 +23,8 @@ import {
 import {
   assertClipboardImageBase64LengthWithinLimit,
   assertClipboardImageByteLengthWithinLimit,
-  assertClipboardImageDimensionsWithinLimit
+  assertClipboardImageDimensionsWithinLimit,
+  type ClipboardImageThumbnail
 } from '../../shared/clipboard-image'
 import {
   writeFileToClipboard,
@@ -37,10 +38,12 @@ import {
 } from './clipboard-remote-file-copy'
 import { saveClipboardImageBufferInRuntime } from './clipboard-runtime-image-upload'
 import { readWindowsClipboardImageFileAsPng } from './clipboard-windows-image-file'
+import { buildClipboardImageThumbnail } from './clipboard-image-thumbnail'
 import { writeClipboardTextAndVerify } from './clipboard-text-write-verify'
 import { isDashboardPopoutRenderer } from './dashboard-popout-window'
 
-let trustedClipboardRendererWebContentsId: number | null = null
+const trustedClipboardRendererWebContentsIds = new Set<number>()
+let explicitClipboardRendererTrustInitialized = false
 
 type ClipboardWriteFileRequest = {
   filePath: string
@@ -60,7 +63,17 @@ async function saveClipboardImageBufferForTarget(
 }
 
 export function setTrustedClipboardRendererWebContentsId(webContentsId: number | null): void {
-  trustedClipboardRendererWebContentsId = webContentsId
+  if (webContentsId === null) {
+    trustedClipboardRendererWebContentsIds.clear()
+    explicitClipboardRendererTrustInitialized = false
+    return
+  }
+  explicitClipboardRendererTrustInitialized = true
+  trustedClipboardRendererWebContentsIds.add(webContentsId)
+}
+
+export function clearTrustedClipboardRendererWebContentsId(webContentsId: number): void {
+  trustedClipboardRendererWebContentsIds.delete(webContentsId)
 }
 
 // Run a short-lived OS clipboard helper (PowerShell / wl-copy / xclip), feeding
@@ -85,6 +98,7 @@ export function registerClipboardHandlers(store: Store): void {
   ipcMain.removeHandler('clipboard:writeImage')
   ipcMain.removeHandler('clipboard:writeFile')
   ipcMain.removeHandler('clipboard:saveImageAsTempFile')
+  ipcMain.removeHandler('clipboard:readImageThumbnail')
 
   void cleanupExpiredRemoteClipboardFiles()
   scheduleLegacyRemoteClipboardFileCleanup()
@@ -100,6 +114,12 @@ export function registerClipboardHandlers(store: Store): void {
       return assertClipboardTextWithinLimitWithYield(clipboard.readText('selection'), options)
     }
   )
+  // Why: an unanswered paste reads as a dropped paste, so the composer probes
+  // the clipboard in memory before the (slower) save lands.
+  ipcMain.handle('clipboard:readImageThumbnail', (event): ClipboardImageThumbnail | null => {
+    assertTrustedClipboardSender(event)
+    return buildClipboardImageThumbnail(clipboard.readImage())
+  })
   // Why: terminals need to detect clipboard images to support tools like Claude
   // Code that accept image input via paste. Writes the clipboard image to a
   // temp file and returns the path, or null if the clipboard has no image.
@@ -261,8 +281,8 @@ function isTrustedClipboardRenderer(sender: WebContents): boolean {
   if (sender.isDestroyed() || sender.getType() !== 'window') {
     return false
   }
-  if (trustedClipboardRendererWebContentsId != null) {
-    return sender.id === trustedClipboardRendererWebContentsId
+  if (explicitClipboardRendererTrustInitialized) {
+    return trustedClipboardRendererWebContentsIds.has(sender.id)
   }
 
   const senderUrl = sender.getURL()

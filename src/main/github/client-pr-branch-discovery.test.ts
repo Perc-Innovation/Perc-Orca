@@ -63,7 +63,7 @@ describe('getPRForBranch', () => {
 
     expect(getOwnerRepoMock).toHaveBeenCalledWith('/repo-root', undefined)
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr?.number).toBe(42)
@@ -71,6 +71,46 @@ describe('getPRForBranch', () => {
     expect(pr?.mergeable).toBe('MERGEABLE')
     expect(pr?.prRepo).toEqual({ owner: 'acme', repo: 'widgets' })
     expect(pr?.headRepo).toEqual({ owner: 'acme', repo: 'widgets' })
+  })
+
+  it('prefers the open PR when a branch feeds several', async () => {
+    // Why: a branch shipping to base, stage and a release has several PRs at once. GitHub
+    // returns them newest-first, so taking the first one showed a closed PR while the live one
+    // stayed invisible.
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    const closedPR = (number: number, base: string) => ({
+      number,
+      title: `to ${base}`,
+      state: 'closed',
+      html_url: `u/${number}`,
+      updated_at: '2026-03-28T00:00:00Z',
+      base: { ref: base },
+      head: { ref: 'feature/test' }
+    })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify([
+        closedPR(294, 'development'),
+        closedPR(293, 'stage'),
+        { ...closedPR(292, 'RELEASE/v1.14.0'), state: 'open' }
+      ])
+    })
+
+    const pr = await getPRForBranch('/repo-root', 'refs/heads/feature/test')
+
+    expect(pr?.number).toBe(292)
+    expect(pr?.state).toBe('open')
+    // Why asserted here: the exact-number hydration knows nothing about the branch, so the
+    // siblings only reach the card if the branch lookup carries them across it.
+    expect(pr?.siblings).toEqual([
+      {
+        number: 294,
+        url: 'u/294',
+        title: 'to development',
+        baseRef: 'development',
+        state: 'closed'
+      },
+      { number: 293, url: 'u/293', title: 'to stage', baseRef: 'stage', state: 'closed' }
+    ])
   })
 
   it('resolves fork PRs from the upstream PR repo with the origin head owner', async () => {
@@ -100,7 +140,7 @@ describe('getPRForBranch', () => {
     const pr = await getPRForBranch('/repo-root', 'feature/test')
 
     expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
-      ['api', 'repos/stablyai/orca/pulls?head=fork%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/stablyai/orca/pulls?head=fork%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr).toMatchObject({
@@ -132,7 +172,7 @@ describe('getPRForBranch', () => {
 
     expect(ghExecFileAsyncMock).toHaveBeenNthCalledWith(
       1,
-      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=1'],
+      ['api', 'repos/acme/widgets/pulls?head=acme%3Afeature%2Ftest&state=all&per_page=30'],
       { cwd: '/repo-root' }
     )
     expect(pr).toMatchObject({

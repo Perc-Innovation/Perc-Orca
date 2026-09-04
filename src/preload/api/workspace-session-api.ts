@@ -7,9 +7,10 @@ import type { ExecutionHostId } from '../../shared/execution-host'
 import type {
   RemoteWorkspaceChangedEvent,
   RemoteWorkspaceConnectedClient,
-  RemoteWorkspacePatchResult,
-  RemoteWorkspaceSnapshot
+  RemoteWorkspaceObservedPatchResult,
+  RemoteWorkspaceObservedSnapshot
 } from '../../shared/remote-workspace-types'
+import type { WorkspaceSessionReleasePayload } from '../../shared/workspace-session-release'
 
 export type WorkspaceSessionApi = {
   session: {
@@ -20,6 +21,10 @@ export type WorkspaceSessionApi = {
     flush: () => Promise<void>
     readTerminalScrollback: (args: { ref: string }) => string | null
     setSync: (args: WorkspaceSessionState, hostId?: ExecutionHostId) => void
+    /** Main says another window now serves these workspaces; this one must let go of them. */
+    onWorkspacesReleased: (
+      callback: (payload: WorkspaceSessionReleasePayload) => void
+    ) => () => void
   }
   cache: {
     getGitHub: () => Promise<{
@@ -34,11 +39,13 @@ export type WorkspaceSessionApi = {
     }) => Promise<void>
   }
   remoteWorkspace: {
-    get: (args: { targetId: string }) => Promise<RemoteWorkspaceSnapshot | null>
+    get: (args: { targetId: string }) => Promise<RemoteWorkspaceObservedSnapshot | null>
     setForConnectedTargets: (args: {
       session?: WorkspaceSessionState
       hydratedTargetIds?: string[]
-    }) => Promise<{ targetId: string; result: RemoteWorkspacePatchResult }[]>
+      expectedRevisionsByTargetId: Record<string, number>
+      expectedHostObservationTokensByTargetId: Record<string, string>
+    }) => Promise<{ targetId: string; result: RemoteWorkspaceObservedPatchResult }[]>
     listEnabledConnectedTargets: () => Promise<string[]>
     listConnectedClients: (args?: {
       targetIds?: string[]

@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
 import { useAppStore } from '@/store'
+import { getAgentStatusEpochNow } from '@/lib/agent-status-epoch-clock'
 import type { Repo } from '../../../../shared/repo-types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import { computeVisibleWorktrees } from './visible-worktrees'
+import { selectEffectiveFilterRepoIds } from './project-filter-resolution'
 import { getWorktreeIdsWithLiveAgent } from '@/lib/worktree-activity-state'
 import { getSettingsFocusedExecutionHostId } from '../../../../shared/execution-host'
 import type { AppState } from '@/store/types'
@@ -44,25 +46,30 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
   const settings = useAppStore((s) => s.settings)
-  const filterRepoIds = useAppStore((s) => s.filterRepoIds)
+  const filterRepoIds = useAppStore(selectEffectiveFilterRepoIds)
   const tabsByWorktree = useAppStore((s) => (!showSleepingWorkspaces ? s.tabsByWorktree : null))
   const ptyIdsByTabId = useAppStore((s) => (!showSleepingWorkspaces ? s.ptyIdsByTabId : null))
   const browserTabsByWorktree = useAppStore((s) =>
     !showSleepingWorkspaces ? s.browserTabsByWorktree : null
   )
   const agentStatusEpoch = useAppStore((s) => (!showSleepingWorkspaces ? s.agentStatusEpoch : 0))
+  // Why: skip the clock entirely when the epoch is the opt-out sentinel, so a
+  // sleeping-workspaces board cannot evict the sample the live boards share.
+  const agentStatusNow = showSleepingWorkspaces ? 0 : getAgentStatusEpochNow(agentStatusEpoch)
   // Why snapshot on the epoch: the always-mounted drawer must not scan every
-  // agent on unrelated store writes; membership changes advance this tick.
+  // agent on unrelated store writes; membership changes advance this tick. Keep
+  // the epoch itself in the deps — two bumps in one millisecond share a sample,
+  // so `agentStatusNow` alone would not re-key the memo.
   const worktreeIdsWithLiveAgent = useMemo(() => {
     void agentStatusEpoch
     return !showSleepingWorkspaces
       ? getWorktreeIdsWithLiveAgent(
           useAppStore.getState().agentStatusByPaneKey,
           tabsByWorktree,
-          Date.now()
+          agentStatusNow
         )
       : EMPTY_WORKTREE_ID_SET
-  }, [agentStatusEpoch, showSleepingWorkspaces, tabsByWorktree])
+  }, [agentStatusEpoch, agentStatusNow, showSleepingWorkspaces, tabsByWorktree])
 
   return useMemo(() => {
     // Why: the board has its own status ordering, but visibility must match

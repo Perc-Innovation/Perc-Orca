@@ -3,8 +3,6 @@ import type {
   JiraComment,
   JiraConnectionStatus,
   JiraCreateField,
-  JiraCreateIssueArgs,
-  JiraCreateIssueResult,
   JiraIssue,
   JiraIssueFilter,
   JiraIssueType,
@@ -15,7 +13,6 @@ import type {
   JiraProjectStatusOrder,
   JiraSiteSelection,
   JiraTransition,
-  JiraUser,
   JiraViewer
 } from '../../../shared/jira-types'
 import { searchLocalJiraIssues } from './local-jira-search-cancellation'
@@ -26,6 +23,11 @@ import { getJiraRuntimeTarget, type RuntimeJiraSettings } from './runtime-jira-t
 
 export { jiraLookupIssueSummary, jiraReadStatus } from './runtime-jira-summary-client'
 export { jiraListSavedFilters } from './runtime-jira-saved-filters-client'
+export {
+  jiraCreateIssue,
+  jiraListAssignableUsers,
+  jiraSearchUsers
+} from './runtime-jira-user-fields-client'
 export type { RuntimeJiraSettings } from './runtime-jira-target'
 
 export type JiraConnectResult = { ok: true; viewer: JiraViewer } | { ok: false; error: string }
@@ -156,16 +158,6 @@ export async function jiraGetIssue(
     : window.api.jira.getIssue(args)
 }
 
-export async function jiraCreateIssue(
-  settings: RuntimeJiraSettings,
-  args: JiraCreateIssueArgs
-): Promise<JiraCreateIssueResult> {
-  const target = getJiraRuntimeTarget(settings)
-  return target.kind === 'environment'
-    ? callRuntimeRpc<JiraCreateIssueResult>(target, 'jira.createIssue', args, { timeoutMs: 30_000 })
-    : window.api.jira.createIssue(args)
-}
-
 export async function jiraUpdateIssue(
   settings: RuntimeJiraSettings,
   key: string,
@@ -265,22 +257,7 @@ export async function jiraListPriorities(
     : window.api.jira.listPriorities(siteId ? { siteId } : undefined)
 }
 
-export async function jiraListAssignableUsers(
-  settings: RuntimeJiraSettings,
-  key: string,
-  query?: string,
-  siteId?: string | null
-): Promise<JiraUser[]> {
-  if (!isRuntimeProviderSearchQueryWithinLimit(query)) {
-    return []
-  }
-  const target = getJiraRuntimeTarget(settings)
-  const args = { key, query, siteId: siteId ?? undefined }
-  return target.kind === 'environment'
-    ? callRuntimeRpc<JiraUser[]>(target, 'jira.listAssignableUsers', args, { timeoutMs: 30_000 })
-    : window.api.jira.listAssignableUsers(args)
-}
-
+/** Lists users assignable to an existing issue, via the active runtime. */
 export async function jiraListTransitions(
   settings: RuntimeJiraSettings,
   key: string,

@@ -12,6 +12,11 @@ import {
   type RestPullRequest
 } from './pull-request-lookup-data'
 import { getPRByNumber } from './pr-number-lookup'
+// Why more than one: a branch can feed several PRs at once (the repo base, stage, a release),
+// and GitHub lists them newest first — asking for one hid the live PR behind a newer closed one.
+// High enough for a long-lived branch's closed PRs, bounded so retries never paginate unchecked.
+const MAX_BRANCH_PRS = 30
+
 export async function getRestPRForBranch(
   prRepo: GitHubApiRepository,
   headOwner: string,
@@ -20,12 +25,33 @@ export async function getRestPRForBranch(
 ): Promise<PullRequestLookupData | null> {
   const head = encodeURIComponent(`${headOwner}:${branchName}`)
   const { stdout } = await ghExecFileAsync(
-    ['api', `repos/${prRepo.owner}/${prRepo.repo}/pulls?head=${head}&state=all&per_page=1`],
+    [
+      'api',
+      `repos/${prRepo.owner}/${prRepo.repo}/pulls?head=${head}&state=all&per_page=${MAX_BRANCH_PRS}`
+    ],
     { ...ghOptions, ...githubHostExecOptions(prRepo) }
   )
   const list = JSON.parse(stdout) as RestPullRequest[]
-  const pr = list[0]
-  return pr ? mapRestPullRequest(pr) : null
+  const pr = pickPrimaryPRForBranch(list)
+  if (!pr) {
+    return null
+  }
+  const others = list.filter((candidate) => candidate.number !== pr.number)
+  return {
+    ...mapRestPullRequest(pr),
+    ...(others.length > 0 ? { siblings: others } : {})
+  }
+}
+
+/**
+ * Which of a branch's PRs represents it: what the user can still act on wins — open, then
+ * merged, and only with nothing live the newest. Picking a merged one does not show it by
+ * itself; `hideMergedImplicitPR` still decides whether an implicit lookup may surface it.
+ */
+function pickPrimaryPRForBranch(list: readonly RestPullRequest[]): RestPullRequest | undefined {
+  return (
+    list.find((pr) => pr.state === 'open') ?? list.find((pr) => Boolean(pr.merged_at)) ?? list[0]
+  )
 }
 
 export async function getFallbackPRListForBranch(
@@ -64,10 +90,19 @@ export async function hydrateBranchLookupWithExactPR(
     return null
   }
   try {
-    return (
-      (await getPRByNumber(ownerRepo, branchData.number, ghOptions, executionScope, branchData)) ??
+    const exact = await getPRByNumber(
+      ownerRepo,
+      branchData.number,
+      ghOptions,
+      executionScope,
       branchData
     )
+    if (!exact) {
+      return branchData
+    }
+    // Why: the exact detail knows nothing about the branch, so the siblings only exist on the
+    // branch lookup and have to be carried over or they are lost here.
+    return branchData.siblings ? { ...exact, siblings: branchData.siblings } : exact
   } catch {
     return branchData
   }

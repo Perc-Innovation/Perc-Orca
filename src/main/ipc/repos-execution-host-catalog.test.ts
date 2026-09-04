@@ -26,6 +26,7 @@ vi.mock('../providers/ssh-filesystem-dispatch', () =>
   moduleMocks.sshFilesystemDispatchModuleMock(reposMocks)
 )
 vi.mock('./ssh', () => moduleMocks.sshModuleMock(reposMocks))
+vi.mock('../ssh/ssh-target-registry', () => moduleMocks.sshModuleMock(reposMocks))
 
 import { registerRepoHandlers } from './repos'
 import { clearGitCapabilityStateForTests } from '../git/git-capability-state'
@@ -53,7 +54,7 @@ describe('projectGroups IPC validation', () => {
     mockWindow.webContents.send.mockReset()
     resetProjectGroupMocks(reposMocks, { isGitRepo, getGitRepoRoot })
 
-    registerRepoHandlers(mockWindow as never, mockStore as never)
+    registerRepoHandlers(mockWindow as never, mockStore as never, {} as never)
   })
 
   it('rejects malformed local project group create arguments before persistence', () => {
@@ -195,5 +196,41 @@ describe('projectGroups IPC validation', () => {
     ).toThrow('invalid_project_group_update_args')
 
     expect(mockStore.updateProjectGroup).not.toHaveBeenCalled()
+  })
+
+  it('forwards parentGroupId re-parent updates to persistence', () => {
+    mockStore.updateProjectGroup.mockReturnValue({ id: 'group-1', parentGroupId: 'group-2' })
+
+    expect(
+      handlers.get('projectGroups:update')!(null, {
+        groupId: 'group-1',
+        updates: { parentGroupId: 'group-2' }
+      })
+    ).toEqual({ id: 'group-1', parentGroupId: 'group-2' })
+    expect(mockStore.updateProjectGroup).toHaveBeenCalledWith('group-1', {
+      parentGroupId: 'group-2'
+    })
+
+    handlers.get('projectGroups:update')!(null, {
+      groupId: 'group-1',
+      updates: { parentGroupId: null }
+    })
+    expect(mockStore.updateProjectGroup).toHaveBeenLastCalledWith('group-1', {
+      parentGroupId: null
+    })
+  })
+
+  it('surfaces persistence nesting rejections to the caller', () => {
+    mockStore.updateProjectGroup.mockImplementation(() => {
+      throw new Error('A project group cannot be moved into itself')
+    })
+
+    expect(() =>
+      handlers.get('projectGroups:update')!(null, {
+        groupId: 'group-1',
+        updates: { parentGroupId: 'group-1' }
+      })
+    ).toThrow('A project group cannot be moved into itself')
+    expect(mockWindow.webContents.send).not.toHaveBeenCalled()
   })
 })
