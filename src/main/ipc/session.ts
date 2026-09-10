@@ -1,3 +1,8 @@
+import {
+  retireTerminalTabFromWorkspaceSession,
+  type TerminalTabRetirementArgs,
+  type TerminalTabRetirementResult
+} from './session-terminal-tab-retirement'
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import type { Store } from '../persistence'
 import type { WindowScope } from '../../shared/window-scope'
@@ -62,6 +67,16 @@ export function registerSessionHandlers(store: Store): void {
     const owned = ownedSessionKeysForSender(store, event, store.getWorkspaceSession(hostId))
     store.patchWorkspaceSession(args, hostId, owned)
   })
+
+  // Why a channel of its own: a user close has to outrank host-authoritative membership, and the
+  // renderer's session write cannot say "the user closed this" — it only omits the row.
+  ipcMain.handle(
+    'session:retireTerminalTab',
+    (event, args: TerminalTabRetirementArgs): TerminalTabRetirementResult => {
+      const owned = ownedSessionKeysForSender(store, event, store.getWorkspaceSession(args.hostId))
+      return retireTerminalTabFromWorkspaceSession(store, args, owned)
+    }
+  )
 
   ipcMain.handle('session:flush', () => {
     // Why: durable lifecycle RPCs must propagate disk failures instead of

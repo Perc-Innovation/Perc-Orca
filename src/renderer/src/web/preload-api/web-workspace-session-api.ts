@@ -62,6 +62,8 @@ export function createWebWorkspaceSessionApi(): Partial<PreloadApi> {
       },
       // localStorage writes synchronously, so there is no deferred web flush.
       flush: async () => {},
+      // The web session has no host-authoritative membership; its own write is the close.
+      retireTerminalTab: async () => ({ retired: false }),
       readTerminalScrollback: () => null,
       setSync: (session, hostId) => {
         writeJson(sessionStorageKeyForHost(hostId), sanitizeWebRuntimeWorkspaceSession(session))

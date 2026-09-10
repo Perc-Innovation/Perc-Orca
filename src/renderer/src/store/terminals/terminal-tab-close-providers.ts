@@ -1,6 +1,7 @@
 import type { AppState } from '../types'
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { resolveTerminalWorktreeRoute } from '@/lib/terminal-worktree-route'
+import { buildHostIdByWorktreeId } from '@/lib/workspace-session-host-persistence'
 import {
   classifyTerminalRetirementWorktree,
   type TerminalTabRetirementPlan
@@ -40,6 +41,23 @@ export function startTerminalTabProviderRetirement({
         )
       )
     }
+  }
+  // Why regardless of PTY liveness: the durable de-persist used to ride the PTY exit, and a shell
+  // that already exited (or was re-spawned under another id) never delivers one — main then put
+  // the row back on every launch. Skipped when main drove the close: it already retired the row.
+  if (!localPtyTeardownOwnedExternally && retirementPlan.worktreeId) {
+    const worktreeId = retirementPlan.worktreeId
+    const hostId = buildHostIdByWorktreeId(state)[worktreeId]
+    // Why optional: an older preload has no such bridge, and a paired web client no such authority.
+    void globalThis.window?.api?.session
+      ?.retireTerminalTab?.({ worktreeId, tabId, ...(hostId ? { hostId } : {}) })
+      ?.catch((error: unknown) => {
+        console.warn('[terminal-retirement] durable retirement failed', {
+          tabId,
+          worktreeKind: classifyTerminalRetirementWorktree(worktreeId),
+          error
+        })
+      })
   }
   if (retirementPlan.unroutablePtyIds.length > 0) {
     // Log the worktree shape, never its id, because worktree ids embed absolute paths.
