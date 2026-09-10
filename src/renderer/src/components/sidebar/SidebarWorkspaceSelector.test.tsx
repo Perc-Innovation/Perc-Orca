@@ -33,6 +33,7 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuSeparator: () => <hr />,
   // A div, not a button: the item nests the open-in-window button, and a button cannot.
+  // Mirrors the Radix item: a pointerup it saw no pointerdown for synthesizes a click.
   DropdownMenuItem: ({
     children,
     onSelect,
@@ -40,11 +41,27 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   }: {
     children: React.ReactNode
     onSelect?: () => void
-  }) => (
-    <div role="menuitem" onClick={onSelect} {...rest}>
-      {children}
-    </div>
-  )
+  }) => {
+    const pointerDown = React.useRef(false)
+    return (
+      <div
+        role="menuitem"
+        onPointerDown={() => {
+          pointerDown.current = true
+        }}
+        onPointerUp={(event) => {
+          if (!pointerDown.current) {
+            event.currentTarget.click()
+          }
+          pointerDown.current = false
+        }}
+        onClick={onSelect}
+        {...rest}
+      >
+        {children}
+      </div>
+    )
+  }
 }))
 
 import SidebarWorkspaceSelector from './SidebarWorkspaceSelector'
@@ -86,6 +103,14 @@ function option(id: string): HTMLElement {
 
 function openWindowButton(id: string): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>(`[data-workspace-open-window="${id}"]`)
+}
+
+/** A real press: pointerdown, pointerup, click — the sequence the Radix item reacts to. */
+function press(element: HTMLElement): void {
+  for (const type of ['pointerdown', 'pointerup']) {
+    element.dispatchEvent(new Event(type, { bubbles: true }))
+  }
+  element.click()
 }
 
 beforeEach(() => {
@@ -153,8 +178,12 @@ describe('SidebarWorkspaceSelector', () => {
   it('opens the workspace in a new window without switching this one', () => {
     render()
 
+    const button = openWindowButton('cce')
+    if (!button) {
+      throw new Error('open-window button not rendered')
+    }
     act(() => {
-      openWindowButton('cce')?.click()
+      press(button)
     })
 
     expect(mocks.openProjectGroupWindow).toHaveBeenCalledWith('cce')

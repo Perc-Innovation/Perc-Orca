@@ -15,6 +15,10 @@ import type { WorkspaceOption } from './workspace-selection'
 const UNGROUPED_LABEL = () =>
   translate('auto.components.sidebar.SidebarWorkspaceSelector.ungrouped', 'No workspace')
 
+function stopEvent(event: React.SyntheticEvent): void {
+  event.stopPropagation()
+}
+
 function optionLabel(option: WorkspaceOption): string {
   return option.kind === 'group' ? option.name : UNGROUPED_LABEL()
 }
@@ -34,9 +38,7 @@ const SidebarWorkspaceSelector = React.memo(function SidebarWorkspaceSelector() 
   const [open, setOpen] = useState(false)
   const onSelect = useCallback((option: WorkspaceOption) => select(option), [select])
   const onOpenWindow = useCallback(
-    (event: React.MouseEvent, groupId: string) => {
-      // Why: the button sits inside the item; let it reach the item and the window switches too.
-      event.stopPropagation()
+    (groupId: string) => {
       setOpen(false)
       void openProjectGroupWindow(groupId)
     },
@@ -113,8 +115,14 @@ const SidebarWorkspaceSelector = React.memo(function SidebarWorkspaceSelector() 
                       'auto.components.sidebar.SidebarWorkspaceSelector.openInNewWindowTitle',
                       'Open in new window'
                     )}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => onOpenWindow(event, option.id)}
+                    // Why all three: the Radix item synthesizes its own click on a pointerup it saw
+                    // no pointerdown for, so stopping only one of them still switches the workspace.
+                    onPointerDown={stopEvent}
+                    onPointerUp={stopEvent}
+                    onClick={(event) => {
+                      stopEvent(event)
+                      onOpenWindow(option.id)
+                    }}
                     className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
                   >
                     <AppWindow className="size-3.5" />
