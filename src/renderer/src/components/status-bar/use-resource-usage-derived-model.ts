@@ -3,6 +3,7 @@ import type { AppState } from '../../store/types'
 import type { MemorySnapshot } from '../../../../shared/process-stats-types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared/execution-host'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 import { mergeSnapshotAndSessions } from './mergeSnapshotAndSessions'
 import type { DaemonSession } from './resource-usage-merge-types'
 import type { ResourceSessionBindingInputs } from './resource-session-bindings'
@@ -25,6 +26,7 @@ export function useResourceUsageDerivedModel({
   resourceSessionBindings,
   runtimePaneTitlesByTabId,
   repos,
+  folderWorkspaces,
   allWorktrees,
   browserTabsByWorktree,
   workspaceSessionReady,
@@ -40,6 +42,7 @@ export function useResourceUsageDerivedModel({
   resourceSessionBindings: ResourceSessionBindingInputs
   runtimePaneTitlesByTabId: AppState['runtimePaneTitlesByTabId']
   repos: AppState['repos']
+  folderWorkspaces: AppState['folderWorkspaces']
   allWorktrees: Worktree[]
   browserTabsByWorktree: AppState['browserTabsByWorktree']
   workspaceSessionReady: boolean
@@ -59,6 +62,18 @@ export function useResourceUsageDerivedModel({
     }
     return map
   }, [repos])
+
+  // Why: a folder workspace's session key names no repo and no path, so without this it renders as `folder:<uuid>`.
+  const folderWorkspaceNameByKey = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const workspace of folderWorkspaces) {
+      const name = workspace.name?.trim()
+      if (name) {
+        map.set(folderWorkspaceKey(workspace.id), name)
+      }
+    }
+    return map
+  }, [folderWorkspaces])
 
   // Why: non-null connectionId is the only honest "remote" signal (SSH PTYs run remote); build from the store, not a missing memory sample.
   const repoConnectionIdById = useMemo(() => {
@@ -98,7 +113,8 @@ export function useResourceUsageDerivedModel({
             repoConnectionIdById,
             repoRuntimeScopedById,
             browserTabsByWorktree,
-            worktreeById
+            worktreeById,
+            folderWorkspaceNameByKey
           })
         : [],
     [
@@ -108,6 +124,7 @@ export function useResourceUsageDerivedModel({
       resourceSessionBindings,
       runtimePaneTitlesByTabId,
       repoDisplayNameById,
+      folderWorkspaceNameByKey,
       repoConnectionIdById,
       repoRuntimeScopedById,
       browserTabsByWorktree,

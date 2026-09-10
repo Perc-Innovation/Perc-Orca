@@ -10,6 +10,7 @@ import {
   getResourceUsageBrowserTabsByWorktree,
   getResourceUsageDeferredSshSessionIdsByTabId,
   getResourceUsagePtyIdsByTabId,
+  getResourceUsageFolderWorkspaces,
   getResourceUsageRepos,
   getResourceUsageRuntimePaneTitlesByTabId,
   getResourceUsageTerminalLayoutsByTabId,
@@ -67,6 +68,7 @@ export function useResourceUsageStatusController() {
     getResourceUsageRuntimePaneTitlesByTabId(s, open)
   )
   const repos = useAppStore((s) => getResourceUsageRepos(s, open))
+  const folderWorkspaces = useAppStore((s) => getResourceUsageFolderWorkspaces(s, open))
   const allWorktrees = useAppStore((s) => getResourceUsageAllWorktrees(s, open))
   const tabsByWorktree = useAppStore((s) => getResourceUsageTabsByWorktree(s, open))
   const browserTabsByWorktree = useAppStore((s) => getResourceUsageBrowserTabsByWorktree(s, open))
@@ -185,6 +187,7 @@ export function useResourceUsageStatusController() {
     resourceSessionBindings,
     runtimePaneTitlesByTabId,
     repos,
+    folderWorkspaces,
     allWorktrees,
     browserTabsByWorktree,
     workspaceSessionReady,

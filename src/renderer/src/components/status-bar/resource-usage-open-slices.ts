@@ -59,6 +59,15 @@ export function getResourceUsageRepos(
   return open ? state.repos : EMPTY_REPOS
 }
 
+const EMPTY_FOLDER_WORKSPACES: AppState['folderWorkspaces'] = []
+
+export function getResourceUsageFolderWorkspaces(
+  state: Pick<AppState, 'folderWorkspaces'>,
+  open: boolean
+): AppState['folderWorkspaces'] {
+  return open ? state.folderWorkspaces : EMPTY_FOLDER_WORKSPACES
+}
+
 export function getResourceUsageAllWorktrees(
   state: Pick<AppState, 'worktreesByRepo'>,
   open: boolean

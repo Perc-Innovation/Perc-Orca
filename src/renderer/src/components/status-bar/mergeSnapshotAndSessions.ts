@@ -22,12 +22,7 @@ import type {
   SessionMemory,
   WorktreeMemory
 } from '../../../../shared/process-stats-types'
-import { parsePtySessionId } from '../../../../shared/pty-session-id-format'
 import { parsePaneKey as parseStablePaneKey } from '../../../../shared/stable-pane-id'
-import {
-  getRepoIdFromWorktreeId,
-  getWorktreePathBasenameFromId
-} from '../../../../shared/worktree/id'
 import type {
   DaemonSession,
   MergeContext,
@@ -36,16 +31,14 @@ import type {
   UnifiedWorktreeRow
 } from './resource-usage-merge-types'
 import { buildResourceSessionBindingIndex } from './resource-session-bindings'
+import {
+  deriveRepoIdFromWorktreeId,
+  deriveWorktreeNameFromWorktreeId,
+  folderWorkspaceName,
+  resolveDaemonSessionWorktreeId
+} from './resource-usage-workspace-naming'
 
 // ─── Helpers ────────────────────────────────────────────────────────
-
-function deriveRepoIdFromWorktreeId(worktreeId: string): string {
-  return getRepoIdFromWorktreeId(worktreeId)
-}
-
-function deriveWorktreeNameFromWorktreeId(worktreeId: string): string {
-  return getWorktreePathBasenameFromId(worktreeId) ?? worktreeId
-}
 
 function shortCwd(cwd: string): string {
   if (!cwd) {
@@ -202,7 +195,8 @@ export function mergeSnapshotAndSessions(
       if (isRuntimeScopedRepo(wt.repoId)) {
         continue
       }
-      const repo = ensureRepo(wt.repoId, wt.repoName)
+      const folderName = folderWorkspaceName(ctx, wt.worktreeId)
+      const repo = ensureRepo(wt.repoId, folderName ?? wt.repoName)
       const sessions: UnifiedSessionRow[] = wt.sessions.map((s) => {
         seenSessionIds.add(s.sessionId)
         const tabId = index.ptyIdToTabId.get(s.sessionId) ?? null
@@ -221,9 +215,9 @@ export function mergeSnapshotAndSessions(
       })
       repo.worktrees.push({
         worktreeId: wt.worktreeId,
-        worktreeName: wt.worktreeName,
+        worktreeName: folderName ?? wt.worktreeName,
         repoId: wt.repoId,
-        repoName: wt.repoName,
+        repoName: folderName ?? wt.repoName,
         cpu: wt.cpu,
         memory: wt.memory,
         history: wt.history,
@@ -248,7 +242,7 @@ export function mergeSnapshotAndSessions(
 
     // 2b: @@-parse — recover worktreeId from the minted session id format.
     if (!worktreeId) {
-      worktreeId = parsePtySessionId(session.id).worktreeId
+      worktreeId = resolveDaemonSessionWorktreeId(session.id)
     }
 
     // 2c: unattributed bucket.
@@ -257,12 +251,13 @@ export function mergeSnapshotAndSessions(
     const finalRepoId = isUnattributed
       ? UNATTRIBUTED_REPO_ID
       : deriveRepoIdFromWorktreeId(finalWorktreeId)
+    const folderName = isUnattributed ? undefined : folderWorkspaceName(ctx, finalWorktreeId)
     const finalRepoName = isUnattributed
       ? UNATTRIBUTED_REPO_NAME
-      : ctx.repoDisplayNameById.get(finalRepoId) || finalRepoId
+      : (folderName ?? (ctx.repoDisplayNameById.get(finalRepoId) || finalRepoId))
     const finalWorktreeName = isUnattributed
       ? session.title || session.id.slice(0, 12)
-      : deriveWorktreeNameFromWorktreeId(finalWorktreeId)
+      : (folderName ?? deriveWorktreeNameFromWorktreeId(finalWorktreeId))
 
     // Why: the current daemon inputs are local/SSH only; this guard prevents a
     // future local daemon row accidentally exposing kill actions for runtime PTYs.
