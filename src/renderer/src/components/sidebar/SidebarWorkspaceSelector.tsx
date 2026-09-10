@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react'
-import { Check, ChevronDown, FolderTree, Layers } from 'lucide-react'
+import React, { useCallback, useState } from 'react'
+import { AppWindow, Check, ChevronDown, FolderTree, Layers } from 'lucide-react'
+import { useAppStore } from '@/store'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,10 @@ import type { WorkspaceOption } from './workspace-selection'
 const UNGROUPED_LABEL = () =>
   translate('auto.components.sidebar.SidebarWorkspaceSelector.ungrouped', 'No workspace')
 
+function stopEvent(event: React.SyntheticEvent): void {
+  event.stopPropagation()
+}
+
 function optionLabel(option: WorkspaceOption): string {
   return option.kind === 'group' ? option.name : UNGROUPED_LABEL()
 }
@@ -27,7 +32,18 @@ function optionLabel(option: WorkspaceOption): string {
  */
 const SidebarWorkspaceSelector = React.memo(function SidebarWorkspaceSelector() {
   const { options, option: active, narrowed, custom, select } = useWorkspaceSelection()
+  // Why: launch-time flag from main; with multi-window off nothing could open a second window.
+  const scopedWindowsEnabled = useAppStore((s) => s.scopedWindowsEnabled)
+  const openProjectGroupWindow = useAppStore((s) => s.openProjectGroupWindow)
+  const [open, setOpen] = useState(false)
   const onSelect = useCallback((option: WorkspaceOption) => select(option), [select])
+  const onOpenWindow = useCallback(
+    (groupId: string) => {
+      setOpen(false)
+      void openProjectGroupWindow(groupId)
+    },
+    [openProjectGroupWindow]
+  )
 
   if (options.length === 0) {
     return null
@@ -39,7 +55,7 @@ const SidebarWorkspaceSelector = React.memo(function SidebarWorkspaceSelector() 
       : translate('auto.components.sidebar.SidebarWorkspaceSelector.all', 'All workspaces')
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -85,12 +101,33 @@ const SidebarWorkspaceSelector = React.memo(function SidebarWorkspaceSelector() 
                 ) : (
                   <span className="size-3.5 shrink-0" />
                 )}
-                <span className="min-w-0 truncate">{optionLabel(option)}</span>
-                <span className="ml-auto pl-3 text-[11px] text-muted-foreground">
-                  {option.kind === 'group' && option.workspaceCount > 0
-                    ? `${option.repoCount} · ${option.workspaceCount}`
-                    : option.repoCount}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{optionLabel(option)}</span>
+                {scopedWindowsEnabled && option.kind === 'group' ? (
+                  <button
+                    type="button"
+                    data-workspace-open-window={option.id}
+                    aria-label={translate(
+                      'auto.components.sidebar.SidebarWorkspaceSelector.openInNewWindow',
+                      'Open {{name}} in new window',
+                      { name: option.name }
+                    )}
+                    title={translate(
+                      'auto.components.sidebar.SidebarWorkspaceSelector.openInNewWindowTitle',
+                      'Open in new window'
+                    )}
+                    // Why all three: the Radix item synthesizes its own click on a pointerup it saw
+                    // no pointerdown for, so stopping only one of them still switches the workspace.
+                    onPointerDown={stopEvent}
+                    onPointerUp={stopEvent}
+                    onClick={(event) => {
+                      stopEvent(event)
+                      onOpenWindow(option.id)
+                    }}
+                    className="shrink-0 rounded p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  >
+                    <AppWindow className="size-3.5" />
+                  </button>
+                ) : null}
               </DropdownMenuItem>
             </React.Fragment>
           )

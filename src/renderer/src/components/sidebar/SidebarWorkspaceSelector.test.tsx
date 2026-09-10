@@ -12,11 +12,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
   setFilterGroupIds: vi.fn(),
-  setFilterRepoIds: vi.fn()
+  setFilterRepoIds: vi.fn(),
+  openProjectGroupWindow: vi.fn(async () => ({ status: 'opened' })),
+  focusWorkspaceOnSwitch: vi.fn()
 }))
 
 vi.mock('@/store', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) => selector(mocks.state)
+}))
+
+// The focus that follows a switch reads the live store; it has its own test.
+vi.mock('./workspace-switch-focus', () => ({
+  focusWorkspaceOnSwitch: mocks.focusWorkspaceOnSwitch
 }))
 
 // Radix portals its content behind a trigger click; render both inline so the items are assertable.
@@ -25,6 +32,8 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuSeparator: () => <hr />,
+  // A div, not a button: the item nests the open-in-window button, and a button cannot.
+  // Mirrors the Radix item: a pointerup it saw no pointerdown for synthesizes a click.
   DropdownMenuItem: ({
     children,
     onSelect,
@@ -32,11 +41,27 @@ vi.mock('@/components/ui/dropdown-menu', () => ({
   }: {
     children: React.ReactNode
     onSelect?: () => void
-  }) => (
-    <button type="button" onClick={onSelect} {...rest}>
-      {children}
-    </button>
-  )
+  }) => {
+    const pointerDown = React.useRef(false)
+    return (
+      <div
+        role="menuitem"
+        onPointerDown={() => {
+          pointerDown.current = true
+        }}
+        onPointerUp={(event) => {
+          if (!pointerDown.current) {
+            event.currentTarget.click()
+          }
+          pointerDown.current = false
+        }}
+        onClick={onSelect}
+        {...rest}
+      >
+        {children}
+      </div>
+    )
+  }
 }))
 
 import SidebarWorkspaceSelector from './SidebarWorkspaceSelector'
@@ -59,6 +84,8 @@ function setState(overrides: Record<string, unknown> = {}): void {
     filterGroupIds: ['perc'],
     setFilterRepoIds: mocks.setFilterRepoIds,
     setFilterGroupIds: mocks.setFilterGroupIds,
+    scopedWindowsEnabled: true,
+    openProjectGroupWindow: mocks.openProjectGroupWindow,
     ...overrides
   }
 }
@@ -66,17 +93,33 @@ function setState(overrides: Record<string, unknown> = {}): void {
 let container: HTMLDivElement
 let root: Root
 
-function option(id: string): HTMLButtonElement {
-  const element = container.querySelector<HTMLButtonElement>(`[data-workspace-option="${id}"]`)
+function option(id: string): HTMLElement {
+  const element = container.querySelector<HTMLElement>(`[data-workspace-option="${id}"]`)
   if (!element) {
     throw new Error(`workspace option ${id} not rendered`)
   }
   return element
 }
 
+function openWindowButton(id: string): HTMLButtonElement | null {
+  return container.querySelector<HTMLButtonElement>(`[data-workspace-open-window="${id}"]`)
+}
+
+/** A real press: pointerdown, pointerup, click — the sequence the Radix item reacts to. */
+function press(element: HTMLElement): void {
+  for (const type of ['pointerdown', 'pointerup']) {
+    element.dispatchEvent(new Event(type, { bubbles: true }))
+  }
+  element.click()
+}
+
 beforeEach(() => {
+  // Why: the new-window button closes the menu, a React state update act() has to own.
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
   mocks.setFilterGroupIds.mockClear()
   mocks.setFilterRepoIds.mockClear()
+  mocks.openProjectGroupWindow.mockClear()
+  mocks.focusWorkspaceOnSwitch.mockClear()
   setState()
   container = document.createElement('div')
   document.body.append(container)
@@ -111,7 +154,14 @@ describe('SidebarWorkspaceSelector', () => {
     expect(option('ungrouped').textContent).toContain('No workspace')
   })
 
-  it('switches the window filter to the chosen workspace', () => {
+  it('lists workspaces by name alone, without project counts', () => {
+    render()
+
+    expect(option('perc').textContent).toBe('Perc')
+    expect(option('ungrouped').textContent).toBe('No workspace')
+  })
+
+  it('switches the window filter to the chosen workspace and refocuses inside it', () => {
     render()
 
     act(() => {
@@ -120,6 +170,38 @@ describe('SidebarWorkspaceSelector', () => {
 
     expect(mocks.setFilterGroupIds).toHaveBeenCalledWith(['cce'])
     expect(mocks.setFilterRepoIds).toHaveBeenCalledWith([])
+    expect(mocks.focusWorkspaceOnSwitch).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'group', id: 'cce' })
+    )
+  })
+
+  it('opens the workspace in a new window without switching this one', () => {
+    render()
+
+    const button = openWindowButton('cce')
+    if (!button) {
+      throw new Error('open-window button not rendered')
+    }
+    act(() => {
+      press(button)
+    })
+
+    expect(mocks.openProjectGroupWindow).toHaveBeenCalledWith('cce')
+    expect(mocks.setFilterGroupIds).not.toHaveBeenCalled()
+    expect(mocks.focusWorkspaceOnSwitch).not.toHaveBeenCalled()
+  })
+
+  it('offers no new window for the ungrouped projects, which no window can scope to', () => {
+    render()
+
+    expect(openWindowButton('ungrouped')).toBeNull()
+  })
+
+  it('hides the new-window button when multi-window is off', () => {
+    setState({ scopedWindowsEnabled: false })
+    render()
+
+    expect(openWindowButton('cce')).toBeNull()
   })
 
   it('switches to the ungrouped projects by naming them, since no group can', () => {

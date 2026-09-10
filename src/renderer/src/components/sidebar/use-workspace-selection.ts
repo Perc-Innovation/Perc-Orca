@@ -7,6 +7,7 @@ import {
   type ActiveWorkspace,
   type WorkspaceOption
 } from './workspace-selection'
+import { focusWorkspaceOnSwitch } from './workspace-switch-focus'
 
 export type WorkspaceSelection = ActiveWorkspace & {
   options: WorkspaceOption[]
@@ -17,18 +18,23 @@ export type WorkspaceSelection = ActiveWorkspace & {
 export function useWorkspaceSelection(): WorkspaceSelection {
   const repos = useAppStore((s) => s.repos)
   const projectGroups = useAppStore((s) => s.projectGroups)
-  const folderWorkspaces = useAppStore((s) => s.folderWorkspaces)
   const filterRepoIds = useAppStore((s) => s.filterRepoIds)
   const filterGroupIds = useAppStore((s) => s.filterGroupIds)
   const setFilterRepoIds = useAppStore((s) => s.setFilterRepoIds)
   const setFilterGroupIds = useAppStore((s) => s.setFilterGroupIds)
 
   const options = useMemo(
-    () => buildWorkspaceOptions({ repos, projectGroups, folderWorkspaces }),
-    [repos, projectGroups, folderWorkspaces]
+    () => buildWorkspaceOptions({ repos, projectGroups }),
+    [repos, projectGroups]
   )
   const active = useMemo(
-    () => resolveActiveWorkspace({ options, projectGroups, filterGroupIds, filterRepoIds }),
+    () =>
+      resolveActiveWorkspace({
+        options,
+        projectGroups,
+        filterGroupIds,
+        filterRepoIds
+      }),
     [options, projectGroups, filterGroupIds, filterRepoIds]
   )
   const select = useCallback(
@@ -36,6 +42,8 @@ export function useWorkspaceSelection(): WorkspaceSelection {
       const next = workspaceSelectionFilter(option)
       setFilterGroupIds(next.filterGroupIds)
       setFilterRepoIds(next.filterRepoIds)
+      // Why after the filter: the activation reveals its sidebar row, which has to be listed first.
+      focusWorkspaceOnSwitch(option)
     },
     [setFilterGroupIds, setFilterRepoIds]
   )

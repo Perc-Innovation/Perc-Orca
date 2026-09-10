@@ -9,7 +9,12 @@ import {
 
 const GROUPS = [
   { id: 'perc', parentGroupId: null, name: 'Perc', tabOrder: 0 },
-  { id: 'perc-tools', parentGroupId: 'perc', name: 'Perc (Tools)', tabOrder: 1 },
+  {
+    id: 'perc-tools',
+    parentGroupId: 'perc',
+    name: 'Perc (Tools)',
+    tabOrder: 1
+  },
   { id: 'cce', parentGroupId: null, name: 'CCE', tabOrder: 2 }
 ]
 
@@ -25,11 +30,7 @@ const FOLDER_WORKSPACES = [
   { id: 'terminals', projectGroupId: 'cce' }
 ]
 
-const OPTIONS = buildWorkspaceOptions({
-  repos: REPOS,
-  projectGroups: GROUPS,
-  folderWorkspaces: FOLDER_WORKSPACES
-})
+const OPTIONS = buildWorkspaceOptions({ repos: REPOS, projectGroups: GROUPS })
 
 function activeWith(filterGroupIds: string[], filterRepoIds: string[] = []) {
   return resolveActiveWorkspace({
@@ -41,25 +42,25 @@ function activeWith(filterGroupIds: string[], filterRepoIds: string[] = []) {
 }
 
 describe('buildWorkspaceOptions', () => {
-  it('lists root groups in sidebar order and counts their whole subtree', () => {
+  it('lists root groups in sidebar order, subgroups folded into their root', () => {
     expect(OPTIONS.map((option) => (option.kind === 'group' ? option.name : 'ungrouped'))).toEqual([
       'Perc',
       'CCE',
       'ungrouped'
     ])
-    // Perc counts repo-cli, which hangs off a subgroup.
-    expect(OPTIONS[0]).toMatchObject({ repoCount: 2, workspaceCount: 1 })
   })
 
-  it('offers the ungrouped projects as their own option', () => {
-    expect(OPTIONS.at(-1)).toMatchObject({ kind: 'ungrouped', repoCount: 1 })
+  it('offers the ungrouped projects as their own option, naming them', () => {
+    expect(OPTIONS.at(-1)).toMatchObject({
+      kind: 'ungrouped',
+      repoIds: ['repo-suelto']
+    })
   })
 
   it('omits the ungrouped option when every project has a group', () => {
     const options = buildWorkspaceOptions({
       repos: REPOS.filter((repo) => repo.projectGroupId),
-      projectGroups: GROUPS,
-      folderWorkspaces: FOLDER_WORKSPACES
+      projectGroups: GROUPS
     })
     expect(options.some((option) => option.kind === 'ungrouped')).toBe(false)
   })
@@ -80,15 +81,24 @@ describe('resolveActiveWorkspace', () => {
 
   // Why: an empty filter is "never chosen", which is what the seed looks for — not "show all".
   it('selects nothing when the filter is empty', () => {
-    expect(activeWith([])).toEqual({ option: null, narrowed: false, custom: false })
+    expect(activeWith([])).toEqual({
+      option: null,
+      narrowed: false,
+      custom: false
+    })
   })
 
   it('recognises the ungrouped projects as a workspace', () => {
-    expect(activeWith([], ['repo-suelto']).option).toMatchObject({ kind: 'ungrouped' })
+    expect(activeWith([], ['repo-suelto']).option).toMatchObject({
+      kind: 'ungrouped'
+    })
   })
 
   it('calls a multi-group pick custom rather than claiming one workspace', () => {
-    expect(activeWith(['perc', 'cce'])).toMatchObject({ option: null, custom: true })
+    expect(activeWith(['perc', 'cce'])).toMatchObject({
+      option: null,
+      custom: true
+    })
   })
 })
 
