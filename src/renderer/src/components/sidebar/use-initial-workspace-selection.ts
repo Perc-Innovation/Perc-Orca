@@ -37,7 +37,7 @@ export function useInitialWorkspaceSelection(): void {
     ) {
       return
     }
-    const options = buildWorkspaceOptions({ repos, projectGroups, folderWorkspaces })
+    const options = buildWorkspaceOptions({ repos, projectGroups })
     const option = resolveWorkspaceForActiveWorkspaceKey({
       options,
       projectGroups,

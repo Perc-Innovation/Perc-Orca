@@ -1,7 +1,6 @@
 import type { ProjectGroup } from '../../../../shared/project-group-types'
 import type { Repo } from '../../../../shared/repo-types'
 import type { FolderWorkspace } from '../../../../shared/folder-workspace-types'
-import { getProjectGroupSubtreeIds } from '../../../../shared/project-groups'
 import { resolveWorkspaceProjectGroupId } from '../../../../shared/workspace-project-group'
 
 /**
@@ -16,8 +15,8 @@ import { resolveWorkspaceProjectGroupId } from '../../../../shared/workspace-pro
  */
 
 export type WorkspaceOption =
-  | { kind: 'group'; id: string; name: string; repoCount: number; workspaceCount: number }
-  | { kind: 'ungrouped'; id: null; repoCount: number; repoIds: readonly string[] }
+  | { kind: 'group'; id: string; name: string }
+  | { kind: 'ungrouped'; id: null; repoIds: readonly string[] }
 
 export type ActiveWorkspace = {
   option: WorkspaceOption | null
@@ -30,7 +29,6 @@ export type ActiveWorkspace = {
 type WorkspaceOptionsInput = {
   repos: readonly Pick<Repo, 'id' | 'projectGroupId'>[]
   projectGroups: readonly Pick<ProjectGroup, 'id' | 'parentGroupId' | 'name' | 'tabOrder'>[]
-  folderWorkspaces: readonly Pick<FolderWorkspace, 'projectGroupId'>[]
 }
 
 function compareForDisplay(
@@ -53,30 +51,16 @@ export function buildWorkspaceOptions(input: WorkspaceOptionsInput): WorkspaceOp
   const roots = groups
     .filter((group) => !group.parentGroupId || !groupsById.has(group.parentGroupId))
     .sort(compareForDisplay)
-  const options: WorkspaceOption[] = roots.map((root) => {
-    const subtreeIds = getProjectGroupSubtreeIds(groups, root.id)
-    return {
-      kind: 'group',
-      id: root.id,
-      name: root.name,
-      repoCount: input.repos.filter(
-        (repo) => repo.projectGroupId && subtreeIds.has(repo.projectGroupId)
-      ).length,
-      workspaceCount: input.folderWorkspaces.filter((workspace) =>
-        subtreeIds.has(workspace.projectGroupId)
-      ).length
-    }
-  })
+  const options: WorkspaceOption[] = roots.map((root) => ({
+    kind: 'group',
+    id: root.id,
+    name: root.name
+  }))
   const ungroupedRepoIds = input.repos
     .filter((repo) => !repo.projectGroupId || !groupsById.has(repo.projectGroupId))
     .map((repo) => repo.id)
   if (ungroupedRepoIds.length > 0) {
-    options.push({
-      kind: 'ungrouped',
-      id: null,
-      repoCount: ungroupedRepoIds.length,
-      repoIds: ungroupedRepoIds
-    })
+    options.push({ kind: 'ungrouped', id: null, repoIds: ungroupedRepoIds })
   }
   return options
 }
@@ -130,7 +114,11 @@ export function resolveActiveWorkspace(args: {
     return { option: null, narrowed: false, custom: true }
   }
   const exact = filterGroupIds.length === 1 && filterGroupIds[0] === rootId
-  return { option, narrowed: !exact || filterRepoIds.length > 0, custom: false }
+  return {
+    option,
+    narrowed: !exact || filterRepoIds.length > 0,
+    custom: false
+  }
 }
 
 /** Walks up to the root; a cycle or a missing parent stops the walk rather than hanging. */
