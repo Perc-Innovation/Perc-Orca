@@ -19,6 +19,12 @@ export type WorkspaceSessionApi = {
     set: (args: WorkspaceSessionState, hostId?: ExecutionHostId) => Promise<void>
     patch: (args: WorkspaceSessionPatch, hostId?: ExecutionHostId) => Promise<void>
     flush: () => Promise<void>
+    /** A user close, made durable when main (not the renderer) owns the repo's terminal rows. */
+    retireTerminalTab: (args: {
+      worktreeId: string
+      tabId: string
+      hostId?: ExecutionHostId
+    }) => Promise<{ retired: boolean }>
     readTerminalScrollback: (args: { ref: string }) => string | null
     setSync: (args: WorkspaceSessionState, hostId?: ExecutionHostId) => void
     /** Main says another window now serves these workspaces; this one must let go of them. */

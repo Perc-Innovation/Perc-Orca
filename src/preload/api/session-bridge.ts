@@ -11,6 +11,7 @@ export const sessionApi = {
   set: (args, hostId) => ipcRenderer.invoke('session:set', args, hostId),
   patch: (args, hostId) => ipcRenderer.invoke('session:patch', args, hostId),
   flush: () => ipcRenderer.invoke('session:flush'),
+  retireTerminalTab: (args) => ipcRenderer.invoke('session:retireTerminalTab', args),
   readTerminalScrollback: (args) =>
     ipcRenderer.sendSync('session:read-terminal-scrollback-sync', args),
   /** Synchronous session save for beforeunload — blocks until flushed to disk. */
