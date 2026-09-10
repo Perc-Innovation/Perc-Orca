@@ -74,4 +74,9 @@ export type MergeContext = {
   browserTabsByWorktree?: Record<string, BrowserWorkspace[]>
   /** Canonical worktrees keep browser-only workspace rows out of synthetic buckets. */
   worktreeById?: ReadonlyMap<string, Worktree>
+  /**
+   * Folder workspace names by session key (`folder:<id>`). A folder workspace has no repo and no
+   * path inside its key, so every other naming rule falls back to the raw key.
+   */
+  folderWorkspaceNameByKey?: ReadonlyMap<string, string>
 }

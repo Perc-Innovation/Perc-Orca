@@ -552,6 +552,30 @@ describe('mergeSnapshotAndSessions', () => {
     expect(out[0].repoName).toBe('ORCA')
   })
 
+  it('names a folder workspace bucket and row after the workspace, not its key', () => {
+    const key = 'folder:81c2cd84-5c46-49c7-8324-8dd5bfc3e1ee'
+    // Main cannot name it either: the key holds no repo and no path, so both fall back to the key.
+    const wt: WorktreeMemory = {
+      worktreeId: key,
+      worktreeName: key,
+      repoId: key,
+      repoName: key,
+      cpu: 0,
+      memory: 0,
+      history: [],
+      sessions: [{ sessionId: `${key}@@1`, paneKey: null, pid: 1, cpu: 0, memory: 0 }]
+    }
+    const ds: DaemonSession[] = [
+      { id: `${key}@@2`, cwd: '', title: '', agentOwnership: 'absent' as const }
+    ]
+    const ctx = baseCtx({ folderWorkspaceNameByKey: new Map([[key, 'Mac · Terminal']]) })
+    const out = mergeSnapshotAndSessions(makeSnapshot([wt]), ds, ctx)
+    expect(out).toHaveLength(1)
+    expect(out[0].repoName).toBe('Mac · Terminal')
+    expect(out[0].worktrees.map((row) => row.worktreeName)).toEqual(['Mac · Terminal'])
+    expect(out[0].worktrees[0].sessions).toHaveLength(2)
+  })
+
   it('workspaceSessionReady=false suppresses bound flags so nothing looks bound prematurely', () => {
     const tabId = 'tab-1'
     const wt: WorktreeMemory = {
